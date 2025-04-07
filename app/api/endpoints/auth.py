@@ -81,10 +81,10 @@ async def login(payload: LoginRequest):
     Raises:
         HTTPException: If authentication fails
     """
-    if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_ROLE_KEY:
+    if not getattr(settings, 'SUPABASE_URL', None) or not getattr(settings, 'SUPABASE_SERVICE_ROLE_KEY', None):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase configuration is missing"
+            detail="Supabase configuration is missing. Please check your environment variables."
         )
 
     try:

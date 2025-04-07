@@ -24,12 +24,19 @@ class Settings:
         self.PROJECT_NAME = "Meal Recommender API"
         self.DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
+        # Supabase Settings
+        self.SUPABASE_URL = os.getenv("SUPABASE_URL")
+        self.SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        self.SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
+
+
         # AI API Settings
         self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
         if not self.OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY environment variable is not set")
 
         self.MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4")
+
 
 
 # Create settings instance
