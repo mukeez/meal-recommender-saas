@@ -4,9 +4,9 @@ This module contains the FastAPI routes for the meal suggestion service.
 """
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.responses import JSONResponse
-from app.models.meal import MealSuggestionRequest, MealSuggestionResponse
-from app.services.ai_service import ai_service, AIServiceError
-from app.api.auth_guard import auth_guard
+
+from api.auth_guard import auth_guard
+from models.meal import MealSuggestionRequest, MealSuggestionResponse
 
 router = APIRouter()
 

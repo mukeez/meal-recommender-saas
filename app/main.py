@@ -8,11 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import Callable
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.core.config import settings
-from app.api.endpoints import meals, auth, user
 
 
 # Create FastAPI app
+from api.endpoints import auth, user, meals
+from core.config import settings
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="API for recommending meals from restaurants based on macro requirements",

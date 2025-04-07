@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, EmailStr, validator
 import httpx
 
-from app.core.config import settings
+from core.config import settings
 
 router = APIRouter()
 
