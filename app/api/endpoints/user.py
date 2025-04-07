@@ -4,7 +4,7 @@ This module contains FastAPI routes for user-related functionality.
 """
 from fastapi import APIRouter, Depends, Request
 
-from api.auth_guard import auth_guard
+from app.api.auth_guard import auth_guard
 
 router = APIRouter()
 
