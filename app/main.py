@@ -2,12 +2,15 @@
 
 This module initializes the FastAPI application and includes all routes.
 """
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Callable
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
-from app.api.endpoints import meals
+from app.api.endpoints import meals, auth, user
+
 
 # Create FastAPI app
 app = FastAPI(
@@ -31,10 +34,48 @@ app.add_middleware(
 
 # Include routers
 app.include_router(
+    auth.router,
+    prefix=f"{settings.API_V1_STR}/auth",
+    tags=["authentication"],
+)
+
+app.include_router(
+    user.router,
+    prefix=f"{settings.API_V1_STR}/user",
+    tags=["user"],
+)
+
+app.include_router(
     meals.router,
     prefix=f"{settings.API_V1_STR}/meals",
     tags=["meals"],
 )
+
+
+@app.get("/", tags=["status"])
+async def root():
+    """Root endpoint to check API status."""
+    return {"status": "online", "service": settings.PROJECT_NAME}
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Global exception handler for unhandled exceptions."""
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "path": str(request.url)},
+    )
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=settings.DEBUG,
+    )
 
 
 @app.get("/", tags=["status"])

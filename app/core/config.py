@@ -24,6 +24,7 @@ class Settings:
         self.PROJECT_NAME = "Meal Recommender API"
         self.DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
+        # AI API Settings
         self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
         if not self.OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY environment variable is not set")
@@ -31,4 +32,5 @@ class Settings:
         self.MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4")
 
 
+# Create settings instance
 settings = Settings()

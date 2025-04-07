@@ -2,10 +2,11 @@
 
 This module contains the FastAPI routes for the meal suggestion service.
 """
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.responses import JSONResponse
 from app.models.meal import MealSuggestionRequest, MealSuggestionResponse
-from app.services.llm_service import ai_service, LLMServiceError
+from app.services.ai_service import ai_service, AIServiceError
+from app.api.auth_guard import auth_guard
 
 router = APIRouter()
 
@@ -15,16 +16,22 @@ router = APIRouter()
     response_model=MealSuggestionResponse,
     status_code=status.HTTP_200_OK,
     summary="Get meal suggestions based on macro requirements",
-    response_description="List of suggested meals from restaurants",
+    description="Get personalized meal suggestions based on macro requirements. Returns a list of meal suggestions from restaurants in the specified location.",
 )
-async def suggest_meals(request: MealSuggestionRequest) -> MealSuggestionResponse:
+async def suggest_meals(
+        request: Request,
+        meal_request: MealSuggestionRequest,
+        user=Depends(auth_guard)
+) -> MealSuggestionResponse:
     """Get personalized meal suggestions based on macro requirements.
 
     This endpoint takes the user's location and macro requirements and returns
     a list of meal suggestions from restaurants in the specified location.
 
     Args:
-        request: The meal suggestion request with location and macro targets
+        request: The incoming FastAPI request
+        meal_request: The meal suggestion request with location and macro targets
+        user: The authenticated user (injected by the auth_guard dependency)
 
     Returns:
         A response object containing a list of meal suggestions
@@ -33,10 +40,13 @@ async def suggest_meals(request: MealSuggestionRequest) -> MealSuggestionRespons
         HTTPException: If there is an error processing the request
     """
     try:
-        meal_suggestions = await ai_service.get_meal_suggestions(request)
+        # You can access user information from the user parameter
+        # For example: user_id = user.get("sub")
+
+        meal_suggestions = await ai_service.get_meal_suggestions(meal_request)
         return MealSuggestionResponse(meals=meal_suggestions)
 
-    except LLMServiceError as e:
+    except AIServiceError as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"AI service error: {str(e)}"
