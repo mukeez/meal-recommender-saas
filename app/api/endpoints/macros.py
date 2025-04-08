@@ -11,8 +11,8 @@ from typing import Dict, Optional
 router = APIRouter()
 
 
-class Gender(str, Enum):
-    """Gender enumeration for BMR calculation."""
+class Sex(str, Enum):
+    """Sex enumeration for BMR calculation."""
     MALE = "male"
     FEMALE = "female"
 
@@ -59,7 +59,7 @@ class MacroCalculatorRequest(BaseModel):
         age: User's age in years (18-100)
         weight: User's weight (in kg or lbs depending on unit_system)
         height: User's height (in cm or inches depending on unit_system)
-        gender: User's gender (male/female)
+        sex: User's biological sex (male/female)
         activity_level: User's activity level
         goal: User's fitness goal
         unit_system: Measurement system for weight and height
@@ -68,7 +68,7 @@ class MacroCalculatorRequest(BaseModel):
     age: int = Field(..., ge=18, le=100, description="Age in years (18-100)")
     weight: float = Field(..., gt=0, description="Weight (in kg or lbs)")
     height: float = Field(..., gt=0, description="Height (in cm or inches)")
-    gender: Gender = Field(..., description="Gender (male/female)")
+    sex: Sex = Field(..., description="Biological sex (male/female)")
     activity_level: ActivityLevel = Field(..., description="Activity level")
     goal: Goal = Field(..., description="Fitness goal")
     unit_system: UnitSystem = Field(..., description="Unit system for measurements")
@@ -137,11 +137,11 @@ def convert_to_metric(weight: float, height: float, unit_system: UnitSystem) -> 
         return weight, height
 
 
-def calculate_bmr(gender: Gender, weight_kg: float, height_cm: float, age: int) -> float:
+def calculate_bmr(sex: Sex, weight_kg: float, height_cm: float, age: int) -> float:
     """Calculate Basal Metabolic Rate using the Mifflin-St Jeor Formula.
 
     Args:
-        gender: User's gender
+        sex: User's biological sex
         weight_kg: Weight in kg
         height_cm: Height in cm
         age: Age in years
@@ -149,7 +149,7 @@ def calculate_bmr(gender: Gender, weight_kg: float, height_cm: float, age: int) 
     Returns:
         BMR in calories per day
     """
-    if gender == Gender.MALE:
+    if sex == Sex.MALE:
         return 10 * weight_kg + 6.25 * height_cm - 5 * age + 5
     else:
         return 10 * weight_kg + 6.25 * height_cm - 5 * age - 161
@@ -258,7 +258,7 @@ async def calculate_macros_endpoint(request: MacroCalculatorRequest) -> MacroCal
 
         # Step 2: Calculate BMR
         bmr = calculate_bmr(
-            request.gender,
+            request.sex,
             weight_kg,
             height_cm,
             request.age
