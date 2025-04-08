@@ -139,7 +139,10 @@ async def signup(payload: SignupRequest):
                     "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
                     "Content-Type": "application/json"
                 },
-                json={"email": payload.email, "password": payload.password}
+                json={"email": payload.email, "password": payload.password, "options": {
+                    "emailRedirectTo": None,
+                    "shouldCreateUser": True
+                }}
             )
         print(response.json())
         response_data = response.json()
