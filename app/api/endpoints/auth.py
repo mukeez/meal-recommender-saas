@@ -54,7 +54,7 @@ class SignupRequest(BaseModel):
     summary="Authenticate user",
     description="Authenticate a user with email and password using Supabase."
 )
-async def login(request: Request, payload: LoginRequest):
+async def login(payload: LoginRequest):
     """Authenticate a user with Supabase.
 
     Args:
@@ -119,19 +119,8 @@ async def login(request: Request, payload: LoginRequest):
     summary="Register a new user",
     description="Register a new user with email and password, and create their profile."
 )
-async def signup(request: Request, payload: SignupRequest):
-    """Register a new user with Supabase and create their profile.
-
-    Args:
-        request: The incoming FastAPI request
-        payload: Signup credentials containing email, password and optional display name
-
-    Returns:
-        The registration response including user data and access token
-
-    Raises:
-        HTTPException: If registration fails
-    """
+async def signup(payload: SignupRequest):
+    """Register a new user with Supabase and create their profile."""
     logger.info(f"Signup attempt for user: {payload.email}")
 
     if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_ROLE_KEY:
@@ -152,13 +141,15 @@ async def signup(request: Request, payload: SignupRequest):
                 },
                 json={"email": payload.email, "password": payload.password}
             )
+        print(response.json())
+        response_data = response.json()
+        logger.info(f"Full Supabase signup response: {response_data}")
 
-        if response.status_code != 200:
+        if response.status_code not in (200, 201):
             error_detail = "Signup failed"
             try:
-                error_data = response.json()
-                if "error" in error_data and "message" in error_data:
-                    error_detail = error_data["message"]
+                if "error" in response_data and "message" in response_data:
+                    error_detail = response_data["message"]
             except Exception:
                 pass
 
@@ -168,15 +159,18 @@ async def signup(request: Request, payload: SignupRequest):
                 detail=error_detail
             )
 
-        # Get the user data from the response
-        user_data = response.json()
-        user_id = user_data.get("user", {}).get("id")
+        # More robust user ID extraction
+        user_id = (
+                response_data.get('user', {}).get('id') or
+                response_data.get('id') or
+                response_data.get('user_id')
+        )
 
         if not user_id:
-            logger.error("Failed to get user ID from registration response")
+            logger.error(f"Failed to get user ID from registration response: {response_data}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to get user ID from registration response"
+                detail="Failed to extract user ID from registration response"
             )
 
         # Create the user profile
@@ -197,8 +191,11 @@ async def signup(request: Request, payload: SignupRequest):
         logger.info(f"User {payload.email} registered successfully")
         return {
             "message": "User registered successfully",
-            "user": user_data.get("user"),
-            "session": user_data.get("session")
+            "user": {
+                "id": user_id,
+                "email": payload.email
+            },
+            "session": response_data.get('session', {})
         }
 
     except httpx.RequestError as e:
