@@ -11,7 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 
 # Create FastAPI app
-from app.api.endpoints import meals, user, auth
+from app.api.endpoints import meals, user, auth, macros
 from app.core.config import settings
 
 app = FastAPI(
@@ -38,6 +38,12 @@ app.include_router(
     auth.router,
     prefix=f"{settings.API_V1_STR}/auth",
     tags=["authentication"],
+)
+
+app.include_router(
+    macros.router,
+    prefix=f"{settings.API_V1_STR}/macros",
+    tags=["macros"],
 )
 
 app.include_router(
