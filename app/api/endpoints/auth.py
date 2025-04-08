@@ -70,6 +70,7 @@ class SignupRequest(BaseModel):
     description="Authenticate a user with email and password using Supabase."
 )
 async def login(payload: LoginRequest):
+    print(payload)
     """Authenticate a user with Supabase.
 
     Args:
@@ -97,6 +98,8 @@ async def login(payload: LoginRequest):
                 },
                 json={"email": payload.email, "password": payload.password}
             )
+
+            print(response)
 
         if response.status_code != 200:
             error_detail = "Login failed"
