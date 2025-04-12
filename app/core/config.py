@@ -38,6 +38,12 @@ class Settings:
         self.MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4")
 
 
+        # Nutritionix API Settings
+        self.NUTRITIONIX_APP_ID = os.getenv("NUTRITIONIX_APP_ID")
+        self.NUTRITIONIX_API_KEY = os.getenv("NUTRITIONIX_API_KEY")
+
+
+
 
 # Create settings instance
 settings = Settings()

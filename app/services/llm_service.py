@@ -41,7 +41,6 @@ class OpenAIService:
         try:
             # Construct the prompt for OpenAI
             prompt = self._build_prompt(request)
-            print(prompt)
             # Call the OpenAI API using newer client version
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -56,6 +55,7 @@ class OpenAIService:
 
             # Extract and parse the response
             content = response.choices[0].message.content
+            print(content)
             return self._parse_response(content)
 
         except openai.OpenAIError as e:
@@ -74,7 +74,7 @@ class OpenAIService:
         Returns:
             Formatted prompt string
         """
-        return f"""Suggest 3-5 meal options from restaurants in {request.location} that match these macro requirements:
+        return f"""Suggest 5-8 meal options from restaurants in {request.location} that match these macro requirements:
 - Calories: {request.calories} kcal
 - Protein: {request.protein}g
 - Carbs: {request.carbs}g
@@ -107,7 +107,7 @@ Example format (do not use these exact values, suggest real meals):
       }},
       "restaurant": {{
         "name": "Healthy Bites",
-        "location": "123 Main St, Finchley"
+        "location": "123 Main St, Finchley, N3 3EB"
       }}
     }}
   ]

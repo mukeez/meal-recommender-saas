@@ -13,7 +13,7 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 
 # Create FastAPI app
-from app.api.endpoints import meals, user, auth, macros
+from app.api.endpoints import meals, user, auth, macros, scan
 from app.core.config import settings
 
 security_scheme = HTTPBearer()
@@ -86,6 +86,12 @@ app.include_router(
     auth.router,
     prefix=f"{settings.API_V1_STR}/auth",
     tags=["authentication"],
+)
+
+app.include_router(
+    scan.router,
+    prefix=f"{settings.API_V1_STR}/scan",
+    tags=["scan"],
 )
 
 app.include_router(

@@ -49,7 +49,10 @@ async def suggest_meals(
     """
     try:
         # Extract user ID from the authenticated request
-        user_id = request.state.user["sub"]
+
+        user_id = user.get("sub")
+        print(user_id)
+         # user_id = request.state.user["sub"]
         print(user_id)
         meal_suggestions = await ai_service.get_meal_suggestions(meal_request)
         return MealSuggestionResponse(meals=meal_suggestions)
