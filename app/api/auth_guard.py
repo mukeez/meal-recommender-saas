@@ -1,17 +1,27 @@
 from fastapi import Request, HTTPException
 from jose import jwt
-import os
+import logging
 
 from app.core.config import settings
 
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
+# Configure logging
+logger = logging.getLogger(__name__)
+
 def verify_jwt(token: str):
     try:
-        print(settings.SUPABASE_JWT_SECRET)
-        decoded = jwt.decode(token, settings.SUPABASE_JWT_SECRET, algorithms=["HS256"])
+        if not settings.SUPABASE_JWT_SECRET:
+            logger.error("SUPABASE_JWT_SECRET is not configured")
+            raise HTTPException(status_code=500, detail="Authentication service misconfigured")
+
+        decoded = jwt.decode(token, settings.SUPABASE_JWT_SECRET, algorithms=["HS256"],options={"verify_aud": False}
+                             )
         return decoded  # contains `sub`, `email`, etc.
-    except Exception as e:
+    except jwt.JWTError as e:
+        logger.warning(f"JWT validation failed: {str(e)}")
         raise HTTPException(status_code=401, detail="Invalid token")
+    except Exception as e:
+        logger.error(f"Unexpected error during JWT verification: {str(e)}")
+        raise HTTPException(status_code=401, detail="Authentication failed")
 
 async def auth_guard(request: Request):
     auth = request.headers.get("Authorization")
@@ -21,3 +31,4 @@ async def auth_guard(request: Request):
     token = auth.split(" ")[1]
     user = verify_jwt(token)
     request.state.user = user
+    return user  # Return the user for easier access in endpoints
