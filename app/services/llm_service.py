@@ -94,7 +94,7 @@ Format your response as a JSON object with a "meals" property containing an arra
 
 Only suggest restaurants that exist in {request.location}.
 
-Example format (do not use these exact values, please suggest real meals):
+Example format (do not use these values, please suggest real meals and check if these name and location exist near {request.location} else do not return in json):
 ```json
 {{
   "meals": [
