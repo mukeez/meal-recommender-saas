@@ -74,32 +74,32 @@ class OpenAIService:
         Returns:
             Formatted prompt string
         """
-        return f"""Suggest 5-8 meal options from restaurants in {request.location} that can help me get on my way to meeting these macro requirements:
+        return f"""Suggest 5-8 meal options from restaurants in {request.location} that can help me meet these macro requirements:
 - Calories: {request.calories} kcal
-- Protein: {request.protein}g
-- Carbs: {request.carbs}g
-- Fat: {request.fat}g
+- Protein: {request.protein} g
+- Carbs: {request.carbs} g
+- Fat: {request.fat} g
 
 For each meal suggestion, provide:
 1. Meal name
 2. Brief description
-3. Estimated macros (calories, protein, carbs, fat)
+3. Estimated macros (calories, protein, carbs, fat) — note these can be approximate
 4. Restaurant name and location
 
-Format your response as a JSON object with a "meals" property containing an array of meal objects with these properties:
-- name (string): meal name
-- description (string): brief description
-- macros (object): with calories, protein, carbs, fat as numeric values
-- restaurant (object): with name and location properties
+Format your response as a JSON object with a "meals" property containing an array of meal objects. Each meal object should include:
+- name (string)
+- description (string)
+- macros (object) with numeric values for "calories", "protein", "carbs", "fat"
+- restaurant (object) with "name" and "location" properties
 
-Only suggest me restaurants that exist in {request.location}
+Only suggest restaurants that exist in {request.location}.
 
-Example format (do not use these exact values, suggest real meals):
+Example format (do not use these exact values, please suggest real meals):
 ```json
 {{
   "meals": [
     {{
-      "name": "Grilled Chicken Salad",
+      "name": "Lorem Ipsum Sit Dolor",
       "description": "Fresh salad with grilled chicken breast, mixed greens, and light dressing",
       "macros": {{
         "calories": 450,
@@ -108,14 +108,12 @@ Example format (do not use these exact values, suggest real meals):
         "fat": 15
       }},
       "restaurant": {{
-        "name": "Healthy Bites",
+        "name": "Lorem Ipsum",
         "location": "123 Main St, Finchley, N3 3EB"
       }}
     }}
   ]
 }}
-```
-
 Respond ONLY with the JSON object, nothing else before or after."""
 
     def _parse_response(self, content: str) -> List[MealSuggestion]:
