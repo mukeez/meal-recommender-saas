@@ -74,7 +74,7 @@ class OpenAIService:
         Returns:
             Formatted prompt string
         """
-        return f"""Suggest 5-8 meal options from restaurants in {request.location} that match these macro requirements:
+        return f"""Suggest 5-8 meal options from restaurants in {request.location} that can help me get on my way to meeting these macro requirements:
 - Calories: {request.calories} kcal
 - Protein: {request.protein}g
 - Carbs: {request.carbs}g
@@ -91,6 +91,8 @@ Format your response as a JSON object with a "meals" property containing an arra
 - description (string): brief description
 - macros (object): with calories, protein, carbs, fat as numeric values
 - restaurant (object): with name and location properties
+
+Only suggest me restaurants that exist in {request.location}
 
 Example format (do not use these exact values, suggest real meals):
 ```json

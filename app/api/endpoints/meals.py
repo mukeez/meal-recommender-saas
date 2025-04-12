@@ -27,7 +27,6 @@ router = APIRouter()
     description="Get personalized meal suggestions based on macro requirements. Returns a list of meal suggestions from restaurants in the specified location.",
 )
 async def suggest_meals(
-        request: Request,
         meal_request: MealSuggestionRequest,
         user=Depends(auth_guard)
 ) -> MealSuggestionResponse:
