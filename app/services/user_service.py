@@ -181,6 +181,77 @@ class UserProfileService:
                 detail=f"Error creating user preferences: {str(e)}"
             )
 
+    async def get_user_preferences(self, user_id: str) -> Dict[str, Any]:
+        """Retrieve user preferences.
+
+        Args:
+            user_id: Supabase user ID
+
+        Returns:
+            User preferences dictionary
+
+        Raises:
+            HTTPException: If there is an error retrieving the preferences
+        """
+        logger.info(f"Retrieving preferences for user: {user_id}")
+
+        try:
+            # Use Supabase REST API to fetch user preferences
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.base_url}/rest/v1/user_preferences",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    params={
+                        "user_id": f"eq.{user_id}"
+                    }
+                )
+
+                if response.status_code not in (200, 201, 204):
+                    error_detail = "Failed to retrieve user preferences"
+                    try:
+                        error_data = response.json()
+                        if "message" in error_data:
+                            error_detail = error_data["message"]
+                    except Exception:
+                        pass
+
+                    logger.error(f"Preferences retrieval failed: {error_detail}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to retrieve user preferences: {error_detail}"
+                    )
+
+                preferences_data = response.json()
+                if not preferences_data:
+                    # Return default preferences if none found
+                    return {
+                        "user_id": user_id,
+                        "calorie_target": 2000,
+                        "protein_target": 150,
+                        "carbs_target": 200,
+                        "fat_target": 70
+                    }
+
+                # Return the first (and should be only) preferences record
+                return preferences_data[0]
+
+        except httpx.RequestError as e:
+            logger.error(f"Request error retrieving preferences: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database: {str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error retrieving preferences: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error retrieving user preferences: {str(e)}"
+            )
+
 
 # Create a singleton instance
 user_service = UserProfileService()

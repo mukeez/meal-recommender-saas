@@ -7,12 +7,48 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Callable
 from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
 
 # Create FastAPI app
 from app.api.endpoints import meals, user, auth, macros
 from app.core.config import settings
+
+security_scheme = HTTPBearer()
+
+def custom_openapi():
+    """Custom OpenAPI schema to include security definitions."""
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title=settings.PROJECT_NAME,
+        version="0.1.0",
+        description="API for recommending meals from restaurants based on macro requirements and tracking nutrition",
+        routes=app.routes,
+    )
+
+    # Add security scheme to OpenAPI schema
+    openapi_schema["components"]["securitySchemes"] = {
+        "bearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT"
+        }
+    }
+
+    # Apply security globally
+    for path in openapi_schema["paths"].values():
+        for method in path.values():
+            if isinstance(method, dict):
+                method.setdefault("security", [{"bearerAuth": []}])
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -23,6 +59,18 @@ app = FastAPI(
     openapi_url="/openapi.json",
     debug=settings.DEBUG,
 )
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    """Custom Swagger UI with bearer token support."""
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title=f"{settings.PROJECT_NAME} - Swagger UI",
+        oauth2_redirect_url="/docs/oauth2-redirect"
+    )
+
+# Set custom OpenAPI schema
+app.openapi = custom_openapi
 
 # Add CORS middleware
 app.add_middleware(
@@ -57,6 +105,7 @@ app.include_router(
     prefix=f"{settings.API_V1_STR}/meals",
     tags=["meals"],
 )
+
 
 
 @app.get("/", tags=["status"])

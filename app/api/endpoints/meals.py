@@ -1,12 +1,20 @@
-"""API endpoints for meal suggestion functionality.
+"""API endpoints for meal logging and tracking functionality.
 
-This module contains the FastAPI routes for the meal suggestion service.
+This module contains the FastAPI routes for logging meals and tracking daily progress.
 """
 from fastapi import APIRouter, HTTPException, status, Depends, Request
-from fastapi.responses import JSONResponse
+from typing import List
 
 from app.api.auth_guard import auth_guard
-from app.models.meal import MealSuggestionRequest, MealSuggestionResponse
+from app.models.meal import (
+    LogMealRequest,
+    LoggedMeal,
+    MealSuggestionRequest,
+    MealSuggestionResponse,
+    DailyProgressResponse
+)
+from app.services.meal_service import meal_service
+from app.services.llm_service import ai_service
 
 router = APIRouter()
 
@@ -40,21 +48,130 @@ async def suggest_meals(
         HTTPException: If there is an error processing the request
     """
     try:
-        # You can access user information from the user parameter
-        # For example: user_id = user.get("sub")
+        # Extract user ID from the authenticated request
         user_id = request.state.user["sub"]
         print(user_id)
         meal_suggestions = await ai_service.get_meal_suggestions(meal_request)
         return MealSuggestionResponse(meals=meal_suggestions)
 
-    except AIServiceError as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"AI service error: {str(e)}"
-        )
-
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating meal suggestions: {str(e)}"
+        )
+
+
+@router.post(
+    "/add",
+    response_model=LoggedMeal,
+    status_code=status.HTTP_201_CREATED,
+    summary="Log a meal",
+    description="Log a meal with its nutritional details for the current user."
+)
+async def log_meal(
+        request: Request,
+        meal_data: LogMealRequest,
+        user=Depends(auth_guard)
+) -> LoggedMeal:
+    """Log a meal for the current user.
+
+    Args:
+        request: The incoming FastAPI request
+        meal_data: Details of the meal to log
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        The logged meal with additional metadata
+
+    Raises:
+        HTTPException: If there is an error logging the meal
+    """
+    try:
+        # Extract user ID from the authenticated request
+        user_id = request.state.user["sub"]
+
+        # Log the meal using the meal service
+        logged_meal = await meal_service.log_meal(user_id, meal_data)
+        return logged_meal
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error logging meal: {str(e)}"
+        )
+
+
+@router.get(
+    "/today",
+    response_model=List[LoggedMeal],
+    status_code=status.HTTP_200_OK,
+    summary="Get today's meals",
+    description="Retrieve all meals logged by the current user for today."
+)
+async def get_today_meals(
+        request: Request,
+        user=Depends(auth_guard)
+) -> List[LoggedMeal]:
+    """Retrieve meals logged by the current user today.
+
+    Args:
+        request: The incoming FastAPI request
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        List of meals logged today
+
+    Raises:
+        HTTPException: If there is an error retrieving meals
+    """
+    try:
+        # Extract user ID from the authenticated request
+        user_id = request.state.user["sub"]
+
+        # Fetch today's meals using the meal service
+        today_meals = await meal_service.get_meals_for_today(user_id)
+        return today_meals
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving today's meals: {str(e)}"
+        )
+
+
+@router.get(
+    "/progress/today",
+    response_model=DailyProgressResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get daily progress",
+    description="Calculate and return daily macro progress for the current user."
+)
+async def get_daily_progress(
+        request: Request,
+        user=Depends(auth_guard)
+) -> DailyProgressResponse:
+    """Calculate daily macro progress for the current user.
+
+    Args:
+        request: The incoming FastAPI request
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        Daily progress with logged macros, target macros, and progress percentages
+
+    Raises:
+        HTTPException: If there is an error calculating progress
+    """
+    try:
+        # Extract user ID from the authenticated request
+        user_id = request.state.user["sub"]
+
+        # Calculate daily progress using the meal service
+        daily_progress = await meal_service.get_daily_progress(user_id)
+        return daily_progress
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error calculating daily progress: {str(e)}"
         )

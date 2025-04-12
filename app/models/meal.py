@@ -3,8 +3,9 @@
 This module contains Pydantic models that define the structure of request and
 response data for the meal recommendation API.
 """
+from datetime import datetime
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, validator, Field
 
 
 class MacroNutrients(BaseModel):
@@ -111,3 +112,47 @@ class MealSuggestionResponse(BaseModel):
         meals: List of meal suggestions
     """
     meals: List[MealSuggestion]
+
+class LogMealRequest(BaseModel):
+    """Request model for logging a meal.
+
+    Attributes:
+        name: Name of the meal
+        protein: Protein amount in grams
+        carbs: Carbohydrate amount in grams
+        fat: Fat amount in grams
+        calories: Total calories
+        meal_time: Timestamp of when the meal was consumed
+    """
+    name: str = Field(..., description="Name of the meal")
+    protein: float = Field(..., description="Protein amount in grams", gt=0)
+    carbs: float = Field(..., description="Carbohydrate amount in grams", gt=0)
+    fat: float = Field(..., description="Fat amount in grams", gt=0)
+    calories: float = Field(..., description="Total calories", gt=0)
+    meal_time: Optional[datetime] = Field(default_factory=datetime.now, description="Timestamp of meal consumption")
+
+
+class LoggedMeal(LogMealRequest):
+    """Logged meal model with additional tracking information.
+
+    Attributes:
+        id: Unique identifier for the logged meal
+        user_id: ID of the user who logged the meal
+        created_at: Timestamp when the meal was logged
+    """
+    id: str
+    user_id: str
+    created_at: datetime
+
+
+class DailyProgressResponse(BaseModel):
+    """Response model for daily macro progress.
+
+    Attributes:
+        logged_macros: Macros logged for the day
+        target_macros: User's daily macro targets
+        progress_percentage: Percentage of macro targets achieved
+    """
+    logged_macros: MacroNutrients
+    target_macros: MacroNutrients
+    progress_percentage: Dict[str, float]

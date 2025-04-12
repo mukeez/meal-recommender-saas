@@ -41,7 +41,7 @@ class OpenAIService:
         try:
             # Construct the prompt for OpenAI
             prompt = self._build_prompt(request)
-
+            print(prompt)
             # Call the OpenAI API using newer client version
             response = self.client.chat.completions.create(
                 model=self.model,
