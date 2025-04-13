@@ -1,4 +1,3 @@
-# app/services/meal_service.py
 """Services for managing meal logging and tracking.
 
 This module provides functions to log meals and track daily nutrition progress.
@@ -9,7 +8,6 @@ from datetime import datetime, date
 
 import httpx
 from fastapi import HTTPException, status
-from pydantic import BaseModel
 
 from app.core.config import settings
 from app.models.meal import LogMealRequest, LoggedMeal, MacroNutrients, DailyProgressResponse
@@ -48,7 +46,7 @@ class MealService:
                 "fat": meal_data.fat,
                 "calories": meal_data.calories,
                 "meal_time": meal_data.meal_time.isoformat(),
-                "created_at": datetime.now().isoformat()
+                "created_at": datetime.now().isoformat(),
             }
 
             # Use Supabase REST API to insert meal log
@@ -89,8 +87,9 @@ class MealService:
                     carbs=logged_meal_data['carbs'],
                     fat=logged_meal_data['fat'],
                     calories=logged_meal_data['calories'],
-                    meal_time=datetime.fromisoformat(logged_meal_data['meal_time']),
-                    created_at=datetime.fromisoformat(logged_meal_data['created_at'])
+                    meal_time=self._parse_datetime(logged_meal_data['meal_time']),
+                    created_at=self._parse_datetime(logged_meal_data['created_at']),
+                    notes=logged_meal_data.get('notes')
                 )
 
                 logger.info(f"Meal logged successfully for user: {user_id}")
@@ -121,36 +120,52 @@ class MealService:
         logger.info(f"Fetching today's meals for user: {user_id}")
 
         try:
-            # Get today's date in ISO format
-            today_start = datetime.combine(date.today(), datetime.min.time()).isoformat()
-            today_end = datetime.combine(date.today(), datetime.max.time()).isoformat()
-
+            # Use the SQL function via RPC call
             async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.base_url}/rest/v1/meal_logs",
+                response = await client.post(
+                    f"{self.base_url}/rest/v1/rpc/query_todays_meals",
                     headers={
                         "apikey": self.api_key,
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json"
                     },
-                    params={
-                        "user_id": f"eq.{user_id}",
-                        "meal_time": f"between.{today_start},{today_end}",
-                        "order": "meal_time.desc"
+                    json={
+                        "user_id_param": user_id
                     }
                 )
+
+                # If the function doesn't exist, fall back to a direct query
+                if response.status_code == 404:
+                    logger.warning("RPC function not found, using fallback query")
+                    today = date.today().isoformat()
+
+                    response = await client.get(
+                        f"{self.base_url}/rest/v1/meal_logs",
+                        headers={
+                            "apikey": self.api_key,
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json"
+                        },
+                        params={
+                            "user_id": f"eq.{user_id}",
+                            "created_at": f"ilike.{today}%",
+                            "order": "meal_time.desc"
+                        }
+                    )
 
                 if response.status_code not in (200, 201, 204):
                     logger.error(f"Failed to fetch meals: {response.text}")
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Failed to retrieve meals"
+                        detail=f"Failed to retrieve meals: {response.text}"
                     )
 
                 # Parse the meals
                 meals_data = response.json()
-                meals = [
-                    LoggedMeal(
+                meals = []
+
+                for meal in meals_data:
+                    meals.append(LoggedMeal(
                         id=meal['id'],
                         user_id=meal['user_id'],
                         name=meal['name'],
@@ -158,21 +173,81 @@ class MealService:
                         carbs=meal['carbs'],
                         fat=meal['fat'],
                         calories=meal['calories'],
-                        meal_time=datetime.fromisoformat(meal['meal_time']),
-                        created_at=datetime.fromisoformat(meal['created_at'])
-                    ) for meal in meals_data
-                ]
+                        meal_time=self._parse_datetime(meal['meal_time']),
+                        created_at=self._parse_datetime(meal['created_at']),
+                        notes=meal.get('notes')
+                    ))
 
+                logger.info(f"Retrieved {len(meals)} meals for today")
                 return meals
 
-        except httpx.RequestError as e:
-            logger.error(f"Request error fetching meals: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Error communicating with database: {str(e)}"
-            )
         except Exception as e:
             logger.error(f"Unexpected error fetching meals: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error retrieving meals: {str(e)}"
+            )
+
+    async def get_meals_by_date_range(self, user_id: str, start_date: date, end_date: date) -> List[LoggedMeal]:
+        """Retrieve meals logged by the user within a date range.
+
+        Args:
+            user_id: ID of the user
+            start_date: Start date for the range (inclusive)
+            end_date: End date for the range (inclusive)
+
+        Returns:
+            List of meals logged within the date range
+        """
+        logger.info(f"Fetching meals for user {user_id} from {start_date} to {end_date}")
+
+        try:
+            # Use the SQL function via RPC call
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.base_url}/rest/v1/rpc/query_meals_by_date_range",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "user_id_param": user_id,
+                        "start_date_param": start_date.isoformat(),
+                        "end_date_param": end_date.isoformat()
+                    }
+                )
+
+                if response.status_code not in (200, 201, 204):
+                    logger.error(f"Failed to fetch meals: {response.text}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to retrieve meals: {response.text}"
+                    )
+
+                # Parse the meals
+                meals_data = response.json()
+                meals = []
+
+                for meal in meals_data:
+                    meals.append(LoggedMeal(
+                        id=meal['id'],
+                        user_id=meal['user_id'],
+                        name=meal['name'],
+                        protein=meal['protein'],
+                        carbs=meal['carbs'],
+                        fat=meal['fat'],
+                        calories=meal['calories'],
+                        meal_time=self._parse_datetime(meal['meal_time']),
+                        created_at=self._parse_datetime(meal['created_at']),
+                        notes=meal.get('notes')
+                    ))
+
+                logger.info(f"Retrieved {len(meals)} meals for date range")
+                return meals
+
+        except Exception as e:
+            logger.error(f"Unexpected error fetching meals by date range: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error retrieving meals: {str(e)}"
@@ -212,12 +287,12 @@ class MealService:
                 fat=preferences.get('fat_target', 70)
             )
 
-            # Calculate progress percentages
+            # Calculate progress percentages with zero check
             progress_percentage = {
-                'calories': min(100, (logged_macros.calories / target_macros.calories) * 100),
-                'protein': min(100, (logged_macros.protein / target_macros.protein) * 100),
-                'carbs': min(100, (logged_macros.carbs / target_macros.carbs) * 100),
-                'fat': min(100, (logged_macros.fat / target_macros.fat) * 100)
+                'calories': min(100, (logged_macros.calories / target_macros.calories * 100) if target_macros.calories else 0),
+                'protein': min(100, (logged_macros.protein / target_macros.protein * 100) if target_macros.protein else 0),
+                'carbs': min(100, (logged_macros.carbs / target_macros.carbs * 100) if target_macros.carbs else 0),
+                'fat': min(100, (logged_macros.fat / target_macros.fat * 100) if target_macros.fat else 0)
             }
 
             return DailyProgressResponse(
@@ -232,6 +307,29 @@ class MealService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error calculating daily progress: {str(e)}"
             )
+
+    def _parse_datetime(self, dt_str: str) -> datetime:
+        """Parse a datetime string, handling timezone information.
+
+        Args:
+            dt_str: Datetime string to parse
+
+        Returns:
+            Parsed datetime object
+        """
+        if not dt_str:
+            return datetime.now()
+
+        # Handle potential 'Z' timezone marker
+        if 'Z' in dt_str:
+            dt_str = dt_str.replace('Z', '+00:00')
+
+        try:
+            return datetime.fromisoformat(dt_str)
+        except ValueError:
+            # Fallback for other formats
+            logger.warning(f"Could not parse datetime: {dt_str}")
+            return datetime.now()
 
 
 # Create a singleton instance

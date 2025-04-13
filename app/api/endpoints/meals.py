@@ -16,6 +16,8 @@ from app.models.meal import (
 from app.services.meal_service import meal_service
 from app.services.llm_service import ai_service
 
+# Import the supabase client
+
 router = APIRouter()
 
 
@@ -36,7 +38,6 @@ async def suggest_meals(
     a list of meal suggestions from restaurants in the specified location.
 
     Args:
-        request: The incoming FastAPI request
         meal_request: The meal suggestion request with location and macro targets
         user: The authenticated user (injected by the auth_guard dependency)
 
@@ -47,12 +48,9 @@ async def suggest_meals(
         HTTPException: If there is an error processing the request
     """
     try:
-        # Extract user ID from the authenticated request
-
+        # Extract user ID from the authenticated user
         user_id = user.get("sub")
-        print(user_id)
-         # user_id = request.state.user["sub"]
-        print(user_id)
+
         meal_suggestions = await ai_service.get_meal_suggestions(meal_request)
         return MealSuggestionResponse(meals=meal_suggestions)
 
@@ -152,18 +150,7 @@ async def get_daily_progress(
         request: Request,
         user=Depends(auth_guard)
 ) -> DailyProgressResponse:
-    """Calculate daily macro progress for the current user.
-
-    Args:
-        request: The incoming FastAPI request
-        user: The authenticated user (injected by the auth_guard dependency)
-
-    Returns:
-        Daily progress with logged macros, target macros, and progress percentages
-
-    Raises:
-        HTTPException: If there is an error calculating progress
-    """
+    """Calculate daily macro progress for the current user."""
     try:
         # Extract user ID from the authenticated request
         user_id = request.state.user["sub"]
