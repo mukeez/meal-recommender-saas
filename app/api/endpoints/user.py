@@ -35,8 +35,6 @@ async def get_user_profile(user=Depends(auth_guard)):
     Returns:
         The user profile information
     """
-    # You could fetch additional user data from a database here
-    # For now, we just return the decoded JWT claims
     return {
         "id": user.get("sub"),
         "email": user.get("email"),
@@ -94,7 +92,6 @@ async def get_user_preferences(user=Depends(auth_guard)):
                     detail="User preferences not found"
                 )
 
-            # Return the first (and should be only) preferences record
             return UserPreferences(**preferences_data[0])
 
     except Exception as e:
@@ -129,13 +126,11 @@ async def update_user_preferences(
     try:
         user_id = user.get("sub")
 
-        # Prepare update payload (only include non-None fields)
         update_data = {
             k: v for k, v in preferences_update.dict(exclude_unset=True).items()
             if v is not None
         }
 
-        # Add updated_at timestamp
         update_data['updated_at'] = datetime.utcnow().isoformat()
 
         async with httpx.AsyncClient() as client:
@@ -167,7 +162,6 @@ async def update_user_preferences(
                     detail="User preferences not found"
                 )
 
-            # Return the updated preferences
             return UserPreferences(**updated_preferences[0])
 
     except Exception as e:

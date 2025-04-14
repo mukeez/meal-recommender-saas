@@ -54,9 +54,8 @@ class UserProfileService:
         logger.info(f"Creating profile for user: {profile_data.user_id}")
 
         try:
-            # Prepare profile data for insertion
             profile_record = {
-                "id": profile_data.user_id,  # Use Supabase auth user ID as the profile ID
+                "id": profile_data.user_id,
                 "email": profile_data.email,
                 "display_name": profile_data.display_name,
                 "created_at": profile_data.created_at.isoformat(),
@@ -64,7 +63,6 @@ class UserProfileService:
                 "is_active": True
             }
 
-            # Use Supabase REST API to insert profile data
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.base_url}/rest/v1/user_profiles",
@@ -72,7 +70,7 @@ class UserProfileService:
                         "apikey": self.api_key,
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
-                        "Prefer": "return=representation"  # Get the created record back
+                        "Prefer": "return=representation"
                     },
                     json=profile_record
                 )
@@ -123,7 +121,6 @@ class UserProfileService:
         logger.info(f"Creating default preferences for user: {user_id}")
 
         try:
-            # Default preferences for new users
             default_preferences = {
                 "user_id": user_id,
                 "dietary_restrictions": [],
@@ -137,7 +134,6 @@ class UserProfileService:
                 "updated_at": datetime.now().isoformat()
             }
 
-            # Use Supabase REST API to insert preferences data
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.base_url}/rest/v1/user_preferences",
@@ -145,7 +141,7 @@ class UserProfileService:
                         "apikey": self.api_key,
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
-                        "Prefer": "return=representation"  # Get the created record back
+                        "Prefer": "return=representation"
                     },
                     json=default_preferences
                 )
@@ -196,7 +192,6 @@ class UserProfileService:
         logger.info(f"Retrieving preferences for user: {user_id}")
 
         try:
-            # Use Supabase REST API to fetch user preferences
             async with httpx.AsyncClient() as client:
                 response = await client.get(
                     f"{self.base_url}/rest/v1/user_preferences",
@@ -227,7 +222,6 @@ class UserProfileService:
 
                 preferences_data = response.json()
                 if not preferences_data:
-                    # Return default preferences if none found
                     return {
                         "user_id": user_id,
                         "calorie_target": 2000,
@@ -236,7 +230,6 @@ class UserProfileService:
                         "fat_target": 70
                     }
 
-                # Return the first (and should be only) preferences record
                 return preferences_data[0]
 
         except httpx.RequestError as e:
@@ -253,5 +246,4 @@ class UserProfileService:
             )
 
 
-# Create a singleton instance
 user_service = UserProfileService()

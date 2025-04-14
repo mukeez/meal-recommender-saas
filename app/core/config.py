@@ -45,5 +45,4 @@ class Settings:
 
 
 
-# Create settings instance
 settings = Settings()

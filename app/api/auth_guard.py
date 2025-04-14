@@ -15,7 +15,7 @@ def verify_jwt(token: str):
 
         decoded = jwt.decode(token, settings.SUPABASE_JWT_SECRET, algorithms=["HS256"],options={"verify_aud": False}
                              )
-        return decoded  # contains `sub`, `email`, etc.
+        return decoded
     except jwt.JWTError as e:
         logger.warning(f"JWT validation failed: {str(e)}")
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -31,4 +31,4 @@ async def auth_guard(request: Request):
     token = auth.split(" ")[1]
     user = verify_jwt(token)
     request.state.user = user
-    return user  # Return the user for easier access in endpoints
+    return user

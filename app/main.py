@@ -12,7 +12,6 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 
-# Create FastAPI app
 from app.api.endpoints import meals, user, auth, macros, scan
 from app.core.config import settings
 
@@ -30,7 +29,6 @@ def custom_openapi():
         routes=app.routes,
     )
 
-    # Add security scheme to OpenAPI schema
     openapi_schema["components"]["securitySchemes"] = {
         "bearerAuth": {
             "type": "http",
@@ -39,7 +37,6 @@ def custom_openapi():
         }
     }
 
-    # Apply security globally
     for path in openapi_schema["paths"].values():
         for method in path.values():
             if isinstance(method, dict):

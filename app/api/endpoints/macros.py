@@ -19,22 +19,22 @@ class Sex(str, Enum):
 
 class ActivityLevel(str, Enum):
     """Activity level enumeration for TDEE calculation."""
-    SEDENTARY = "sedentary"  # Little or no exercise
-    MODERATE = "moderate"    # Moderate exercise 3-5 days/week
-    ACTIVE = "active"        # Heavy exercise 6-7 days/week
+    SEDENTARY = "sedentary"
+    MODERATE = "moderate"
+    ACTIVE = "active"
 
 
 class Goal(str, Enum):
     """Fitness goal enumeration."""
-    LOSE = "lose"          # Lose weight
-    MAINTAIN = "maintain"  # Maintain weight
-    GAIN = "gain"          # Gain weight
+    LOSE = "lose"
+    MAINTAIN = "maintain"
+    GAIN = "gain"
 
 
 class UnitSystem(str, Enum):
     """Unit system enumeration for height and weight."""
-    METRIC = "metric"      # kg and cm
-    IMPERIAL = "imperial"  # lbs and inches
+    METRIC = "metric"
+    IMPERIAL = "imperial"
 
 
 class ManualMacros(BaseModel):
@@ -90,7 +90,6 @@ class MacroCalculatorResponse(BaseModel):
     fat: int = Field(..., description="Daily fat target in grams")
 
 
-# Configuration constants
 ACTIVITY_MULTIPLIERS: Dict[ActivityLevel, float] = {
     ActivityLevel.SEDENTARY: 1.2,
     ActivityLevel.MODERATE: 1.55,
@@ -98,20 +97,19 @@ ACTIVITY_MULTIPLIERS: Dict[ActivityLevel, float] = {
 }
 
 GOAL_ADJUSTMENTS: Dict[Goal, float] = {
-    Goal.LOSE: 0.8,    # 20% deficit
-    Goal.MAINTAIN: 1.0, # No adjustment
-    Goal.GAIN: 1.15    # 15% surplus
+    Goal.LOSE: 0.8,
+    Goal.MAINTAIN: 1.0,
+    Goal.GAIN: 1.15
 }
 
 # Macronutrient constants
-PROTEIN_PER_KG = 1.8  # g protein per kg bodyweight
-FAT_PER_KG = 1.0      # g fat per kg bodyweight
+PROTEIN_PER_KG = 1.8
+FAT_PER_KG = 1.0
 PROTEIN_CALS_PER_GRAM = 4
 FAT_CALS_PER_GRAM = 9
 CARB_CALS_PER_GRAM = 4
-MIN_CARBS_GRAMS = 50  # Minimum healthy carbs in grams
+MIN_CARBS_GRAMS = 50
 
-# Unit conversion constants
 LBS_TO_KG = 0.453592
 INCHES_TO_CM = 2.54
 
@@ -128,12 +126,10 @@ def convert_to_metric(weight: float, height: float, unit_system: UnitSystem) -> 
         Tuple of (weight in kg, height in cm)
     """
     if unit_system == UnitSystem.IMPERIAL:
-        # Convert from imperial to metric
         weight_kg = weight * LBS_TO_KG
         height_cm = height * INCHES_TO_CM
         return weight_kg, height_cm
     else:
-        # Already in metric
         return weight, height
 
 
@@ -191,23 +187,19 @@ def calculate_macros(weight_kg: float, calories: int) -> MacroCalculatorResponse
     Returns:
         Calculated macronutrient targets
     """
-    # Calculate protein and fat based on bodyweight
     protein_g = int(weight_kg * PROTEIN_PER_KG)
     protein_cals = protein_g * PROTEIN_CALS_PER_GRAM
 
     fat_g = int(weight_kg * FAT_PER_KG)
     fat_cals = fat_g * FAT_CALS_PER_GRAM
 
-    # Calculate carbs from remaining calories
     carbs_cals = calories - protein_cals - fat_cals
     carbs_g = int(carbs_cals / CARB_CALS_PER_GRAM)
 
-    # Ensure minimum carbs requirement is met
     if carbs_g < MIN_CARBS_GRAMS:
         carbs_g = MIN_CARBS_GRAMS
         carbs_cals = carbs_g * CARB_CALS_PER_GRAM
 
-        # Recalculate total calories
         calories = protein_cals + fat_cals + carbs_cals
 
     return MacroCalculatorResponse(
@@ -245,18 +237,15 @@ async def calculate_macros_endpoint(request: MacroCalculatorRequest) -> MacroCal
         HTTPException: If there is an error processing the request
     """
     try:
-        # If manual macros are provided, use them directly
         if request.manual_macros:
             return MacroCalculatorResponse(**request.manual_macros.dict())
 
-        # Step 1: Convert units to metric if needed
         weight_kg, height_cm = convert_to_metric(
             request.weight,
             request.height,
             request.unit_system
         )
 
-        # Step 2: Calculate BMR
         bmr = calculate_bmr(
             request.sex,
             weight_kg,
@@ -264,13 +253,10 @@ async def calculate_macros_endpoint(request: MacroCalculatorRequest) -> MacroCal
             request.age
         )
 
-        # Step 3: Calculate TDEE
         tdee = calculate_tdee(bmr, request.activity_level)
 
-        # Step 4: Adjust calories based on goal
         calories = adjust_for_goal(tdee, request.goal)
 
-        # Step 5: Calculate macronutrient distribution
         return calculate_macros(weight_kg, calories)
 
     except Exception as e:

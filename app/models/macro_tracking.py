@@ -1,4 +1,3 @@
-# app/models/macro_tracking.py
 """Data models for daily macro tracking.
 
 This module contains Pydantic models for tracking daily macro nutrient intake.

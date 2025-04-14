@@ -16,7 +16,6 @@ from app.models.meal import (
 from app.services.meal_service import meal_service
 from app.services.llm_service import ai_service
 
-# Import the supabase client
 
 router = APIRouter()
 
@@ -87,10 +86,8 @@ async def log_meal(
         HTTPException: If there is an error logging the meal
     """
     try:
-        # Extract user ID from the authenticated request
         user_id = request.state.user["sub"]
 
-        # Log the meal using the meal service
         logged_meal = await meal_service.log_meal(user_id, meal_data)
         return logged_meal
 
@@ -125,10 +122,8 @@ async def get_today_meals(
         HTTPException: If there is an error retrieving meals
     """
     try:
-        # Extract user ID from the authenticated request
         user_id = request.state.user["sub"]
 
-        # Fetch today's meals using the meal service
         today_meals = await meal_service.get_meals_for_today(user_id)
         return today_meals
 
@@ -152,10 +147,8 @@ async def get_daily_progress(
 ) -> DailyProgressResponse:
     """Calculate daily macro progress for the current user."""
     try:
-        # Extract user ID from the authenticated request
         user_id = request.state.user["sub"]
 
-        # Calculate daily progress using the meal service
         daily_progress = await meal_service.get_daily_progress(user_id)
         return daily_progress
 

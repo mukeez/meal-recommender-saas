@@ -72,14 +72,12 @@ async def scan_barcode(
         HTTPException: If the barcode is invalid or not found
     """
     try:
-        # Validate barcode format
         if not barcode.isdigit():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid barcode format. Barcode must contain only digits."
             )
 
-        # Call Nutritionix API to get food info from barcode
         nutritionix_app_id = os.getenv("NUTRITIONIX_APP_ID")
         nutritionix_api_key = os.getenv("NUTRITIONIX_API_KEY")
 
@@ -116,7 +114,6 @@ async def scan_barcode(
                     detail="No nutritional information found for this barcode"
                 )
 
-            # Extract the food information
             food = data["foods"][0]
             food_item = FoodItem(
                 name=food.get("food_name", "Unknown"),
@@ -167,10 +164,8 @@ async def scan_image(
         HTTPException: If the image analysis fails
     """
     try:
-        # Log information about the uploaded file
         logger.info(f"Received image upload: filename={image.filename}, content_type={image.content_type}")
 
-        # Read the image file
         try:
             contents = await image.read()
             logger.info(f"Successfully read image file, size={len(contents)} bytes")
@@ -181,7 +176,6 @@ async def scan_image(
                 detail=f"Error reading uploaded file: {str(e)}"
             )
 
-        # Check if the file is empty
         if not contents or len(contents) == 0:
             logger.error("Uploaded file is empty")
             raise HTTPException(
@@ -189,7 +183,6 @@ async def scan_image(
                 detail="Uploaded file is empty"
             )
 
-        # Validate image format
         try:
             from PIL import Image
             import io
@@ -199,9 +192,7 @@ async def scan_image(
         except Exception as e:
             logger.error(f"Error validating image format: {str(e)}")
             logger.error("This may not be a valid image file")
-            # Continue anyway, letting the vision API try to process it
 
-        # Encode the image as base64
         try:
             encoded_image = base64.b64encode(contents).decode("utf-8")
             logger.info(f"Successfully base64 encoded image, encoded_size={len(encoded_image)}")
@@ -212,7 +203,6 @@ async def scan_image(
                 detail=f"Error processing image: {str(e)}"
             )
 
-        # Check API key configuration
         openai_api_key = settings.OPENAI_API_KEY
         if not openai_api_key:
             logger.error("OpenAI API key not configured")
@@ -221,11 +211,9 @@ async def scan_image(
                 detail="Vision service not properly configured: API key missing"
             )
 
-        # Prepare the model name - try fallback if needed
         model_name = "gpt-4o-mini"
         logger.info(f"Using vision model: {model_name}")
 
-        # Prepare the prompt for food analysis
         prompt = """Analyze this food image and identify all food items.
 For each food item, provide:
 1. Name of the food

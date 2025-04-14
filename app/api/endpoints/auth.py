@@ -11,7 +11,6 @@ from typing import Optional
 from app.core.config import settings
 from app.services.user_service import user_service, UserProfileData
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -103,7 +102,7 @@ async def login(payload: LoginRequest):
             )
 
         logger.info(f"User {payload.email} logged in successfully")
-        return response.json()  # includes access_token, user, etc.
+        return response.json()
 
     except httpx.RequestError as e:
         logger.error(f"Error communicating with Supabase: {str(e)}")
@@ -131,7 +130,6 @@ async def signup(payload: SignupRequest):
         )
 
     try:
-        # Register the user with Supabase Auth
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{settings.SUPABASE_URL}/auth/v1/signup",
@@ -161,8 +159,6 @@ async def signup(payload: SignupRequest):
                 status_code=response.status_code,
                 detail=error_detail
             )
-
-        # More robust user ID extraction
         user_id = (
                 response_data.get('user', {}).get('id') or
                 response_data.get('id') or
@@ -176,7 +172,6 @@ async def signup(payload: SignupRequest):
                 detail="Failed to extract user ID from registration response"
             )
 
-        # Create the user profile
         profile_data = UserProfileData(
             user_id=user_id,
             email=payload.email,
@@ -186,11 +181,9 @@ async def signup(payload: SignupRequest):
         await user_service.create_profile(profile_data)
         logger.info(f"Created profile for user: {user_id}")
 
-        # Create default user preferences
         await user_service.create_default_preferences(user_id)
         logger.info(f"Created default preferences for user: {user_id}")
 
-        # Return the Supabase authentication response with additional information
         logger.info(f"User {payload.email} registered successfully")
         return {
             "message": "User registered successfully",
