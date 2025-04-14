@@ -1,4 +1,3 @@
-# app/services/user_service.py
 """Services for user profile management.
 
 This module provides functions to manage user profiles in the database.

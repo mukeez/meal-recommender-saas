@@ -4,7 +4,6 @@ import logging
 
 from app.core.config import settings
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 def verify_jwt(token: str):
