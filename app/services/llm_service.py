@@ -129,16 +129,13 @@ Respond ONLY with the JSON object, nothing else before or after."""
             AIServiceError: If the response cannot be properly parsed
         """
         try:
-            # Parse the JSON response
             response_data = json.loads(content)
 
-            # Extract the meals array
             if "meals" not in response_data:
                 raise LLMServiceError("Response does not contain 'meals' property")
 
             suggestions_data = response_data["meals"]
 
-            # Convert raw data to Pydantic models
             suggestions = []
             for item in suggestions_data:
                 suggestion = MealSuggestion(**item)
@@ -152,5 +149,4 @@ Respond ONLY with the JSON object, nothing else before or after."""
             raise LLMServiceError(f"Failed to parse meal suggestions: {str(e)}")
 
 
-# Create a singleton instance
 ai_service = OpenAIService()

@@ -37,7 +37,6 @@ class MealService:
         logger.info(f"Logging meal for user: {user_id}")
 
         try:
-            # Prepare meal log data
             meal_record = {
                 "user_id": user_id,
                 "name": meal_data.name,
@@ -49,7 +48,6 @@ class MealService:
                 "created_at": datetime.now().isoformat(),
             }
 
-            # Use Supabase REST API to insert meal log
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.base_url}/rest/v1/meal_logs",
@@ -77,7 +75,6 @@ class MealService:
                         detail=f"Failed to log meal: {error_detail}"
                     )
 
-                # Parse the returned meal log
                 logged_meal_data = response.json()[0]
                 logged_meal = LoggedMeal(
                     id=logged_meal_data['id'],
@@ -134,7 +131,6 @@ class MealService:
                     }
                 )
 
-                # If the function doesn't exist, fall back to a direct query
                 if response.status_code == 404:
                     logger.warning("RPC function not found, using fallback query")
                     today = date.today().isoformat()
@@ -160,7 +156,6 @@ class MealService:
                         detail=f"Failed to retrieve meals: {response.text}"
                     )
 
-                # Parse the meals
                 meals_data = response.json()
                 meals = []
 
@@ -268,7 +263,6 @@ class MealService:
             # Fetch today's meals
             meals = await self.get_meals_for_today(user_id)
 
-            # Calculate total logged macros
             logged_macros = MacroNutrients(
                 calories=sum(meal.calories for meal in meals),
                 protein=sum(meal.protein for meal in meals),
@@ -276,10 +270,8 @@ class MealService:
                 fat=sum(meal.fat for meal in meals)
             )
 
-            # Fetch user preferences to get targets
             preferences = await user_service.get_user_preferences(user_id)
 
-            # Create target macros
             target_macros = MacroNutrients(
                 calories=preferences.get('calorie_target', 2000),
                 protein=preferences.get('protein_target', 150),
@@ -287,7 +279,6 @@ class MealService:
                 fat=preferences.get('fat_target', 70)
             )
 
-            # Calculate progress percentages with zero check
             progress_percentage = {
                 'calories': min(100, (logged_macros.calories / target_macros.calories * 100) if target_macros.calories else 0),
                 'protein': min(100, (logged_macros.protein / target_macros.protein * 100) if target_macros.protein else 0),
@@ -320,17 +311,14 @@ class MealService:
         if not dt_str:
             return datetime.now()
 
-        # Handle potential 'Z' timezone marker
         if 'Z' in dt_str:
             dt_str = dt_str.replace('Z', '+00:00')
 
         try:
             return datetime.fromisoformat(dt_str)
         except ValueError:
-            # Fallback for other formats
             logger.warning(f"Could not parse datetime: {dt_str}")
             return datetime.now()
 
 
-# Create a singleton instance
 meal_service = MealService()
