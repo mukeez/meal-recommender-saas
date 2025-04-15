@@ -3,7 +3,7 @@
 This module contains FastAPI routes for scanning barcodes and food images
 to retrieve nutritional information.
 """
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form
+from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form, Body
 from fastapi.responses import JSONResponse
 import httpx
 import logging
@@ -57,7 +57,7 @@ class ScanResponse(BaseModel):
     description="Scan a UPC barcode and retrieve nutritional information using Nutritionix API."
 )
 async def scan_barcode(
-        barcode: str,
+        barcode: str = Body(..., embed=True),
         user=Depends(auth_guard)
 ) -> ScanResponse:
     """Scan a UPC barcode to get nutritional information.
