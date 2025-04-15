@@ -1,9 +1,6 @@
-"""API endpoints for meal logging and tracking functionality.
-
-This module contains the FastAPI routes for logging meals and tracking daily progress.
+"""API endpoints for retrieving location and address information.
 """
-from fastapi import APIRouter, HTTPException, status, Depends, Request, Query
-from typing import List
+from fastapi import APIRouter, HTTPException, status, Depends, Query
 
 from app.api.auth_guard import auth_guard
 from app.models.location import (
