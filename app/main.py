@@ -12,7 +12,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 
-from app.api.endpoints import meals, user, auth, macros, scan
+from app.api.endpoints import meals, user, auth, macros, scan, location
 from app.core.config import settings
 
 security_scheme = HTTPBearer()
@@ -109,6 +109,11 @@ app.include_router(
     tags=["meals"],
 )
 
+app.include_router(
+    location.router,
+    prefix=f"{settings.API_V1_STR}/location",
+    tags=["location"]
+)
 
 
 @app.get("/", tags=["status"])
