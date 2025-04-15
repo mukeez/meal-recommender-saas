@@ -4,6 +4,7 @@ This module contains FastAPI routes for scanning barcodes and food images
 to retrieve nutritional information.
 """
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form
+from fastapi.responses import JSONResponse
 import httpx
 import logging
 import base64
@@ -73,9 +74,9 @@ async def scan_barcode(
     """
     try:
         if not barcode.isdigit():
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid barcode format. Barcode must contain only digits."
+                content={"detail":"Invalid barcode format. Barcode must contain only digits."}
             )
 
         nutritionix_app_id = os.getenv("NUTRITIONIX_APP_ID")
@@ -83,9 +84,9 @@ async def scan_barcode(
 
         if not nutritionix_app_id or not nutritionix_api_key:
             logger.error("Nutritionix API credentials not configured")
-            raise HTTPException(
+            return HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Nutrition service not properly configured"
+                content={"detail":"Nutrition service not properly configured"}
             )
 
         async with httpx.AsyncClient() as client:
@@ -102,16 +103,16 @@ async def scan_barcode(
 
             if response.status_code != 200:
                 logger.error(f"Nutritionix API error: {response.status_code} - {response.text}")
-                raise HTTPException(
+                return JSONResponse(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Barcode not found or invalid"
+                    content={"detail":"Barcode not found or invalid"}
                 )
 
             data = response.json()
             if "foods" not in data or len(data["foods"]) == 0:
-                raise HTTPException(
+                return JSONResponse(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="No nutritional information found for this barcode"
+                    content={"detail":"No nutritional information found for this barcode"}
                 )
 
             food = data["foods"][0]
@@ -128,9 +129,9 @@ async def scan_barcode(
 
     except httpx.RequestError as e:
         logger.error(f"Error communicating with Nutritionix API: {str(e)}")
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Error communicating with nutrition service"
+            content={"detail":"Error communicating with nutrition service"}
         )
     except Exception as e:
         logger.error(f"Unexpected error scanning barcode: {str(e)}")
@@ -171,16 +172,16 @@ async def scan_image(
             logger.info(f"Successfully read image file, size={len(contents)} bytes")
         except Exception as e:
             logger.error(f"Error reading image file: {str(e)}")
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Error reading uploaded file: {str(e)}"
+                content={"detail":f"Error reading uploaded file: {str(e)}"}
             )
 
         if not contents or len(contents) == 0:
             logger.error("Uploaded file is empty")
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Uploaded file is empty"
+                content={"detail":"Uploaded file is empty"}
             )
 
         try:
@@ -198,17 +199,17 @@ async def scan_image(
             logger.info(f"Successfully base64 encoded image, encoded_size={len(encoded_image)}")
         except Exception as e:
             logger.error(f"Error encoding image to base64: {str(e)}")
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error processing image: {str(e)}"
+                content={"detail":f"Error processing image: {str(e)}"}
             )
 
         openai_api_key = settings.OPENAI_API_KEY
         if not openai_api_key:
             logger.error("OpenAI API key not configured")
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Vision service not properly configured: API key missing"
+                content={"detail":"Vision service not properly configured: API key missing"}
             )
 
         model_name = "gpt-4o-mini"
@@ -280,9 +281,9 @@ Format your response as a valid JSON object with this structure:
                 if response.status_code != 200:
                     logger.error(f"OpenAI API error: {response.status_code}")
                     logger.error(f"Response content: {response.text}")
-                    raise HTTPException(
+                    return JSONResponse(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Error from vision API: {response.text}"
+                        content={"detail":f"Error from vision API: {response.text}"}
                     )
 
                 data = response.json()
@@ -290,23 +291,23 @@ Format your response as a valid JSON object with this structure:
 
         except httpx.TimeoutException:
             logger.error("Request to OpenAI API timed out")
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="Vision analysis timed out. Please try again with a simpler image."
+                content={"detail":"Vision analysis timed out. Please try again with a simpler image."}
             )
         except httpx.RequestError as e:
             logger.error(f"Error making request to OpenAI API: {str(e)}")
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Error connecting to vision service: {str(e)}"
+                content={"detail":f"Error connecting to vision service: {str(e)}"}
             )
         except Exception as e:
             logger.error(f"Unexpected error during API call: {str(e)}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error during vision API call: {str(e)}"
+                content={"detail":f"Error during vision API call: {str(e)}"}
             )
 
         # Extract and parse the AI response
@@ -322,9 +323,9 @@ Format your response as a valid JSON object with this structure:
 
             if "items" not in response_data or not isinstance(response_data["items"], list):
                 logger.error(f"Invalid response format: {response_data}")
-                raise HTTPException(
+                return JSONResponse(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Invalid response format from vision API: 'items' field missing or not a list"
+                    content={"detail":"Invalid response format from vision API: 'items' field missing or not a list"}
                 )
 
             # Convert to FoodItem objects
@@ -381,9 +382,9 @@ Format your response as a valid JSON object with this structure:
 
             if not food_items:
                 logger.warning("No food items were successfully parsed")
-                raise HTTPException(
+                return JSONResponse(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Could not identify any food items in the image"
+                    content={"detail":"Could not identify any food items in the image"}
                 )
 
             logger.info(f"Successfully processed {len(food_items)} food items")
@@ -392,24 +393,24 @@ Format your response as a valid JSON object with this structure:
         except json.JSONDecodeError as e:
             logger.error(f"JSON parse error: {str(e)}")
             logger.error(f"Raw response that failed parsing: {ai_response}")
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error parsing response from vision API: {str(e)}"
+                content={"detail":f"Error parsing response from vision API: {str(e)}"}
             )
         except KeyError as e:
             logger.error(f"Missing key in API response: {str(e)}")
             logger.error(f"API response structure: {data}")
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Unexpected response structure from vision API: {str(e)}"
+                content={"detail":f"Unexpected response structure from vision API: {str(e)}"}
             )
         except Exception as e:
             logger.error(f"Error processing API response: {str(e)}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error processing API response: {str(e)}"
+                content={"detail":f"Error processing API response: {str(e)}"}
             )
 
     except HTTPException:
