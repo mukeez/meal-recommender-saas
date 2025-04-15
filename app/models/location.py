@@ -1,7 +1,7 @@
-"""Data models for meal recommendation API.
+"""Data models for the location API.
 
 This module contains Pydantic models that define the structure of request and
-response data for the meal recommendation API.
+response data for the location API.
 """
 from typing import Optional
 from typing_extensions import Annotated
