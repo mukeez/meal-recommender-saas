@@ -41,6 +41,12 @@ class Settings:
         self.NUTRITIONIX_APP_ID = os.getenv("NUTRITIONIX_APP_ID")
         self.NUTRITIONIX_API_KEY = os.getenv("NUTRITIONIX_API_KEY")
 
+        # Stripe API Settings
+        self.STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+        self.STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+        self.STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
+
+
 
 
 

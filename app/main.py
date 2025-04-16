@@ -1,7 +1,3 @@
-"""Main module for the meal recommendation API.
-
-This module initializes the FastAPI application and includes all routes.
-"""
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,13 +8,12 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 
-from app.api.endpoints import meals, user, auth, macros, scan, location
+from app.api.endpoints import meals, user, auth, macros, scan, location, billing
 from app.core.config import settings
 
 security_scheme = HTTPBearer()
 
 def custom_openapi():
-    """Custom OpenAPI schema to include security definitions."""
     if app.openapi_schema:
         return app.openapi_schema
 
@@ -59,26 +54,22 @@ app = FastAPI(
 
 @app.get("/docs", include_in_schema=False)
 async def custom_swagger_ui_html():
-    """Custom Swagger UI with bearer token support."""
     return get_swagger_ui_html(
         openapi_url="/openapi.json",
         title=f"{settings.PROJECT_NAME} - Swagger UI",
         oauth2_redirect_url="/docs/oauth2-redirect"
     )
 
-# Set custom OpenAPI schema
 app.openapi = custom_openapi
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust this in production to specific origins
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include routers
 app.include_router(
     auth.router,
     prefix=f"{settings.API_V1_STR}/auth",
@@ -115,42 +106,20 @@ app.include_router(
     tags=["location"]
 )
 
-
-@app.get("/", tags=["status"])
-async def root():
-    """Root endpoint to check API status."""
-    return {"status": "online", "service": settings.PROJECT_NAME}
-
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    """Global exception handler for unhandled exceptions."""
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error", "path": str(request.url)},
-    )
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=settings.DEBUG,
-    )
+app.include_router(
+    billing.router,
+    prefix=f"{settings.API_V1_STR}/billing",
+    tags=["billing"]
+)
 
 
 @app.get("/", tags=["status"])
 async def root():
-    """Root endpoint to check API status."""
     return {"status": "online", "service": settings.PROJECT_NAME}
 
 
 @app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    """Global exception handler for unhandled exceptions."""
+async def global_exception_handler(request: Request):
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error", "path": str(request.url)},
