@@ -6,6 +6,7 @@ to perform product search and generate nutritional information
 
 import logging
 
+from fastapi import HTTPException
 from app.core.config import settings
 from app.models.product import Product, ProductList, NutritionFacts
 
@@ -52,10 +53,15 @@ class OpenFoodFactsService:
             result = self.api.product.get(
                 code=barcode, fields=["product_name", "brands", "ingredients_text"]
             )
+            if not result:
+                raise HTTPException(status_code=404, detail="Item not found")
             result["code"] = barcode
             # get nutrition facts
             product = await self.get_nutrition_facts(Product(**result))
             return product
+        except HTTPException:
+            # Re-raise HTTP exceptions without modification
+            raise
         except Exception as e:
             logger.error(f"Failed to get product with error : {e}")
             raise OpenFoodFactsException("Failed to get product")

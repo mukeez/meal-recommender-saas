@@ -154,7 +154,6 @@ class ProductUpdate(BaseModel):
 
 
 class LoggedProduct(Product):
-    id: Annotated[str, Field(..., description="The unique identifier for product")]
     created_at: Annotated[
         datetime,
         Field(..., description="Date when the product was created"),

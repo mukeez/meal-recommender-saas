@@ -14,7 +14,10 @@ from pydantic import BaseModel
 from app.api.auth_guard import auth_guard
 from app.core.config import settings
 from app.services.product_service import product_service
-from app.services.openfoodfacts_service import openfoodfacts_service
+from app.services.openfoodfacts_service import (
+    openfoodfacts_service,
+    OpenFoodFactsException,
+)
 import traceback
 
 # Configure logging
@@ -86,13 +89,11 @@ async def scan_barcode(
         product = await product_service.scan_barcode(barcode=barcode)
         if not product:
             # get product info from openfoodfacts
-            product = await openfoodfacts_service.scan_barcode(
-                barcode=barcode
-            ).model_dump()
+            product = await openfoodfacts_service.scan_barcode(barcode=barcode)
             # insert product into database
             await product_service.log_product(product)
             # return ai generated nutrition facts
-            food_item = FoodItem(**product["gpt_nutrition_facts"])
+            food_item = FoodItem(**product.gpt_nutrition_facts.model_dump())
             return ScanResponse(items=[food_item])
 
         # return verified nutrition facts
@@ -106,7 +107,6 @@ async def scan_barcode(
         # Re-raise HTTP exceptions without modification
         traceback.print_exc()
         raise
-
     except Exception as e:
         logger.error(f"Unexpected error scanning barcode: {str(e)}")
         traceback.print_exc()
