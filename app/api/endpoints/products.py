@@ -40,7 +40,7 @@ async def product_search(
         user: The authenticated user (injected by the auth_guard dependency)
 
     Returns:
-        A response object containing a formatted address(display_name) and a dict of address information
+        A list of paginated products
 
     Raises:
         HTTPException: If there is an error processing the request
