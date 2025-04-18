@@ -19,27 +19,7 @@ class MealLLMService(BaseLLMService):
 
     def __init__(self):
         """Initialize the OpenAI client."""
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        self.model = settings.MODEL_NAME
-
-    async def _send_request(self, prompt: str) -> str:
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a nutrition expert and restaurant knowledge specialist. Provide accurate, concise meal suggestions based on the user's macro requirements.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=2000,
-                temperature=0.7,
-            )
-            return response.choices[0].message.content
-        except openai.OpenAIError as e:
-            raise LLMServiceError(f"OpenAI API error: {e}")
+        super().__init__()
 
     async def get_meal_suggestions(
         self, request: MealSuggestionRequest
@@ -53,11 +33,14 @@ class MealLLMService(BaseLLMService):
             List of meal suggestions that match the user's criteria
 
         Raises:
-            AIServiceError: If there is an error communicating with the API
+            LLMServiceError: If there is an error communicating with the API
                             or processing the response
         """
         try:
-            suggestions = await self.generate_response(request)
+            system_prompt = "You are a nutrition expert and restaurant knowledge specialist. Provide accurate, concise meal suggestions based on the user's macro requirements."
+            suggestions = await self.generate_response(
+                system_prompt=system_prompt, request=request
+            )
             return suggestions
         except openai.OpenAIError as e:
             raise LLMServiceError(f"OpenAI API error: {str(e)}")

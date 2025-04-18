@@ -25,8 +25,7 @@ class OpenFoodFactsService(BaseLLMService):
     def __init__(self):
         """Initialize UserAgent for openfoodfacts api"""
         self.api = openfoodfacts.API(user_agent="meal-saas/1.0")
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        self.model = settings.MODEL_NAME
+        super().__init__()
 
     async def scan_barcode(self, barcode: str) -> Product:
         """
@@ -102,25 +101,6 @@ class OpenFoodFactsService(BaseLLMService):
             logger.error(f"Failed to product search with error : {e}")
             raise LLMServiceError("Failed to perform product search")
 
-    async def _send_request(self, prompt: str) -> str:
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert at providing nutritional information for food items. Given a food item specified by its brand name and a list of its ingredients, provide the estimated nutritional information and typical serving quantity.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=2000,
-                temperature=0.2,
-            )
-            return response.choices[0].message.content
-        except openai.OpenAIError as e:
-            raise LLMServiceError(f"OpenAI API error: {e}")
-
     async def get_nutrition_facts(self, product: Product) -> Product:
         """Get the nutritional information for a given  product
 
@@ -134,7 +114,10 @@ class OpenFoodFactsService(BaseLLMService):
             Product: An updated product object with nutrition_facts
         """
         try:
-            response = await self.generate_response(product)
+            system_prompt = "You are an expert at providing nutritional information for food items. Given a food item specified by its brand name and a list of its ingredients, provide the estimated nutritional information and typical serving quantity."
+            response = await self.generate_response(
+                system_prompt=system_prompt, request=product, temperature=0.2
+            )
             product.gpt_nutrition_facts = response
             return product
         except openai.OpenAIError as e:
