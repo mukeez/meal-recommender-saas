@@ -9,6 +9,7 @@ import logging
 from fastapi import HTTPException
 from app.core.config import settings
 from app.models.product import Product, ProductList, NutritionFacts
+from app.services.base_llm_service import BaseLLMService, LLMServiceError
 
 import openfoodfacts
 import openai
@@ -20,11 +21,7 @@ import json
 logger = logging.getLogger(__name__)
 
 
-class OpenFoodFactsException(Exception):
-    pass
-
-
-class OpenFoodFactsService:
+class OpenFoodFactsService(BaseLLMService):
     def __init__(self):
         """Initialize UserAgent for openfoodfacts api"""
         self.api = openfoodfacts.API(user_agent="meal-saas/1.0")
@@ -46,7 +43,7 @@ class OpenFoodFactsService:
                 ingredients_text, and nutrition facts.
 
         Raises:
-            OpenFoodFactsException: If the product lookup or nutrition-fetching
+            LLMServiceError: If the product lookup or nutrition-fetching
                 operation fails.
         """
         try:
@@ -64,7 +61,7 @@ class OpenFoodFactsService:
             raise
         except Exception as e:
             logger.error(f"Failed to get product with error : {e}")
-            raise OpenFoodFactsException("Failed to get product")
+            raise LLMServiceError("Failed to get product")
 
     async def product_search(
         self, product: str, page: int = 1, page_size: int = 20
@@ -77,7 +74,7 @@ class OpenFoodFactsService:
             page_size (int, optional): The number of products to include on each page. Defaults to 20.
 
         Raises:
-            OpenFoodFactsException: Raised when there's an error generating a response
+            LLMServiceError: Raised when there's an error generating a response
 
         Returns:
             ProductList: A paginated list of products
@@ -103,22 +100,10 @@ class OpenFoodFactsService:
             )
         except Exception as e:
             logger.error(f"Failed to product search with error : {e}")
-            raise OpenFoodFactsException("Failed to perform product search")
+            raise LLMServiceError("Failed to perform product search")
 
-    async def get_nutrition_facts(self, product: Product) -> Product:
-        """Get the nutritional information for a given  product
-
-        Args:
-            product (Product): A product with barcode, product_name and brand_name
-
-        Raises:
-            OpenFoodFactsException: Raised when there's an error generating a response
-
-        Returns:
-            Product: An updated product object with nutrition_facts
-        """
+    async def _send_request(self, prompt: str) -> str:
         try:
-            prompt = self._build_prompt(product)
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -132,18 +117,32 @@ class OpenFoodFactsService:
                 max_tokens=2000,
                 temperature=0.2,
             )
+            return response.choices[0].message.content
+        except openai.OpenAIError as e:
+            raise LLMServiceError(f"OpenAI API error: {e}")
 
-            # Extract and parse the response
-            content = response.choices[0].message.content
-            parsed_content = self._parse_response(content)
-            product.gpt_nutrition_facts = parsed_content
+    async def get_nutrition_facts(self, product: Product) -> Product:
+        """Get the nutritional information for a given  product
+
+        Args:
+            product (Product): A product with barcode, product_name and brand_name
+
+        Raises:
+            LLMServiceError: Raised when there's an error generating a response
+
+        Returns:
+            Product: An updated product object with nutrition_facts
+        """
+        try:
+            response = await self.generate_response(product)
+            product.gpt_nutrition_facts = response
             return product
         except openai.OpenAIError as e:
-            raise OpenFoodFactsException(f"OpenAI API error: {str(e)}")
+            raise LLMServiceError(f"OpenAI API error: {str(e)}")
         except json.JSONDecodeError:
-            raise OpenFoodFactsException("Failed to parse AI response as JSON")
+            raise LLMServiceError("Failed to parse AI response as JSON")
         except Exception as e:
-            raise OpenFoodFactsException(f"Unexpected error: {str(e)}")
+            raise LLMServiceError(f"Unexpected error: {str(e)}")
 
     def _build_prompt(self, product: Product) -> str:
         """build prompt for OpenAI
@@ -156,8 +155,8 @@ class OpenFoodFactsService:
         """
 
         return f"""
-            For the food item with the brand name: {product.brand_name} and the following ingredients: {product.ingredients}, please provide the following information:
-            1. **Brand Name of the Food**: (As it would typically be recognized)
+            For the food item with the brand name: {product.brand_name}, product_name: {product.product_name} and the following ingredients: {product.ingredients}, please provide the following information:
+            1. **Name of the Food**: (As it would typically be recognized)
             2. **Estimated Quantity:** (Provide a common serving size, e.g., "1 serving", "150g", "1 cup". Be as specific as possible based on typical packaging or common usage.)
             3. **Estimated Calories:** (in kcal or Cal)
             4. **Estimated Protein:** (in grams)
@@ -168,7 +167,7 @@ class OpenFoodFactsService:
 
             ```json
             {{
-                "name" : "Brand Name"
+                "name" : "Name of the Food"
                 "quantity": "Quantity",
                 "calories": number,
                 "protein": number,
@@ -184,7 +183,7 @@ class OpenFoodFactsService:
             content (str): Generated response by OpenAI
 
         Raises:
-            OpenFoodFactsException: Raised when there's an error generating a response
+            LLMServiceError: Raised when there's an error generating a response
 
         Returns:
             NutritionFacts: Nutritional information of a product
@@ -193,10 +192,10 @@ class OpenFoodFactsService:
             response = json.loads(content)
             return NutritionFacts(**response)
         except json.JSONDecodeError:
-            raise OpenFoodFactsException("Failed to decode json response")
+            raise LLMServiceError("Failed to decode json response")
         except Exception as e:
             logger.error(f"Failed to parse response with error: {e}")
-            raise OpenFoodFactsException(f"Failed to parse response with error: {e}")
+            raise LLMServiceError(f"Failed to parse response with error: {e}")
 
 
 openfoodfacts_service = OpenFoodFactsService()

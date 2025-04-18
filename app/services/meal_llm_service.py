@@ -3,6 +3,7 @@
 This module provides functions to interact with the OpenAI API
 to generate meal suggestions based on user requirements.
 """
+
 import json
 from typing import Dict, Any, List
 import openai
@@ -10,14 +11,10 @@ from openai import OpenAI
 
 from app.core.config import settings
 from app.models.meal import MealSuggestion, MealSuggestionRequest
+from app.services.base_llm_service import BaseLLMService, LLMServiceError
 
 
-class LLMServiceError(Exception):
-    """Custom exception for AI service errors."""
-    pass
-
-
-class OpenAIService:
+class MealLLMService(BaseLLMService):
     """Service for interacting with OpenAI API."""
 
     def __init__(self):
@@ -25,7 +22,28 @@ class OpenAIService:
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.model = settings.MODEL_NAME
 
-    async def get_meal_suggestions(self, request: MealSuggestionRequest) -> List[MealSuggestion]:
+    async def _send_request(self, prompt: str) -> str:
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a nutrition expert and restaurant knowledge specialist. Provide accurate, concise meal suggestions based on the user's macro requirements.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+                max_tokens=2000,
+                temperature=0.7,
+            )
+            return response.choices[0].message.content
+        except openai.OpenAIError as e:
+            raise LLMServiceError(f"OpenAI API error: {e}")
+
+    async def get_meal_suggestions(
+        self, request: MealSuggestionRequest
+    ) -> List[MealSuggestion]:
         """Get meal suggestions from OpenAI API.
 
         Args:
@@ -39,25 +57,8 @@ class OpenAIService:
                             or processing the response
         """
         try:
-            # Construct the prompt for OpenAI
-            prompt = self._build_prompt(request)
-            # Call the OpenAI API using newer client version
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are a nutrition expert and restaurant knowledge specialist. Provide accurate, concise meal suggestions based on the user's macro requirements."},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=2000,
-                temperature=0.7
-            )
-
-            # Extract and parse the response
-            content = response.choices[0].message.content
-            print(content)
-            return self._parse_response(content)
-
+            suggestions = await self.generate_response(request)
+            return suggestions
         except openai.OpenAIError as e:
             raise LLMServiceError(f"OpenAI API error: {str(e)}")
         except json.JSONDecodeError:
@@ -149,4 +150,4 @@ Respond ONLY with the JSON object, nothing else before or after."""
             raise LLMServiceError(f"Failed to parse meal suggestions: {str(e)}")
 
 
-ai_service = OpenAIService()
+meal_llm_service = MealLLMService()

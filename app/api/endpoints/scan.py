@@ -14,10 +14,7 @@ from pydantic import BaseModel
 from app.api.auth_guard import auth_guard
 from app.core.config import settings
 from app.services.product_service import product_service
-from app.services.openfoodfacts_service import (
-    openfoodfacts_service,
-    OpenFoodFactsException,
-)
+from app.services.openfoodfacts_service import openfoodfacts_service
 import traceback
 
 # Configure logging
