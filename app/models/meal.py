@@ -3,9 +3,10 @@
 This module contains Pydantic models that define the structure of request and
 response data for the meal recommendation API.
 """
+
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, validator, Field
+from pydantic import BaseModel, field_validator, Field
 
 
 class MacroNutrients(BaseModel):
@@ -17,12 +18,13 @@ class MacroNutrients(BaseModel):
         carbs: Target carbohydrates in grams
         fat: Target fat in grams
     """
+
     calories: float
     protein: float
     carbs: float
     fat: float
 
-    @validator('calories', 'protein', 'carbs', 'fat')
+    @field_validator("calories", "protein", "carbs", "fat")
     def validate_positive(cls, value: float) -> float:
         """Validate that nutrient values are positive."""
         if value < 0:
@@ -40,20 +42,21 @@ class MealSuggestionRequest(BaseModel):
         carbs: Target carbohydrates in grams
         fat: Target fat in grams
     """
+
     location: str
     calories: float
     protein: float
     carbs: float
     fat: float
 
-    @validator('location')
+    @field_validator("location")
     def validate_location(cls, value: str) -> str:
         """Validate that location is not empty."""
         if not value.strip():
             raise ValueError("Location cannot be empty")
         return value.strip()
 
-    @validator('calories', 'protein', 'carbs', 'fat')
+    @field_validator("calories", "protein", "carbs", "fat")
     def validate_positive(cls, value: float) -> float:
         """Validate that nutrient values are positive."""
         if value < 0:
@@ -68,6 +71,7 @@ class Restaurant(BaseModel):
         name: Restaurant name
         location: Restaurant address or location description
     """
+
     name: str
     location: Optional[str] = None
 
@@ -81,28 +85,25 @@ class MealSuggestion(BaseModel):
         macros: Estimated macro nutrients
         restaurant: Source restaurant information
     """
+
     name: str
     description: str
     macros: MacroNutrients
     restaurant: Restaurant
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "name": "Grilled Chicken Salad",
                 "description": "Fresh salad with grilled chicken breast, mixed greens, and light dressing",
-                "macros": {
-                    "calories": 450,
-                    "protein": 35,
-                    "carbs": 30,
-                    "fat": 15
-                },
+                "macros": {"calories": 450, "protein": 35, "carbs": 30, "fat": 15},
                 "restaurant": {
                     "name": "Healthy Bites",
-                    "location": "123 Main St, Finchley"
-                }
+                    "location": "123 Main St, Finchley",
+                },
             }
         }
+    }
 
 
 class MealSuggestionResponse(BaseModel):
@@ -111,7 +112,9 @@ class MealSuggestionResponse(BaseModel):
     Attributes:
         meals: List of meal suggestions
     """
+
     meals: List[MealSuggestion]
+
 
 class LogMealRequest(BaseModel):
     """Request model for logging a meal.
@@ -124,12 +127,15 @@ class LogMealRequest(BaseModel):
         calories: Total calories
         meal_time: Timestamp of when the meal was consumed
     """
+
     name: str = Field(..., description="Name of the meal")
     protein: float = Field(..., description="Protein amount in grams", gt=0)
     carbs: float = Field(..., description="Carbohydrate amount in grams", gt=0)
     fat: float = Field(..., description="Fat amount in grams", gt=0)
     calories: float = Field(..., description="Total calories", gt=0)
-    meal_time: Optional[datetime] = Field(default_factory=datetime.now, description="Timestamp of meal consumption")
+    meal_time: Optional[datetime] = Field(
+        default_factory=datetime.now, description="Timestamp of meal consumption"
+    )
 
 
 class LoggedMeal(LogMealRequest):
@@ -140,6 +146,7 @@ class LoggedMeal(LogMealRequest):
         user_id: ID of the user who logged the meal
         created_at: Timestamp when the meal was logged
     """
+
     id: str
     user_id: str
     created_at: datetime
@@ -153,6 +160,7 @@ class DailyProgressResponse(BaseModel):
         target_macros: User's daily macro targets
         progress_percentage: Percentage of macro targets achieved
     """
+
     logged_macros: MacroNutrients
     target_macros: MacroNutrients
     progress_percentage: Dict[str, float]

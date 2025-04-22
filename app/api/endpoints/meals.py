@@ -14,7 +14,7 @@ from app.models.meal import (
     DailyProgressResponse
 )
 from app.services.meal_service import meal_service
-from app.services.llm_service import ai_service
+from app.services.meal_llm_service import meal_llm_service
 
 
 router = APIRouter()
@@ -50,7 +50,7 @@ async def suggest_meals(
         # Extract user ID from the authenticated user
         user_id = user.get("sub")
 
-        meal_suggestions = await ai_service.get_meal_suggestions(meal_request)
+        meal_suggestions = await meal_llm_service.get_meal_suggestions(meal_request)
         return MealSuggestionResponse(meals=meal_suggestions)
 
     except Exception as e:

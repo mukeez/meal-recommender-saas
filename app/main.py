@@ -8,10 +8,20 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 
-from app.api.endpoints import meals, user, auth, macros, scan, location, billing
+from app.api.endpoints import (
+    meals,
+    user,
+    auth,
+    macros,
+    scan,
+    location,
+    billing,
+    products,
+)
 from app.core.config import settings
 
 security_scheme = HTTPBearer()
+
 
 def custom_openapi():
     if app.openapi_schema:
@@ -25,11 +35,7 @@ def custom_openapi():
     )
 
     openapi_schema["components"]["securitySchemes"] = {
-        "bearerAuth": {
-            "type": "http",
-            "scheme": "bearer",
-            "bearerFormat": "JWT"
-        }
+        "bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
     }
 
     for path in openapi_schema["paths"].values():
@@ -39,7 +45,6 @@ def custom_openapi():
 
     app.openapi_schema = openapi_schema
     return app.openapi_schema
-
 
 
 app = FastAPI(
@@ -52,13 +57,15 @@ app = FastAPI(
     debug=settings.DEBUG,
 )
 
+
 @app.get("/docs", include_in_schema=False)
 async def custom_swagger_ui_html():
     return get_swagger_ui_html(
         openapi_url="/openapi.json",
         title=f"{settings.PROJECT_NAME} - Swagger UI",
-        oauth2_redirect_url="/docs/oauth2-redirect"
+        oauth2_redirect_url="/docs/oauth2-redirect",
     )
+
 
 app.openapi = custom_openapi
 
@@ -101,15 +108,15 @@ app.include_router(
 )
 
 app.include_router(
-    location.router,
-    prefix=f"{settings.API_V1_STR}/location",
-    tags=["location"]
+    location.router, prefix=f"{settings.API_V1_STR}/location", tags=["location"]
 )
 
 app.include_router(
-    billing.router,
-    prefix=f"{settings.API_V1_STR}/billing",
-    tags=["billing"]
+    billing.router, prefix=f"{settings.API_V1_STR}/billing", tags=["billing"]
+)
+
+app.include_router(
+    products.router, prefix=f"{settings.API_V1_STR}/products", tags=["products"]
 )
 
 
