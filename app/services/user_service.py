@@ -307,7 +307,7 @@ class UserProfileService:
             )
         
     async def update_user_profile(self, user_id: str, user_data: UpdateUserProfileRequest) -> UserProfile:
-        """Retrieve user preferences.
+        """Update user profile.
 
         Args:
             user_id: Supabase user ID
