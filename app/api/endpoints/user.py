@@ -28,8 +28,7 @@ router = APIRouter()
     "/me",
     summary="Get current user profile",
     description="Retrieve the profile of the currently authenticated user.",
-    response_model=UserProfile,
-    response_model_by_alias=False
+    response_model=UserProfile
 )
 async def get_user_profile(user=Depends(auth_guard)) -> UserProfile:
     """Get the current user's profile.
@@ -57,8 +56,7 @@ async def get_user_profile(user=Depends(auth_guard)) -> UserProfile:
     "/me",
     summary="Update current user profile",
     description="Update the profile of the currently authenticated user.",
-    response_model=UserProfile,
-    response_model_by_alias=False,
+    response_model=UserProfile
 )
 async def update_user_profile(
     email: Optional[str] = Form(None, description="new user email (optional)"),
@@ -73,7 +71,7 @@ async def update_user_profile(
         None, description="new avatar image(optional)"
     ),
     user=Depends(auth_guard),
-) -> UserProfile:
+):
     """Update the current user's profile.
 
     This is a protected endpoint that requires authentication.
