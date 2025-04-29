@@ -317,9 +317,9 @@ class UserProfileService:
             User preferences dictionary
 
         Raises:
-            HTTPException: If there is an error retrieving the preferences
+            HTTPException: If there is an error updating user profile
         """
-        logger.info(f"Retrieving preferences for user: {user_id}")
+        logger.info(f"Updating profile for user: {user_id}")
 
         try:
             user_profile = remove_null_values(user_data.model_dump())
@@ -380,7 +380,7 @@ class UserProfileService:
             public url to image
 
         Raises:
-            HTTPException: If there is an error retrieving the preferences
+            HTTPException: If there is an error uploading user avatar
         """
         logger.info(f"Upload avatar for user: {user_id}")
 
