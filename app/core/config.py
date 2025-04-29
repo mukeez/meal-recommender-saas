@@ -27,6 +27,7 @@ class Settings:
         self.SUPABASE_URL = os.getenv("SUPABASE_URL")
         self.SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
         self.SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
+        self.SUPABASE_BUCKET_NAME = os.getenv("SUPABASE_BUCKET_NAME", "avatars")
 
 
         # AI API Settings
