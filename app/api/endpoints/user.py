@@ -70,7 +70,7 @@ async def update_user_profile(
     ),
     last_name: Optional[str] = Form(None, description="new user last name (optional)"),
     avatar: Optional[UploadFile] = File(
-        None, description="new user profile (optional)"
+        None, description="new avatar image(optional)"
     ),
     user=Depends(auth_guard),
 ) -> UserProfile:
@@ -84,7 +84,7 @@ async def update_user_profile(
         email: new user email(optional)
         first_name: new user first name(optional)
         last_name: new user last name(optional)
-        avatar: new user avatar(optional)
+        avatar: new avatar image(optional)
 
     Returns:
         The user profile information
