@@ -5,7 +5,7 @@ This module contains Pydantic models for user profiles and preferences.
 """
 from typing import List, Optional
 from datetime import datetime
-from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from pydantic import BaseModel, Field, EmailStr, ConfigDict, BeforeValidator
 from typing_extensions import Annotated
 
 
@@ -20,6 +20,7 @@ class UserProfile(BaseModel):
         last_name: User's last name (optional)
         avatar: User's avatar (optional)
         is_active: Whether the user account is active
+        is_pro: Whether the user has a subscription
         created_at: Profile creation timestamp
         updated_at: Profile last update timestamp
     """
@@ -30,6 +31,7 @@ class UserProfile(BaseModel):
     last_name : Annotated[Optional[str], Field(None, description="User's last name(optional)")]
     avatar : Annotated[Optional[str], Field(None, alias="avatar_url", description="User's avatar(optional)")]
     is_active: Annotated[bool, Field(True, description="Whether the user account is active")]
+    is_pro: Annotated[bool, Field(False, description="Whether the user has a subscription"), BeforeValidator(lambda x : bool(x))]
     created_at: datetime
     updated_at: datetime
 
