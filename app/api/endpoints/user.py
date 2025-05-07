@@ -3,7 +3,7 @@
 This module contains FastAPI routes for user-related functionality.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Form, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Form, UploadFile, File, Request
 from datetime import datetime
 import logging
 import httpx
@@ -59,6 +59,7 @@ async def get_user_profile(user=Depends(auth_guard)) -> UserProfile:
     response_model=UserProfile
 )
 async def update_user_profile(
+    request: Request,
     email: Optional[str] = Form(None, description="new user email (optional)"),
     display_name: Optional[str] = Form(
         None, description="new user display name (optional)"
@@ -88,6 +89,7 @@ async def update_user_profile(
         The user profile information
     """
     try:
+        token = request.headers.get("Authorization").split(" ")[1]
         user_id = user.get("sub")
         if avatar:
             if not avatar.content_type.startswith("image/"):
@@ -113,7 +115,7 @@ async def update_user_profile(
                 last_name=last_name,
             )
         profile = await user_service.update_user_profile(
-            user_id=user_id, user_data=user_data
+          token=token, user_id=user_id, user_data=user_data
         )
         return profile
     except HTTPException:
