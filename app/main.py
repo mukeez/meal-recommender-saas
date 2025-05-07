@@ -4,6 +4,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import Callable
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+from contextlib import asynccontextmanager
+import uvicorn
+
 
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
@@ -19,8 +24,30 @@ from app.api.endpoints import (
     products,
 )
 from app.core.config import settings
+from app.utils.tasks import macromeals_tasks
+import logging
+import json
+
+logger = logging.getLogger(__name__)
+
+with open("app/log_config.json", "r") as file:
+    LOGGING_CONFIG = json.load(file)
 
 security_scheme = HTTPBearer()
+
+scheduler = BackgroundScheduler()
+
+# scheduled for midnight each day
+scheduler.add_job(macromeals_tasks.downgrade_users, CronTrigger(hour="0"))
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # start scheduler
+    scheduler.start()
+    yield
+    # shut down scheduler
+    scheduler.shutdown()
 
 
 def custom_openapi():
@@ -51,6 +78,7 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     description="API for recommending meals from restaurants based on macro requirements",
     version="0.1.0",
+    lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
@@ -141,4 +169,5 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         reload=settings.DEBUG,
+        log_config=LOGGING_CONFIG
     )
