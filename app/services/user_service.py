@@ -4,7 +4,7 @@ This module provides functions to manage user profiles in the database.
 """
 from typing import Dict, Any, Optional
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import httpx
 from fastapi import HTTPException, status
@@ -13,6 +13,8 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.models.user import UpdateUserProfileRequest, UserProfile
 from app.utils.helper_functions import remove_null_values
+
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -248,7 +250,7 @@ class UserProfileService:
         
 
     async def get_user_profile(self, user_id: str) -> str | None:
-        """Retrieve user preferences.
+        """Retrieve user profile.
 
         Args:
             user_id: Supabase user ID
@@ -306,7 +308,7 @@ class UserProfileService:
                 detail=f"Error retrieving user profile: {str(e)}"
             )
         
-    async def update_user_profile(self, user_id: str, user_data: UpdateUserProfileRequest) -> UserProfile:
+    async def update_user_profile(self, token:str, user_id: str, user_data: UpdateUserProfileRequest) -> UserProfile:
         """Update user profile.
 
         Args:
@@ -338,6 +340,11 @@ class UserProfileService:
                     json = user_profile
                 )
 
+                if "email" in user_profile.keys():
+                    await self.update_user_auth_email(token=token, user_id=user_id, email=user_profile["email"])
+                    time.sleep(5)
+
+
                 if response.status_code not in (200, 201, 204):
                     error_detail = "Failed to update user profile"
                     try:
@@ -365,7 +372,7 @@ class UserProfileService:
             logger.error(f"Unexpected error updating user profile {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error retrieving user profile: {str(e)}"
+                detail=f"Error updating user profile: {str(e)}"
             )
         
     async def upload_user_avatar(self, user_id: str, file_content: bytes, content_type:str) -> Optional[str]:
@@ -428,6 +435,50 @@ class UserProfileService:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error uploading user avatar: {str(e)}"
+            )
+        
+    async def update_user_auth_email(self, token:str, user_id:str, email:str) -> Optional[str]:
+        try:
+            logger.info(f"updating auth details for user:{user_id}:{email}")
+            async with httpx.AsyncClient() as client:
+                response = await client.put(
+                f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}",
+                headers={
+                    "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+
+                json={"email": email},
+            )
+
+                if response.status_code not in (200, 201, 204):
+                    error_detail = "Failed to update auth details"
+                    try:
+                        error_data = response.json()
+                        if "message" in error_data:
+                            error_detail = error_data["message"]
+                    except Exception:
+                        pass
+
+                    logger.error(f"Updating user details failed: {error_detail}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to update user auth details: {error_detail}"
+                    )
+                return "success"
+
+        except httpx.RequestError as e:
+            logger.error(f"Request error updating user auth details: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database: {str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error updating user auth details {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error uploading user auth details: {str(e)}"
             )
 
 
