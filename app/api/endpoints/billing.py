@@ -145,7 +145,6 @@ async def cancel_subscription(
     """
     Cancel a Stripe subscription.
 
-    - **subscription_id**: the ID of the subscription to cancel (e.g. 'sub_123').
     - **cancel_at_period_end**: if True, the subscription remains active until period end.
     """
     try:
