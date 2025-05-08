@@ -2,7 +2,8 @@
 
 This module contains FastAPI routes for user-related functionality.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+
+from fastapi import APIRouter, Depends, HTTPException, status, Form, UploadFile, File, Request
 from datetime import datetime
 import logging
 import httpx
@@ -11,8 +12,12 @@ from app.api.auth_guard import auth_guard
 from app.core.config import settings
 from app.models.user import (
     UpdateUserPreferencesRequest,
-    UserPreferences
+    UserPreferences,
+    UpdateUserProfileRequest,
+    UserProfile,
 )
+from app.services.user_service import user_service
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +27,10 @@ router = APIRouter()
 @router.get(
     "/me",
     summary="Get current user profile",
-    description="Retrieve the profile of the currently authenticated user."
+    description="Retrieve the profile of the currently authenticated user.",
+    response_model=UserProfile
 )
-async def get_user_profile(user=Depends(auth_guard)):
+async def get_user_profile(user=Depends(auth_guard)) -> UserProfile:
     """Get the current user's profile.
 
     This is a protected endpoint that requires authentication.
@@ -35,14 +41,88 @@ async def get_user_profile(user=Depends(auth_guard)):
     Returns:
         The user profile information
     """
-    return {
-        "id": user.get("sub"),
-        "email": user.get("email"),
-        "profile": {
-            "authenticated": True,
-            "auth_provider": user.get("aud"),
-        }
-    }
+    try:
+        profile = await user_service.get_user_profile(user_id=user.get("sub"))
+        return profile
+    except HTTPException:
+        # re-raise httpexceptions without modification
+        raise
+    except Exception as e:
+        logger.error(f"Failed to retrieve user profile with error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve user profile")
+
+
+@router.patch(
+    "/me",
+    summary="Update current user profile",
+    description="Update the profile of the currently authenticated user.",
+    response_model=UserProfile
+)
+async def update_user_profile(
+    request: Request,
+    email: Optional[str] = Form(None, description="new user email (optional)"),
+    display_name: Optional[str] = Form(
+        None, description="new user display name (optional)"
+    ),
+    first_name: Optional[str] = Form(
+        None, description="new user first name (optional)"
+    ),
+    last_name: Optional[str] = Form(None, description="new user last name (optional)"),
+    avatar: Optional[UploadFile] = File(
+        None, description="new avatar image(optional)"
+    ),
+    user=Depends(auth_guard),
+):
+    """Update the current user's profile.
+
+    This is a protected endpoint that requires authentication.
+
+    Args:
+        user: The authenticated user (injected by the auth_guard dependency)
+        display_name: new user email(optional)
+        email: new user email(optional)
+        first_name: new user first name(optional)
+        last_name: new user last name(optional)
+        avatar: new avatar image(optional)
+
+    Returns:
+        The user profile information
+    """
+    try:
+        token = request.headers.get("Authorization").split(" ")[1]
+        user_id = user.get("sub")
+        if avatar:
+            if not avatar.content_type.startswith("image/"):
+                raise HTTPException(status_code=400, detail="Only image files allowed.")
+            file_content = await avatar.read()
+            content_type = avatar.content_type
+            avatar_url = await user_service.upload_user_avatar(
+                user_id=user_id, file_content=file_content, content_type=content_type
+            )
+            await avatar.close()
+            user_data = UpdateUserProfileRequest(
+                display_name=display_name,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                avatar_url=avatar_url,
+            )
+        else:
+            user_data = UpdateUserProfileRequest(
+                display_name=display_name,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+            )
+        profile = await user_service.update_user_profile(
+          token=token, user_id=user_id, user_data=user_data
+        )
+        return profile
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update user profile with error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update user profile")
 
 
 @router.get(
@@ -50,7 +130,7 @@ async def get_user_profile(user=Depends(auth_guard)):
     response_model=UserPreferences,
     status_code=status.HTTP_200_OK,
     summary="Get user preferences",
-    description="Retrieve the current user's dietary preferences and macro targets."
+    description="Retrieve the current user's dietary preferences and macro targets.",
 )
 async def get_user_preferences(user=Depends(auth_guard)):
     """
@@ -71,16 +151,16 @@ async def get_user_preferences(user=Depends(auth_guard)):
                 headers={
                     "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
                     "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
                 },
-                params={"user_id": "eq." + user_id}
+                params={"user_id": "eq." + user_id},
             )
 
             if response.status_code != 200:
                 logger.error(f"Failed to fetch preferences for user {user_id}")
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User preferences not found"
+                    detail="User preferences not found",
                 )
 
             preferences_data = response.json()
@@ -89,7 +169,7 @@ async def get_user_preferences(user=Depends(auth_guard)):
                 logger.warning(f"No preferences found for user {user_id}")
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User preferences not found"
+                    detail="User preferences not found",
                 )
 
             return UserPreferences(**preferences_data[0])
@@ -98,7 +178,7 @@ async def get_user_preferences(user=Depends(auth_guard)):
         logger.error(f"Error retrieving user preferences: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving preferences: {str(e)}"
+            detail=f"Error retrieving preferences: {str(e)}",
         )
 
 
@@ -107,11 +187,10 @@ async def get_user_preferences(user=Depends(auth_guard)):
     response_model=UserPreferences,
     status_code=status.HTTP_200_OK,
     summary="Update user preferences",
-    description="Update the current user's dietary preferences and macro targets."
+    description="Update the current user's dietary preferences and macro targets.",
 )
 async def update_user_preferences(
-        preferences_update: UpdateUserPreferencesRequest,
-        user=Depends(auth_guard)
+    preferences_update: UpdateUserPreferencesRequest, user=Depends(auth_guard)
 ):
     """
     Update the current user's preferences.
@@ -127,11 +206,12 @@ async def update_user_preferences(
         user_id = user.get("sub")
 
         update_data = {
-            k: v for k, v in preferences_update.dict(exclude_unset=True).items()
+            k: v
+            for k, v in preferences_update.dict(exclude_unset=True).items()
             if v is not None
         }
 
-        update_data['updated_at'] = datetime.utcnow().isoformat()
+        update_data["updated_at"] = datetime.utcnow().isoformat()
 
         async with httpx.AsyncClient() as client:
             response = await client.patch(
@@ -140,17 +220,17 @@ async def update_user_preferences(
                     "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
                     "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
                     "Content-Type": "application/json",
-                    "Prefer": "return=representation"
+                    "Prefer": "return=representation",
                 },
                 params={"user_id": "eq." + user_id},
-                json=update_data
+                json=update_data,
             )
 
             if response.status_code not in (200, 201):
                 logger.error(f"Failed to update preferences for user {user_id}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Failed to update user preferences"
+                    detail="Failed to update user preferences",
                 )
 
             updated_preferences = response.json()
@@ -159,7 +239,7 @@ async def update_user_preferences(
                 logger.warning(f"No preferences found for user {user_id}")
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User preferences not found"
+                    detail="User preferences not found",
                 )
 
             return UserPreferences(**updated_preferences[0])
@@ -168,5 +248,5 @@ async def update_user_preferences(
         logger.error(f"Error updating user preferences: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error updating preferences: {str(e)}"
+            detail=f"Error updating preferences: {str(e)}",
         )

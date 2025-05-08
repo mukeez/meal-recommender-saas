@@ -2,58 +2,35 @@
 
 This module contains FastAPI routes for authentication using Supabase.
 """
-from fastapi import APIRouter, HTTPException, status, Request
-from pydantic import BaseModel, EmailStr, Field, validator
+
+from fastapi import APIRouter, HTTPException, status, Request, Depends, Body
+from fastapi.templating import Jinja2Templates
 import httpx
 import logging
-from typing import Optional
 
 from app.core.config import settings
 from app.services.user_service import user_service, UserProfileData
+from app.services.mail_service import mail_service
+from app.models.auth import LoginRequest, LoginResponse, SignupRequest, SignUpResponse
+from app.api.auth_guard import auth_guard
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+templates = Jinja2Templates(directory="templates")
 
-
-class LoginRequest(BaseModel):
-    """Login request model.
-
-    Attributes:
-        email: User's email address
-        password: User's password
-    """
-    email: EmailStr = Field(..., description="User's email address")
-    password: str = Field(..., description="User's password")
-
-
-class SignupRequest(BaseModel):
-    """Signup request model with basic validation.
-
-    Attributes:
-        email: User's email address
-        password: User's password
-        display_name: User's display name (optional)
-    """
-    email: EmailStr = Field(..., description="User's email address")
-    password: str = Field(..., min_length=6, description="User's password (min 6 characters)")
-    display_name: Optional[str] = Field(None, description="User's display name")
-
-    @validator('password')
-    def validate_password_length(cls, value):
-        """Validate password meets minimum length requirement."""
-        if len(value) < 6:
-            raise ValueError("Password must be at least 6 characters long")
-        return value
 
 
 @router.post(
     "/login",
     status_code=status.HTTP_200_OK,
     summary="Authenticate user",
-    description="Authenticate a user with email and password using Supabase."
+    description="Authenticate a user with email and password using Supabase.",
+    response_model=LoginResponse,
+    response_model_by_alias=False,
 )
-async def login(payload: LoginRequest):
+async def login(payload: LoginRequest) -> LoginResponse:
     """Authenticate a user with Supabase.
 
     Args:
@@ -72,7 +49,7 @@ async def login(payload: LoginRequest):
         logger.error("Supabase configuration is missing")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase configuration is missing. Please check your environment variables."
+            detail="Supabase configuration is missing. Please check your environment variables.",
         )
 
     try:
@@ -81,9 +58,9 @@ async def login(payload: LoginRequest):
                 f"{settings.SUPABASE_URL}/auth/v1/token?grant_type=password",
                 headers={
                     "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
                 },
-                json={"email": payload.email, "password": payload.password}
+                json={"email": payload.email, "password": payload.password},
             )
 
         if response.status_code != 200:
@@ -96,10 +73,7 @@ async def login(payload: LoginRequest):
                 pass
 
             logger.warning(f"Login failed for user {payload.email}: {error_detail}")
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=error_detail
-            )
+            raise HTTPException(status_code=response.status_code, detail=error_detail)
 
         logger.info(f"User {payload.email} logged in successfully")
         return response.json()
@@ -108,7 +82,7 @@ async def login(payload: LoginRequest):
         logger.error(f"Error communicating with Supabase: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Error communicating with authentication service: {str(e)}"
+            detail=f"Error communicating with authentication service: {str(e)}",
         )
 
 
@@ -116,9 +90,10 @@ async def login(payload: LoginRequest):
     "/signup",
     status_code=status.HTTP_201_CREATED,
     summary="Register a new user",
-    description="Register a new user with email and password, and create their profile."
+    description="Register a new user with email and password, and create their profile.",
+    response_model=SignUpResponse,
 )
-async def signup(payload: SignupRequest):
+async def signup(payload: SignupRequest) -> SignUpResponse:
     """Register a new user with Supabase and create their profile."""
     logger.info(f"Signup attempt for user: {payload.email}")
 
@@ -126,7 +101,7 @@ async def signup(payload: SignupRequest):
         logger.error("Supabase configuration is missing")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase configuration is missing"
+            detail="Supabase configuration is missing",
         )
 
     try:
@@ -135,12 +110,13 @@ async def signup(payload: SignupRequest):
                 f"{settings.SUPABASE_URL}/auth/v1/signup",
                 headers={
                     "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
                 },
-                json={"email": payload.email, "password": payload.password, "options": {
-                    "emailRedirectTo": None,
-                    "shouldCreateUser": True
-                }}
+                json={
+                    "email": payload.email,
+                    "password": payload.password,
+                    "options": {"emailRedirectTo": None, "shouldCreateUser": True},
+                },
             )
         print(response.json())
         response_data = response.json()
@@ -155,27 +131,24 @@ async def signup(payload: SignupRequest):
                 pass
 
             logger.warning(f"Signup failed for user {payload.email}: {error_detail}")
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=error_detail
-            )
+            raise HTTPException(status_code=response.status_code, detail=error_detail)
         user_id = (
-                response_data.get('user', {}).get('id') or
-                response_data.get('id') or
-                response_data.get('user_id')
+            response_data.get("user", {}).get("id")
+            or response_data.get("id")
+            or response_data.get("user_id")
         )
 
         if not user_id:
-            logger.error(f"Failed to get user ID from registration response: {response_data}")
+            logger.error(
+                f"Failed to get user ID from registration response: {response_data}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to extract user ID from registration response"
+                detail="Failed to extract user ID from registration response",
             )
 
         profile_data = UserProfileData(
-            user_id=user_id,
-            email=payload.email,
-            display_name=payload.display_name
+            user_id=user_id, email=payload.email, display_name=payload.display_name
         )
 
         await user_service.create_profile(profile_data)
@@ -187,24 +160,21 @@ async def signup(payload: SignupRequest):
         logger.info(f"User {payload.email} registered successfully")
         return {
             "message": "User registered successfully",
-            "user": {
-                "id": user_id,
-                "email": payload.email
-            },
-            "session": response_data.get('session', {})
+            "user": {"id": user_id, "email": payload.email},
+            "session": response_data.get("session", {}),
         }
 
     except httpx.RequestError as e:
         logger.error(f"Error communicating with Supabase: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Error communicating with authentication service: {str(e)}"
+            detail=f"Error communicating with authentication service: {str(e)}",
         )
     except Exception as e:
         logger.error(f"Unexpected error during signup: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error during user registration: {str(e)}"
+            detail=f"Error during user registration: {str(e)}",
         )
 
 
@@ -212,7 +182,7 @@ async def signup(payload: SignupRequest):
     "/reset-password",
     status_code=status.HTTP_200_OK,
     summary="Request password reset",
-    description="Send a password reset email to the user."
+    description="Send a password reset email to the user.",
 )
 async def request_password_reset(request: Request, email: str):
     """Request a password reset for a user.
@@ -233,7 +203,7 @@ async def request_password_reset(request: Request, email: str):
         logger.error("Supabase configuration is missing")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase configuration is missing"
+            detail="Supabase configuration is missing",
         )
 
     try:
@@ -242,9 +212,9 @@ async def request_password_reset(request: Request, email: str):
                 f"{settings.SUPABASE_URL}/auth/v1/recover",
                 headers={
                     "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
                 },
-                json={"email": email}
+                json={"email": email},
             )
 
         if response.status_code != 200:
@@ -257,11 +227,7 @@ async def request_password_reset(request: Request, email: str):
                 pass
 
             logger.warning(f"Password reset failed for {email}: {error_detail}")
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=error_detail
-            )
-
+            raise HTTPException(status_code=response.status_code, detail=error_detail)
         logger.info(f"Password reset email sent to: {email}")
         return {"message": "Password reset instructions sent to your email"}
 
@@ -269,5 +235,69 @@ async def request_password_reset(request: Request, email: str):
         logger.error(f"Error communicating with Supabase: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Error communicating with authentication service: {str(e)}"
+            detail=f"Error communicating with authentication service: {str(e)}",
+        )
+
+
+
+@router.patch(
+    "/change-password",
+    status_code=status.HTTP_200_OK,
+    summary="Request password reset",
+    description="Send a password reset email to the user.",
+)
+async def change_password(request: Request, password: str = Body(..., embed=True, description="new user password"), user=Depends(auth_guard)) -> Dict:
+    """Request a password reset for a user.
+
+    Args:
+        request: The incoming FastAPI request
+        email: User's email address
+
+    Returns:
+        Confirmation message
+
+    Raises:
+        HTTPException: If the request fails
+    """
+
+    if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_ROLE_KEY:
+        logger.error("Supabase configuration is missing")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Supabase configuration is missing",
+        )
+
+    try:
+        token = request.headers.get("Authorization").split(" ")[1]
+
+        async with httpx.AsyncClient() as client:
+            response = await client.put(
+                f"{settings.SUPABASE_URL}/auth/v1/user",
+                headers={
+                    "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+
+                json={"password": password},
+            )
+
+        if response.status_code != 200:
+            error_detail = "Password change failed"
+            try:
+                error_data = response.json()
+                if "error" in error_data and "message" in error_data:
+                    error_detail = error_data["message"]
+            except Exception:
+                pass
+
+            logger.warning(f"Password change failed for {user}: {error_detail}")
+            raise HTTPException(status_code=response.status_code, detail=error_detail)
+        return {"message": "Password change successful"}
+
+    except httpx.RequestError as e:
+        logger.error(f"Error communicating with Supabase: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Error communicating with authentication service: {str(e)}",
         )

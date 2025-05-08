@@ -5,7 +5,8 @@ This module contains Pydantic models for user profiles and preferences.
 """
 from typing import List, Optional
 from datetime import datetime
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, ConfigDict, BeforeValidator
+from typing_extensions import Annotated
 
 
 class UserProfile(BaseModel):
@@ -15,17 +16,27 @@ class UserProfile(BaseModel):
         id: Unique identifier (matches Supabase auth user ID)
         email: User's email address
         display_name: User's display name (optional)
+        first_name: User's first name (optional)
+        last_name: User's last name (optional)
+        avatar: User's avatar (optional)
         is_active: Whether the user account is active
+        is_pro: Whether the user has a subscription
         created_at: Profile creation timestamp
         updated_at: Profile last update timestamp
     """
-    id: str
-    email: EmailStr
-    display_name: Optional[str] = None
-    is_active: bool = True
+    id: Annotated[str, Field(..., description="Unique identifier (matches Supabase auth user ID)")]
+    email: Annotated[EmailStr, Field(..., description="User's email address")]
+    display_name: Annotated[Optional[str], Field(None, description="User's display name(optional)")]
+    first_name : Annotated[Optional[str], Field(None, description="User's first name(optional)")]
+    last_name : Annotated[Optional[str], Field(None, description="User's last name(optional)")]
+    avatar : Annotated[Optional[str], Field(None, alias="avatar_url", description="User's avatar(optional)")]
+    is_active: Annotated[bool, Field(True, description="Whether the user account is active")]
+    is_pro: Annotated[bool, Field(False, description="Whether the user has a subscription"), BeforeValidator(lambda x : bool(x))]
     created_at: datetime
     updated_at: datetime
 
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+    
 
 class UserPreferences(BaseModel):
     """User dietary preferences model.
@@ -61,8 +72,11 @@ class UpdateUserProfileRequest(BaseModel):
         display_name: New display name (optional)
         email: New email address (optional)
     """
-    display_name: Optional[str] = None
-    email: Optional[EmailStr] = None
+    display_name: Annotated[Optional[str], Field(None, description="new display name")]
+    email: Annotated[Optional[EmailStr], Field(None, description="new email address")]
+    first_name: Annotated[Optional[str], Field(None, description="new first name")]
+    last_name: Annotated[Optional[str], Field(None, description="new last name")]
+    avatar_url: Annotated[Optional[str], Field(None, description="new avatar image")]
 
 
 class UpdateUserPreferencesRequest(BaseModel):

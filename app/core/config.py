@@ -27,6 +27,7 @@ class Settings:
         self.SUPABASE_URL = os.getenv("SUPABASE_URL")
         self.SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
         self.SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
+        self.SUPABASE_BUCKET_NAME = os.getenv("SUPABASE_BUCKET_NAME", "avatars")
 
 
         # AI API Settings
@@ -45,6 +46,11 @@ class Settings:
         self.STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
         self.STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
         self.STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
+
+        # AWS SETTINGS
+        self.AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+        self.AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+        self.AWS_REGION = os.getenv("AWS_REGION")
 
 
 

@@ -6,7 +6,7 @@ response data for the location API.
 
 from typing import Optional
 from typing_extensions import Annotated
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class Address(BaseModel):
@@ -28,7 +28,7 @@ class Address(BaseModel):
     country_code: Annotated[
         str, Field(..., description="ISO country code (e.g., 'us' for United States)")
     ]
-    postcode: Annotated[str, Field(..., description="Full country name")]
+    postcode: Annotated[Optional[str], Field(None, description="Full country name")]
     state: Annotated[str, Field(..., description="Full country name")]
     city: Annotated[str, Field(..., description="City name")]
     county: Annotated[str, Field(..., description="County or district name")]
@@ -48,6 +48,9 @@ class Address(BaseModel):
     house_number: Annotated[
         Optional[str], Field(None, description="House or building number, if available")
     ]
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
 
 
 class ReverseGeocode(BaseModel):

@@ -10,8 +10,6 @@ from fastapi import HTTPException, status
 from supabase import create_client
 import json
 
-# from postgrest import PostgrestError
-
 from app.core.config import settings
 from app.models.product import Product, LoggedProduct, ProductList, ProductUpdate
 

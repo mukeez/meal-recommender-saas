@@ -1,6 +1,7 @@
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field
-
+from typing_extensions import Annotated
+from pydantic import BaseModel, EmailStr, Field, field_validator
+from datetime import datetime
 
 class CheckoutSessionRequest(BaseModel):
     email: EmailStr = Field(..., description="User's email address")
@@ -13,7 +14,21 @@ class CheckoutSessionResponse(BaseModel):
 
 
 class SubscriptionStatus(BaseModel):
-    is_active: bool = Field(..., description="Whether the subscription is active")
+    status: str = Field(..., description="status of the subscriiption")
     subscription_id: Optional[str] = Field(None, description="Stripe subscription ID")
-    current_period_end: Optional[int] = Field(None, description="Timestamp when current period ends")
     cancel_at_period_end: Optional[bool] = Field(None, description="Whether subscription cancels at period end")
+
+
+class SubscriptionUpdate(BaseModel):
+    is_pro : Annotated[Optional[bool], Field(None, description="whether the user is subscribe or not")]
+    stripe_subscription_id : Annotated[Optional[str], Field(None, description="stripe subscription id")]
+    subscription_start : Annotated[Optional[str], Field(None, description="start date for stripe subscription")]
+    subscription_end : Annotated[Optional[str], Field(None, description="end date fot stripe subscription")]
+
+    @field_validator("subscription_start", "subscription_end", mode="before")
+    @classmethod
+    def convert_to_iso(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return v
+
