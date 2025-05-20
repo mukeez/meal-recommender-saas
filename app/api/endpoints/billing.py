@@ -9,12 +9,42 @@ from app.models.billing import (
     CheckoutSessionResponse,
     SubscriptionUpdate,
     SubscriptionStatus,
+    SetupIntentResponse,
+    BillingPortalResponse,
+    PublishableKey,
 )
 from app.services.stripe_service import stripe_service, StripeServiceError
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get(
+    "/stripe-config",
+    status_code=status.HTTP_200_OK,
+    response_model=PublishableKey,
+    summary="Retrieve stripe publishable key",
+    description="Retrieve stripe publishable key",
+)
+async def get_stripe_config(user=Depends(auth_guard)) -> PublishableKey:
+    try:
+        if not settings.STRIPE_PUBLISHABLE_KEY:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Publishable key does not exist",
+            )
+        return {"publishable_key": settings.STRIPE_PUBLISHABLE_KEY}
+    except HTTPException as e:
+        raise
+    except Exception as e:
+        logger.info(
+            f"An unexpected error occured while retrieving publishable key: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An error occured"
+        )
 
 
 @router.post(
@@ -49,7 +79,7 @@ async def create_checkout_session(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating checkout session: {str(e)}",
         )
-    
+
     except Exception as e:
         logger.error(f"Unexpected error creating checkout session: {str(e)}")
         raise HTTPException(
@@ -72,11 +102,20 @@ async def stripe_webhook(
 
         event = stripe_service.verify_webhook_signature(payload, stripe_signature)
 
-
-        # check for customer id and update user details
-        if event["type"] == "customer.created":
+        if event["type"] == "setup_intent.succeeded":
             session = event["data"]["object"]
-            await stripe_service.handle_stripe_customer_created(session=session)
+            payment_method = session["payment_method"]
+            customer_id = session["customer"]
+            # create subscription for user
+            await stripe_service.create_subscription(
+                customer_id=customer_id,
+                payment_method_id=payment_method,
+            )
+            logger.info(f"Subscription created for user: {customer_id}")
+            return {
+                "status": "success",
+                "message": "Setup intent and subscription creation completed succesfully",
+            }
 
         elif event["type"] == "checkout.session.completed":
             session = event["data"]["object"]
@@ -87,7 +126,8 @@ async def stripe_webhook(
         elif event["type"] == "customer.subscription.deleted":
             session = event["data"]["object"]
             await stripe_service.update_stripe_user_subscription(
-                customer=session["customer"], subscription_data=SubscriptionUpdate(is_pro=False)
+                customer=session["customer"],
+                subscription_data=SubscriptionUpdate(is_pro=False),
             )
             return {
                 "status": "success",
@@ -112,6 +152,7 @@ async def stripe_webhook(
             await stripe_service.update_stripe_user_subscription(
                 customer=customer, subscription_data=subscription_data
             )
+            return {"status": "success", "message": "Subscription renewed"}
 
         return {"status": "success", "message": f"Event received: {event['type']}"}
 
@@ -131,9 +172,9 @@ async def stripe_webhook(
 
 @router.delete(
     "/cancel",
+    status_code=status.HTTP_200_OK,
     response_model=SubscriptionStatus,
     summary="Cancel a Stripe subscription",
-    tags=["subscriptions"],
 )
 async def cancel_subscription(
     cancel_at_period_end: bool = Query(
@@ -141,7 +182,7 @@ async def cancel_subscription(
         description="Set to True to cancel at period request: CheckoutSessionRequest",
     ),
     user=Depends(auth_guard),
-):
+) -> SubscriptionStatus:
     """
     Cancel a Stripe subscription.
 
@@ -174,3 +215,90 @@ async def cancel_subscription(
         )
 
     return sub
+
+
+@router.post(
+    "/create-setup-intent",
+    status_code=status.HTTP_200_OK,
+    response_model=SetupIntentResponse,
+    summary="Create Stripe Setup Intent",
+    description="Create stripe setup intent to save user payment method for future transactions",
+)
+async def create_setup_intent(
+    request: CheckoutSessionRequest, user=Depends(auth_guard)
+) -> SetupIntentResponse:
+    """
+    Creates a SetupIntent to collect payment method for a customer.
+    """
+    user_id = user["sub"]
+
+    if request.user_id != user_id:
+        logger.warning(f"User ID mismatch: {request.user_id} vs {user.get('sub')}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User ID in request does not match authenticated user",
+        )
+
+    try:
+        # retrieve stripe customer
+        customer_id = await stripe_service.get_stripe_customer(user_id=user_id)
+
+        # create stripe customer
+        if not customer_id:
+            customer_id = await stripe_service.create_stripe_customer(
+                user_id=user_id, email=request.email
+            )
+
+        # create ephemeral key for client side
+        ephemeral_key = await stripe_service.create_ephemeral_key(
+            user_id=user_id, customer_id=customer_id
+        )
+
+        # create sripe setup intent
+        setup_intent_key = await stripe_service.create_setup_intent(
+            user_id=user_id, customer_id=customer_id
+        )
+        return {
+            "client_secret": setup_intent_key,
+            "ephemeral_key": ephemeral_key,
+            "customer_id": customer_id,
+        }
+
+    except HTTPException as e:
+        raise
+    except Exception as e:
+        logger.info(
+            f"An unexpected error occured while creating setup intent: {str(e)}"
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to create setup intent")
+
+
+@router.post(
+    "/create-customer-portal-session",
+    status_code=status.HTTP_200_OK,
+    response_model=BillingPortalResponse,
+    summary="Stripe billing portal session",
+    description="Create stripe billing portal session for customer",
+)
+async def create_customer_portal_session(
+    request: Request, user=Depends(auth_guard)
+) -> BillingPortalResponse:
+    user_id = user.get("sub")
+
+    customer_id = await stripe_service.get_stripe_customer(user_id=user_id)
+
+    if not customer_id:
+        raise HTTPException(status_code=400, detail="Customer not found.")
+
+    try:
+        portal_url = await stripe_service.create_customer_billing_portal(
+            user_id=user_id, customer_id=customer_id
+        )
+        return portal_url
+    except Exception as e:
+        logger.info(
+            f"An unexpected error occured while creating billing portal session for user: {user_id} with error: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create billing portal session"
+        )
