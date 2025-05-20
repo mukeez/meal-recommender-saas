@@ -2,6 +2,7 @@
 
 This module provides functions to manage user profiles in the database.
 """
+
 from typing import Dict, Any, Optional
 import logging
 from datetime import datetime, timedelta
@@ -28,6 +29,7 @@ class UserProfileData(BaseModel):
         display_name: User's display name (optional)
         created_at: Profile creation timestamp
     """
+
     user_id: str
     email: str
     display_name: Optional[str] = None
@@ -63,7 +65,7 @@ class UserProfileService:
                 "display_name": profile_data.display_name,
                 "created_at": profile_data.created_at.isoformat(),
                 "updated_at": profile_data.created_at.isoformat(),
-                "is_active": True
+                "is_active": True,
             }
 
             async with httpx.AsyncClient() as client:
@@ -73,9 +75,9 @@ class UserProfileService:
                         "apikey": self.api_key,
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
-                        "Prefer": "return=representation"
+                        "Prefer": "return=representation",
                     },
-                    json=profile_record
+                    json=profile_record,
                 )
 
                 if response.status_code not in (201, 200):
@@ -90,23 +92,25 @@ class UserProfileService:
                     logger.error(f"Profile creation failed: {error_detail}")
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to create user profile: {error_detail}"
+                        detail=f"Failed to create user profile",
                     )
 
-                logger.info(f"Profile created successfully for user: {profile_data.user_id}")
+                logger.info(
+                    f"Profile created successfully for user: {profile_data.user_id}"
+                )
                 return response.json()
 
         except httpx.RequestError as e:
             logger.error(f"Request error creating profile: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Error communicating with database: {str(e)}"
+                detail=f"Error communicating with database",
             )
         except Exception as e:
             logger.error(f"Unexpected error creating profile: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error creating user profile: {str(e)}"
+                detail=f"Error creating user profile",
             )
 
     async def create_default_preferences(self, user_id: str) -> Dict[str, Any]:
@@ -134,7 +138,7 @@ class UserProfileService:
                 "carbs_target": 200,
                 "fat_target": 70,
                 "created_at": datetime.now().isoformat(),
-                "updated_at": datetime.now().isoformat()
+                "updated_at": datetime.now().isoformat(),
             }
 
             async with httpx.AsyncClient() as client:
@@ -144,9 +148,9 @@ class UserProfileService:
                         "apikey": self.api_key,
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
-                        "Prefer": "return=representation"
+                        "Prefer": "return=representation",
                     },
-                    json=default_preferences
+                    json=default_preferences,
                 )
 
                 if response.status_code not in (201, 200):
@@ -161,7 +165,7 @@ class UserProfileService:
                     logger.error(f"Preferences creation failed: {error_detail}")
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to create user preferences: {error_detail}"
+                        detail=f"Failed to create user preferences",
                     )
 
                 logger.info(f"Default preferences created for user: {user_id}")
@@ -171,13 +175,13 @@ class UserProfileService:
             logger.error(f"Request error creating preferences: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Error communicating with database: {str(e)}"
+                detail=f"Error communicating with database",
             )
         except Exception as e:
             logger.error(f"Unexpected error creating preferences: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error creating user preferences: {str(e)}"
+                detail=f"Error creating user preferences",
             )
 
     async def get_user_preferences(self, user_id: str) -> Dict[str, Any]:
@@ -201,11 +205,9 @@ class UserProfileService:
                     headers={
                         "apikey": self.api_key,
                         "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
+                        "Content-Type": "application/json",
                     },
-                    params={
-                        "user_id": f"eq.{user_id}"
-                    }
+                    params={"user_id": f"eq.{user_id}"},
                 )
 
                 if response.status_code not in (200, 201, 204):
@@ -220,7 +222,7 @@ class UserProfileService:
                     logger.error(f"Preferences retrieval failed: {error_detail}")
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to retrieve user preferences: {error_detail}"
+                        detail=f"Failed to retrieve user preferences",
                     )
 
                 preferences_data = response.json()
@@ -230,7 +232,7 @@ class UserProfileService:
                         "calorie_target": 2000,
                         "protein_target": 150,
                         "carbs_target": 200,
-                        "fat_target": 70
+                        "fat_target": 70,
                     }
 
                 return preferences_data[0]
@@ -239,15 +241,14 @@ class UserProfileService:
             logger.error(f"Request error retrieving preferences: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Error communicating with database: {str(e)}"
+                detail=f"Error communicating with database",
             )
         except Exception as e:
             logger.error(f"Unexpected error retrieving preferences: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error retrieving user preferences: {str(e)}"
+                detail=f"Error retrieving user preferences",
             )
-        
 
     async def get_user_profile(self, user_id: str) -> str | None:
         """Retrieve user profile.
@@ -270,11 +271,9 @@ class UserProfileService:
                     headers={
                         "apikey": self.api_key,
                         "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
+                        "Content-Type": "application/json",
                     },
-                    params={
-                        "id": f"eq.{user_id}"
-                    }
+                    params={"id": f"eq.{user_id}"},
                 )
 
                 if response.status_code not in (200, 201, 204):
@@ -289,7 +288,7 @@ class UserProfileService:
                     logger.error(f"Profile retrieval failed: {error_detail}")
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to retrieve user profile: {error_detail}"
+                        detail=f"Failed to retrieve user profile",
                     )
 
                 profile_data = response.json()[0]
@@ -299,16 +298,18 @@ class UserProfileService:
             logger.error(f"Request error retrieving profile: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Error communicating with database: {str(e)}"
+                detail=f"Error communicating with database: {str(e)}",
             )
         except Exception as e:
             logger.error(f"Unexpected error retrieving profile: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error retrieving user profile: {str(e)}"
+                detail=f"Error retrieving user profile: {str(e)}",
             )
-        
-    async def update_user_profile(self, token:str, user_id: str, user_data: UpdateUserProfileRequest) -> UserProfile:
+
+    async def update_user_profile(
+        self, token: str, user_id: str, user_data: UpdateUserProfileRequest
+    ) -> UserProfile:
         """Update user profile.
 
         Args:
@@ -332,18 +333,17 @@ class UserProfileService:
                         "apikey": self.api_key,
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
-                        "Prefer": "return=representation"
+                        "Prefer": "return=representation",
                     },
-                    params={
-                        "id": f"eq.{user_id}"
-                    },
-                    json = user_profile
+                    params={"id": f"eq.{user_id}"},
+                    json=user_profile,
                 )
 
                 if "email" in user_profile.keys():
-                    await self.update_user_auth_email(token=token, user_id=user_id, email=user_profile["email"])
+                    await self.update_user_auth_email(
+                        token=token, user_id=user_id, email=user_profile["email"]
+                    )
                     time.sleep(5)
-
 
                 if response.status_code not in (200, 201, 204):
                     error_detail = "Failed to update user profile"
@@ -357,25 +357,27 @@ class UserProfileService:
                     logger.error(f"Update profile failed: {error_detail}")
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to update user profile: {error_detail}"
+                        detail=f"Failed to update user profile",
                     )
                 response_data = response.json()[0]
                 return UserProfile(**response_data)
 
         except httpx.RequestError as e:
-            logger.error(f"Request error updating user profile: {str(e)}")
+            logger.error(f"Error communicating with database: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Error communicating with database: {str(e)}"
+                detail=f"Failed to update user profile",
             )
         except Exception as e:
             logger.error(f"Unexpected error updating user profile {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error updating user profile: {str(e)}"
+                detail=f"Failed to update user profile",
             )
-        
-    async def upload_user_avatar(self, user_id: str, file_content: bytes, content_type:str) -> Optional[str]:
+
+    async def upload_user_avatar(
+        self, user_id: str, file_content: bytes, content_type: str
+    ) -> Optional[str]:
         """Upload user avatar to supabase bucket.
 
         Args:
@@ -402,9 +404,9 @@ class UserProfileService:
                     headers={
                         "apikey": self.api_key,
                         "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": content_type
+                        "Content-Type": content_type,
                     },
-                    content=file_content
+                    content=file_content,
                 )
 
                 if response.status_code not in (200, 201, 204):
@@ -416,41 +418,42 @@ class UserProfileService:
                     except Exception:
                         pass
 
-                    logger.error(f"Uploading avatar failed: {error_detail}")
+                    logger.error(f"Uploading avatar failed: {str(error_detail)}")
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to upload user avatar: {error_detail}"
+                        detail=f"Failed to upload user avatar",
                     )
 
                 return avatar_url
 
         except httpx.RequestError as e:
-            logger.error(f"Request error uploading user avatar: {str(e)}")
+            logger.error(f"Error communicating with database: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Error communicating with database: {str(e)}"
+                detail=f"Failed to update user profile",
             )
         except Exception as e:
             logger.error(f"Unexpected error uploading user avatar {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error uploading user avatar: {str(e)}"
+                detail=f"Failed to upload user avatar",
             )
-        
-    async def update_user_auth_email(self, token:str, user_id:str, email:str) -> Optional[str]:
+
+    async def update_user_auth_email(
+        self, token: str, user_id: str, email: str
+    ) -> Optional[str]:
         try:
             logger.info(f"updating auth details for user:{user_id}:{email}")
             async with httpx.AsyncClient() as client:
                 response = await client.put(
-                f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}",
-                headers={
-                    "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-
-                json={"email": email},
-            )
+                    f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}",
+                    headers={
+                        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={"email": email},
+                )
 
                 if response.status_code not in (200, 201, 204):
                     error_detail = "Failed to update auth details"
@@ -464,7 +467,7 @@ class UserProfileService:
                     logger.error(f"Updating user details failed: {error_detail}")
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to update user auth details: {error_detail}"
+                        detail=f"Failed to update user auth details: {error_detail}",
                     )
                 return "success"
 
@@ -472,13 +475,13 @@ class UserProfileService:
             logger.error(f"Request error updating user auth details: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Error communicating with database: {str(e)}"
+                detail=f"Error communicating with database",
             )
         except Exception as e:
             logger.error(f"Unexpected error updating user auth details {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error uploading user auth details: {str(e)}"
+                detail=f"Error uploading user auth details",
             )
 
 
