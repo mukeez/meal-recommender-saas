@@ -198,7 +198,7 @@ class SupabaseService(BaseDatabaseService):
         try:
             logger.info(f"Fetching data from table {table_name}")
             query = kwargs.get("query", "*")
-            cols = kwargs["cols"]
+            cols = kwargs.get("cols", None)
             if cols:
                 response = (
                     self.supabase_client.table(table_name)
@@ -209,16 +209,14 @@ class SupabaseService(BaseDatabaseService):
                 )
             else:
                 response = (
-                self.supabase_client.table(table_name)
-                .select(query)
-                .execute()
-                .model_dump()
-            )
+                    self.supabase_client.table(table_name)
+                    .select(query)
+                    .execute()
+                    .model_dump()
+                )
             return response.get("data", [])
         except Exception as e:
             logger.error(f"Failed to fetch data from {table_name} with error: {str(e)}")
             raise SupbaseException(
                 f"An error occured while fetching data from table: {table_name}"
             )
-
-
