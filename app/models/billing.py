@@ -2,6 +2,7 @@ from typing import Optional
 from typing_extensions import Annotated
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
+from app.core.config import settings
 
 class CheckoutSessionRequest(BaseModel):
     email: EmailStr = Field(..., description="User's email address")
@@ -32,3 +33,16 @@ class SubscriptionUpdate(BaseModel):
             return v.isoformat()
         return v
 
+
+class SetupIntentResponse(BaseModel):
+    client_secret : Annotated[str, Field(..., description="client secret for setup intent")]
+    ephemeral_key : Annotated[str, Field(..., description="ephemeral key associated with a stripe customer to be used on the client side")]
+    customer_id : Annotated[str, Field(..., description="stripe customer id")]
+    publishable_key : Annotated[str, Field(settings.STRIPE_PUBLISHABLE_KEY, description="stripe publishable key to be used on the client side")]
+
+class BillingPortalResponse(BaseModel):
+    url: str = Field(..., description="URL to redirect to Stripe customer billing portal")
+
+
+class PublishableKey(BaseModel):
+    publishable_key : Annotated[str, Field(settings.STRIPE_PUBLISHABLE_KEY, description="stripe publishable key to be used on the client side")]
