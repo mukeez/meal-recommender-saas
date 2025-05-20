@@ -79,9 +79,9 @@ app = FastAPI(
     description="API for recommending meals from restaurants based on macro requirements",
     version="0.1.0",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
     debug=settings.DEBUG,
 )
 
@@ -169,5 +169,5 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         reload=settings.DEBUG,
-        log_config=LOGGING_CONFIG
+        log_config=LOGGING_CONFIG,
     )
