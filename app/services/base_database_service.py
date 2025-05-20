@@ -1,5 +1,5 @@
-
 from typing import List, Type, Any, Optional, Union
+
 
 class BaseDatabaseService:
     """
@@ -13,6 +13,7 @@ class BaseDatabaseService:
     The class also maintains a registry of its subclasses to allow for
     dynamic discovery of available database service implementations.
     """
+
     # class‐level list of all concrete subclasses
     subclasses: List[Type["BaseDatabaseService"]] = []
 
@@ -45,9 +46,9 @@ class BaseDatabaseService:
             NotImplementedError: If this method is called directly from the
                                  BaseDatabaseService class.
         """
-        cls_name = type(self).__name__ 
+        cls_name = type(self).__name__
         raise NotImplementedError(f"{cls_name}.update_data not implemented")
-    
+
     async def insert_data(self, table_name: str, data: Any, **kwargs) -> Any:
         """
         Inserts a new record into the specified table.
@@ -65,10 +66,10 @@ class BaseDatabaseService:
             NotImplementedError: If this method is called directly from the
                                  BaseDatabaseService class.
         """
-        cls_name = type(self).__name__ 
+        cls_name = type(self).__name__
         raise NotImplementedError(f"{cls_name}.insert_data not implemented")
-    
-    async def delete_data(self, table_name:str) -> Any:
+
+    async def delete_data(self, table_name: str) -> Any:
         """
         Deletes one or more records from the specified table.
 
@@ -84,11 +85,10 @@ class BaseDatabaseService:
             NotImplementedError: If this method is called directly from the
                                  BaseDatabaseService class.
         """
-        cls_name = type(self).__name__ 
+        cls_name = type(self).__name__
         raise NotImplementedError(f"{cls_name}.delete_data not implemented")
 
-
-    async def select_data(self, table_name:str, **kwargs) -> Any:
+    async def select_data(self, table_name: str, **kwargs) -> Any:
         """
         Selects records from the specified table based on provided criteria.
 
@@ -105,6 +105,5 @@ class BaseDatabaseService:
             NotImplementedError: If this method is called directly from the
                                  BaseDatabaseService class.
         """
-        cls_name = type(self).__name__ 
+        cls_name = type(self).__name__
         raise NotImplementedError(f"{cls_name}.select_data not implemented")
-        
