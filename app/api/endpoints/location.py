@@ -1,11 +1,9 @@
-"""API endpoints for retrieving location and address information.
-"""
+"""API endpoints for retrieving location and address information."""
+
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 
 from app.api.auth_guard import auth_guard
-from app.models.location import (
-    ReverseGeocode
-)
+from app.models.location import ReverseGeocode
 from app.services.location_service import location_service
 import logging
 
@@ -23,9 +21,9 @@ router = APIRouter()
     description="Get human-readable address information from geographic coordinates (latitude and longitude)",
 )
 async def reverse_geocode(
-        latitude: float = Query(None),
-        longitude: float = Query(None),
-        user=Depends(auth_guard)
+    latitude: float = Query(None),
+    longitude: float = Query(None),
+    user=Depends(auth_guard),
 ) -> ReverseGeocode:
     """Get the location address.
 
@@ -45,16 +43,16 @@ async def reverse_geocode(
     try:
         # reverse geocode latitude and longitude coords
         logger.info(f"Reverse Geocode:[latitude:{latitude}][longitude:{longitude}]")
-        location = await location_service.reverse_geocode(latitude=latitude, longitude=longitude)
+        location = await location_service.reverse_geocode(
+            latitude=latitude, longitude=longitude
+        )
         return location
-    
+
     except HTTPException:
         raise
 
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving location address: {str(e)}"
+            detail=f"Error retrieving location address",
         )
-
-

@@ -3,7 +3,16 @@
 This module contains FastAPI routes for user-related functionality.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Form, UploadFile, File, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    status,
+    Form,
+    UploadFile,
+    File,
+    Request,
+)
 from datetime import datetime
 import logging
 import httpx
@@ -18,6 +27,7 @@ from app.models.user import (
 )
 from app.services.user_service import user_service
 from typing import Optional
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +38,7 @@ router = APIRouter()
     "/me",
     summary="Get current user profile",
     description="Retrieve the profile of the currently authenticated user.",
-    response_model=UserProfile
+    response_model=UserProfile,
 )
 async def get_user_profile(user=Depends(auth_guard)) -> UserProfile:
     """Get the current user's profile.
@@ -56,11 +66,10 @@ async def get_user_profile(user=Depends(auth_guard)) -> UserProfile:
     "/me",
     summary="Update current user profile",
     description="Update the profile of the currently authenticated user.",
-    response_model=UserProfile
+    response_model=UserProfile,
 )
 async def update_user_profile(
     request: Request,
-    email: Optional[str] = Form(None, description="new user email (optional)"),
     display_name: Optional[str] = Form(
         None, description="new user display name (optional)"
     ),
@@ -68,9 +77,7 @@ async def update_user_profile(
         None, description="new user first name (optional)"
     ),
     last_name: Optional[str] = Form(None, description="new user last name (optional)"),
-    avatar: Optional[UploadFile] = File(
-        None, description="new avatar image(optional)"
-    ),
+    avatar: Optional[UploadFile] = File(None, description="new avatar image(optional)"),
     user=Depends(auth_guard),
 ):
     """Update the current user's profile.
@@ -80,7 +87,6 @@ async def update_user_profile(
     Args:
         user: The authenticated user (injected by the auth_guard dependency)
         display_name: new user email(optional)
-        email: new user email(optional)
         first_name: new user first name(optional)
         last_name: new user last name(optional)
         avatar: new avatar image(optional)
@@ -102,7 +108,6 @@ async def update_user_profile(
             await avatar.close()
             user_data = UpdateUserProfileRequest(
                 display_name=display_name,
-                email=email,
                 first_name=first_name,
                 last_name=last_name,
                 avatar_url=avatar_url,
@@ -110,12 +115,11 @@ async def update_user_profile(
         else:
             user_data = UpdateUserProfileRequest(
                 display_name=display_name,
-                email=email,
                 first_name=first_name,
                 last_name=last_name,
             )
         profile = await user_service.update_user_profile(
-          token=token, user_id=user_id, user_data=user_data
+            token=token, user_id=user_id, user_data=user_data
         )
         return profile
     except HTTPException:
@@ -176,6 +180,7 @@ async def get_user_preferences(user=Depends(auth_guard)):
 
     except Exception as e:
         logger.error(f"Error retrieving user preferences: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving preferences: {str(e)}",
@@ -207,11 +212,11 @@ async def update_user_preferences(
 
         update_data = {
             k: v
-            for k, v in preferences_update.dict(exclude_unset=True).items()
+            for k, v in preferences_update.model_dump(exclude_unset=True).items()
             if v is not None
         }
 
-        update_data["updated_at"] = datetime.utcnow().isoformat()
+        update_data["updated_at"] = datetime.now().isoformat()
 
         async with httpx.AsyncClient() as client:
             response = await client.patch(
