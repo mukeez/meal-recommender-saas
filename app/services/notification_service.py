@@ -1,3 +1,4 @@
+import datetime
 import logging
 from typing import Optional
 
@@ -77,6 +78,33 @@ class NotificationService:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error logging notification: {str(e)}",
+            )
+
+    async def mark_notification_as_read(
+        self, notification_id: str, user_id: str, status_: str = "read"
+    ) -> dict:
+        try:
+            response = (
+                self.client.table("notifications")
+                .update({"status": status_, "read_at": str(datetime.datetime.now())})
+                .eq("id", notification_id)
+                .eq("user_id", user_id)
+                .execute()
+                .model_dump()
+            )
+            if response["data"]:
+                logger.info(f"Notification {notification_id} marked as read")
+                return {"message": "Notification marked as read"}
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Notification not found",
+                )
+        except Exception as e:
+            logger.error(f"Unexpected error marking notification as read: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error marking notification as read: {str(e)}",
             )
 
 
