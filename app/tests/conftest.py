@@ -11,6 +11,8 @@ from app.tests.fixtures.products import *
 from app.tests.fixtures.location import mock_location_reverse_geocode
 from app.tests.fixtures.auth import mock_auth_httpx_client
 from app.tests.fixtures.billing import *
+from app.tests.fixtures.notification import mock_notification_log_notification
+from app.tests.fixtures.notification import mock_notification_get_notifications
 from app.tests.constants.user import UserTestConstants
 import asyncio
 

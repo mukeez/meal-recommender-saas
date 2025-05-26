@@ -49,7 +49,7 @@ async def get_user_notifications(
 
 @router.post(
     "/",
-    status_code=status.HTTP_200_OK,
+    status_code=status.HTTP_201_CREATED,
     summary="Log a user notification",
     description="Log a new notification for the current user.",
 )
