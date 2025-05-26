@@ -7,6 +7,7 @@ from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field, EmailStr, ConfigDict, BeforeValidator
 from typing_extensions import Annotated
+from app.utils.helper_functions import parse_datetime
 
 
 class UserProfile(BaseModel):
@@ -29,11 +30,11 @@ class UserProfile(BaseModel):
     display_name: Annotated[Optional[str], Field(None, description="User's display name(optional)")]
     first_name : Annotated[Optional[str], Field(None, description="User's first name(optional)")]
     last_name : Annotated[Optional[str], Field(None, description="User's last name(optional)")]
-    avatar : Annotated[Optional[str], Field(None, alias="avatar_url", description="User's avatar(optional)")]
+    avatar_url : Annotated[Optional[str], Field(None, description="User's avatar(optional)")]
     is_active: Annotated[bool, Field(True, description="Whether the user account is active")]
     is_pro: Annotated[bool, Field(False, description="Whether the user has a subscription"), BeforeValidator(lambda x : bool(x))]
-    created_at: datetime
-    updated_at: datetime
+    created_at: Annotated[datetime, Field(False, description="Whether the user has a subscription"), BeforeValidator(parse_datetime)]
+    updated_at: Annotated[datetime, Field(False, description="Whether the user has a subscription"), BeforeValidator(parse_datetime)]
 
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
     

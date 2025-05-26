@@ -10,6 +10,8 @@ import logging
 import base64
 from typing import List
 from pydantic import BaseModel
+from PIL import Image
+import io
 
 from app.api.auth_guard import auth_guard
 from app.core.config import settings
@@ -109,7 +111,7 @@ async def scan_barcode(
         traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing barcode: {str(e)}",
+            detail=f"Error processing barcode",
         )
 
 
@@ -147,7 +149,7 @@ async def scan_image(
             logger.error(f"Error reading image file: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Error reading uploaded file: {str(e)}",
+                detail=f"Error reading uploaded file",
             )
 
         if not contents or len(contents) == 0:
@@ -157,8 +159,6 @@ async def scan_image(
             )
 
         try:
-            from PIL import Image
-            import io
 
             img = Image.open(io.BytesIO(contents))
             img_format = img.format
@@ -176,7 +176,7 @@ async def scan_image(
             logger.error(f"Error encoding image to base64: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error processing image: {str(e)}",
+                detail=f"Error processing image",
             )
 
         openai_api_key = settings.OPENAI_API_KEY
@@ -184,7 +184,7 @@ async def scan_image(
             logger.error("OpenAI API key not configured")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Vision service not properly configured: API key missing",
+                detail="Error processing image",
             )
 
         model_name = "gpt-4o-mini"
@@ -260,7 +260,7 @@ Format your response as a valid JSON object with this structure:
                     logger.error(f"Response content: {response.text}")
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Error from vision API: {response.text}",
+                        detail=f"Error from vision API",
                     )
 
                 data = response.json()
@@ -276,7 +276,7 @@ Format your response as a valid JSON object with this structure:
             logger.error(f"Error making request to OpenAI API: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Error connecting to vision service: {str(e)}",
+                detail=f"Error connecting to vision service",
             )
         except Exception as e:
             logger.error(f"Unexpected error during API call: {str(e)}")
@@ -285,7 +285,7 @@ Format your response as a valid JSON object with this structure:
             logger.error(f"Traceback: {traceback.format_exc()}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error during vision API call: {str(e)}",
+                detail=f"Error during vision API call",
             )
 
         # Extract and parse the AI response
@@ -384,7 +384,7 @@ Format your response as a valid JSON object with this structure:
             logger.error(f"Raw response that failed parsing: {ai_response}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error parsing response from vision API: {str(e)}",
+                detail=f"Error parsing response from vision API",
             )
         except KeyError as e:
             logger.error(f"Missing key in API response: {str(e)}")
@@ -400,7 +400,7 @@ Format your response as a valid JSON object with this structure:
             logger.error(f"Traceback: {traceback.format_exc()}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error processing API response: {str(e)}",
+                detail=f"Error processing API response",
             )
 
     except HTTPException:
@@ -413,5 +413,5 @@ Format your response as a valid JSON object with this structure:
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Unexpected error analyzing image: {str(e)}",
+            detail=f"Unexpected error analyzing image",
         )

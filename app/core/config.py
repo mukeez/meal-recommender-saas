@@ -46,6 +46,7 @@ class Settings:
         self.STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
         self.STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
         self.STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
+        self.STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
 
         # AWS SETTINGS
         self.AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")

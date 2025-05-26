@@ -21,7 +21,6 @@ router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
 
-
 @router.post(
     "/login",
     status_code=status.HTTP_200_OK,
@@ -49,7 +48,7 @@ async def login(payload: LoginRequest) -> LoginResponse:
         logger.error("Supabase configuration is missing")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase configuration is missing. Please check your environment variables.",
+            detail="An error occured while trying to log in",
         )
 
     try:
@@ -78,11 +77,14 @@ async def login(payload: LoginRequest) -> LoginResponse:
         logger.info(f"User {payload.email} logged in successfully")
         return response.json()
 
+    except HTTPException:
+        raise
+
     except httpx.RequestError as e:
-        logger.error(f"Error communicating with Supabase: {str(e)}")
+        logger.error(f"Error communicating with authentication service: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Error communicating with authentication service: {str(e)}",
+            detail=f"Error communicating with authentication service",
         )
 
 
@@ -101,7 +103,7 @@ async def signup(payload: SignupRequest) -> SignUpResponse:
         logger.error("Supabase configuration is missing")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase configuration is missing",
+            detail="Error during user registration",
         )
 
     try:
@@ -125,8 +127,8 @@ async def signup(payload: SignupRequest) -> SignUpResponse:
         if response.status_code not in (200, 201):
             error_detail = "Signup failed"
             try:
-                if "error" in response_data and "message" in response_data:
-                    error_detail = response_data["message"]
+                if "error_code" in response_data and "msg" in response_data:
+                    error_detail = response_data["msg"]
             except Exception:
                 pass
 
@@ -164,17 +166,19 @@ async def signup(payload: SignupRequest) -> SignUpResponse:
             "session": response_data.get("session", {}),
         }
 
+    except HTTPException as e:
+        raise
     except httpx.RequestError as e:
         logger.error(f"Error communicating with Supabase: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Error communicating with authentication service: {str(e)}",
+            detail=f"Error communicating with authentication service",
         )
     except Exception as e:
         logger.error(f"Unexpected error during signup: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error during user registration: {str(e)}",
+            detail=f"Error during user registration",
         )
 
 
@@ -239,14 +243,17 @@ async def request_password_reset(request: Request, email: str):
         )
 
 
-
 @router.patch(
     "/change-password",
     status_code=status.HTTP_200_OK,
     summary="Request password reset",
     description="Send a password reset email to the user.",
 )
-async def change_password(request: Request, password: str = Body(..., embed=True, description="new user password"), user=Depends(auth_guard)) -> Dict:
+async def change_password(
+    request: Request,
+    password: str = Body(..., embed=True, description="new user password"),
+    user=Depends(auth_guard),
+) -> Dict:
     """Request a password reset for a user.
 
     Args:
@@ -278,7 +285,6 @@ async def change_password(request: Request, password: str = Body(..., embed=True
                     "Authorization": f"Bearer {token}",
                     "Content-Type": "application/json",
                 },
-
                 json={"password": password},
             )
 

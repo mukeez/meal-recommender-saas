@@ -7,6 +7,8 @@ response data for the meal recommendation API.
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, field_validator, Field
+from app.models.location import ReverseGeocode
+from typing_extensions import Annotated
 
 
 class MacroNutrients(BaseModel):
@@ -43,18 +45,12 @@ class MealSuggestionRequest(BaseModel):
         fat: Target fat in grams
     """
 
-    location: str
-    calories: float
-    protein: float
-    carbs: float
-    fat: float
+    location: Annotated[ReverseGeocode, Field(..., description="Geographic location for restaurant search")]
+    calories: Annotated[float, Field(..., description="Target calories in kcal")]
+    protein: Annotated[float, Field(..., description="Target protein in grams")]
+    carbs: Annotated[float, Field(..., description="Target carbohydrates in grams")]
+    fat: Annotated[float, Field(..., description="Target fat in grams")]
 
-    @field_validator("location")
-    def validate_location(cls, value: str) -> str:
-        """Validate that location is not empty."""
-        if not value.strip():
-            raise ValueError("Location cannot be empty")
-        return value.strip()
 
     @field_validator("calories", "protein", "carbs", "fat")
     def validate_positive(cls, value: float) -> float:

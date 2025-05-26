@@ -1,5 +1,5 @@
-"""API endpoints for retrieving products.
-"""
+"""API endpoints for retrieving products."""
+
 import logging
 
 from fastapi import APIRouter, HTTPException, status, Depends, Query
@@ -24,10 +24,14 @@ router = APIRouter()
     description="Get paginated list of similar products that match the query",
 )
 async def product_search(
-        query: str = Query(..., description="Product to search can be product name or brand name"),
-        page: int = Query(1, description="Current page number defaults to 1"),
-        page_size: int = Query(20, description="Number of products to include on each page defaults to 20"),
-        user=Depends(auth_guard)
+    query: str = Query(
+        ..., description="Product to search can be product name or brand name"
+    ),
+    page: int = Query(1, description="Current page number defaults to 1"),
+    page_size: int = Query(
+        20, description="Number of products to include on each page defaults to 20"
+    ),
+    user=Depends(auth_guard),
 ) -> ProductList:
     """Get paginated list of similar products.
 
@@ -46,18 +50,24 @@ async def product_search(
         HTTPException: If there is an error processing the request
     """
     try:
-        logger.info(f"product search:[query:{query}][page:{page}][page_size:{page_size}]")
+        logger.info(
+            f"product search:[query:{query}][page:{page}][page_size:{page_size}]"
+        )
         # get list of products from database
-        products = await product_service.get_products(product_name=query, page=page, page_size=page_size)
+        products = await product_service.get_products(
+            product_name=query, page=page, page_size=page_size
+        )
         if not products:
             # get results from openfoodfacts
-            products = await openfoodfacts_service.product_search(product=query, page=1, page_size=page_size)
+            products = await openfoodfacts_service.product_search(
+                product=query, page=1, page_size=page_size
+            )
 
             # upsert products
             await product_service.upsert_product(products.products)
 
         return products
-    
+
     except HTTPException:
         traceback.print_exc()
         raise
@@ -66,7 +76,5 @@ async def product_search(
         traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving products: {str(e)}"
+            detail=f"Error retrieving products: {str(e)}",
         )
-
-
