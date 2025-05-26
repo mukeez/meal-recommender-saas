@@ -22,6 +22,7 @@ from app.api.endpoints import (
     location,
     billing,
     products,
+    notifications,
 )
 from app.core.config import settings
 from app.utils.tasks import macromeals_tasks
@@ -145,6 +146,12 @@ app.include_router(
 
 app.include_router(
     products.router, prefix=f"{settings.API_V1_STR}/products", tags=["products"]
+)
+
+app.include_router(
+    notifications.router,
+    prefix=f"{settings.API_V1_STR}/notifications",
+    tags=["notifications"],
 )
 
 

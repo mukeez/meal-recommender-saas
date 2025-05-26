@@ -1,4 +1,5 @@
 from datetime import datetime
+from re import sub
 from typing import Annotated, Optional
 from pydantic import BaseModel, Field, BeforeValidator
 
@@ -41,5 +42,44 @@ class Notification(BaseModel):
     read_at: Annotated[
         datetime,
         Field(False, description="Timestamp when the notification was read"),
+        BeforeValidator(parse_datetime),
+    ]
+
+
+class CreateNotificationRequest(BaseModel):
+    title: str
+    body: str
+    type: str
+    subtype: Optional[str] = None
+
+
+class NotificationResponse(BaseModel):
+    notifications: Annotated[
+        list[Notification],
+        Field(..., description="List of notifications for the user"),
+    ]
+    page: Annotated[int, Field(default=1, description="The current page number.")]
+    page_size: Annotated[
+        int,
+        Field(
+            default=20,
+            description="The number of notifications to include on each page.",
+        ),
+    ]
+    count: Annotated[
+        int,
+        Field(
+            default=0,
+            description="The total number of notifications across all pages.",
+        ),
+    ]
+
+
+class LoggedNotification(Notification):
+    """Represents a logged notification with creation timestamp."""
+
+    created_at: Annotated[
+        datetime,
+        Field(..., description="Date when the notification was created"),
         BeforeValidator(parse_datetime),
     ]
