@@ -85,6 +85,20 @@ async def update_notification_status(
     body: UpdateNotificationStatusRequest,
     user=Depends(auth_guard),
 ) -> dict:
+    """
+    Mark a notification as read for the current user.
+
+    Args:
+        notification_id (str): The ID of the notification to update.
+        body (UpdateNotificationStatusRequest): The request body containing the new status.
+        user: The authenticated user (injected by dependency).
+
+    Returns:
+        dict: A message indicating the notification status was updated.
+
+    Raises:
+        HTTPException: If the update fails or an error occurs.
+    """
     try:
         await notification_service.mark_notification_as_read(
             user_id=user["sub"], notification_id=notification_id, status_=body.status

@@ -83,6 +83,20 @@ class NotificationService:
     async def mark_notification_as_read(
         self, notification_id: str, user_id: str, status_: str = "read"
     ) -> dict:
+        """
+        Mark a notification as read for a specific user.
+
+        Args:
+            notification_id (str): The ID of the notification to update.
+            user_id (str): The ID of the user who owns the notification.
+            status_ (str, optional): The new status to set (default is "read").
+
+        Returns:
+            dict: A message indicating the notification was marked as read.
+
+        Raises:
+            HTTPException: If the notification is not found or an error occurs during the update.
+        """
         try:
             response = (
                 self.client.table("notifications")
