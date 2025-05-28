@@ -13,6 +13,7 @@ from app.tests.fixtures.auth import mock_auth_httpx_client
 from app.tests.fixtures.billing import *
 from app.tests.fixtures.notification import mock_notification_log_notification
 from app.tests.fixtures.notification import mock_notification_get_notifications
+from app.tests.fixtures.notification import mock_notification_mark_notification_as_read
 from app.tests.constants.user import UserTestConstants
 import asyncio
 

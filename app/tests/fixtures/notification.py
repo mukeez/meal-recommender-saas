@@ -18,3 +18,12 @@ def mock_notification_get_notifications(mocker):
         new_callable=AsyncMock,
     )
     return mock
+
+
+@pytest.fixture(scope="function")
+def mock_notification_mark_notification_as_read(mocker):
+    mock = mocker.patch(
+        "app.api.endpoints.notifications.notification_service.mark_notification_as_read",
+        new_callable=AsyncMock,
+    )
+    return mock

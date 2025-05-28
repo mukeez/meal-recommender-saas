@@ -4,7 +4,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, status, HTTPException, Query
 from app.api.auth_guard import auth_guard
-from app.models.notification import CreateNotificationRequest, NotificationResponse
+from app.models.notification import (
+    CreateNotificationRequest,
+    NotificationResponse,
+    UpdateNotificationStatusRequest,
+)
 from app.services.notification_service import notification_service
 
 logger = logging.getLogger(__name__)
@@ -97,3 +101,43 @@ async def log_notification(
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Failed to log notification")
+
+
+@router.patch(
+    "/{notification_id}/read",
+    status_code=status.HTTP_200_OK,
+    summary="Update notification status",
+    description="Mark a notification as read.",
+)
+async def update_notification_status(
+    notification_id: str,
+    body: UpdateNotificationStatusRequest,
+    user=Depends(auth_guard),
+) -> dict:
+    """
+    Mark a notification as read for the current user.
+
+    Args:
+        notification_id (str): The ID of the notification to update.
+        body (UpdateNotificationStatusRequest): The request body containing the new status.
+        user: The authenticated user (injected by dependency).
+
+    Returns:
+        dict: A message indicating the notification status was updated.
+
+    Raises:
+        HTTPException: If the update fails or an error occurs.
+    """
+    try:
+        await notification_service.mark_notification_as_read(
+            user_id=user["sub"], notification_id=notification_id, status_=body.status
+        )
+        return {"message": "Notification status updated successfully"}
+    except HTTPException:
+        traceback.print_exc()
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500, detail="Failed to update notification status"
+        )

@@ -123,3 +123,7 @@ class LoggedNotification(Notification):
         Field(..., description="Date when the notification was created"),
         BeforeValidator(parse_datetime),
     ]
+
+
+class UpdateNotificationStatusRequest(BaseModel):
+    status: str
