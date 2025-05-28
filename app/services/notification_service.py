@@ -26,6 +26,22 @@ class NotificationService:
         status: Optional[str] = None,
         type: Optional[str] = None,
     ) -> Optional[NotificationResponse]:
+        """
+        Retrieve a paginated list of notifications for a specific user, with optional filtering by status and type.
+
+        Args:
+            user_id (str): The ID of the user whose notifications are to be retrieved.
+            page (int, optional): The page number for pagination. Defaults to 1.
+            page_size (int, optional): The number of notifications per page. Defaults to 20.
+            status (Optional[str], optional): Filter notifications by status (e.g., 'read', 'unread'). Defaults to None.
+            type (Optional[str], optional): Filter notifications by type. Defaults to None.
+
+        Returns:
+            Optional[NotificationResponse]: A response object containing the list of notifications, count, page, and page size.
+
+        Raises:
+            HTTPException: If an error occurs while retrieving notifications, an HTTP 500 error is raised.
+        """
         try:
             query = (
                 self.client.table("notifications").select("*").eq("user_id", user_id)
@@ -62,6 +78,16 @@ class NotificationService:
             )
 
     async def log_notification(self, notification_data: dict) -> dict:
+        """
+        Asynchronously logs a notification to the 'notifications' table.
+        Args:
+            notification_data (dict): A dictionary containing the notification details to be logged.
+        Returns:
+            dict: A dictionary containing the logged notification data under the "data" key.
+        Raises:
+            HTTPException: If an unexpected error occurs while logging the notification,
+                           an HTTP 500 error is raised with the error details.
+        """
         try:
             response = (
                 self.client.table("notifications")

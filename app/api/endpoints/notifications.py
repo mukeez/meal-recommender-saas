@@ -28,6 +28,22 @@ async def get_user_notifications(
     status: Optional[str] = Query(None, description="Filter by notification status"),
     type: Optional[str] = Query(None, description="Filter by notification type"),
 ) -> NotificationResponse:
+    """
+    Retrieve a paginated list of notifications for the authenticated user.
+
+    Args:
+        user: The authenticated user object, injected by dependency.
+        page (int, optional): The current page number for pagination. Defaults to 1.
+        page_size (int, optional): The number of notifications per page. Defaults to 20.
+        status (Optional[str], optional): Filter notifications by status (e.g., 'read', 'unread'). Defaults to None.
+        type (Optional[str], optional): Filter notifications by type. Defaults to None.
+
+    Returns:
+        NotificationResponse: A paginated response containing the user's notifications.
+
+    Raises:
+        HTTPException: If an error occurs while retrieving notifications.
+    """
     try:
         notifications = await notification_service.get_notifications(
             user_id=user["sub"],
@@ -57,6 +73,19 @@ async def log_notification(
     notification: CreateNotificationRequest,
     user=Depends(auth_guard),
 ) -> dict:
+    """
+    Logs a notification for a user.
+
+    Args:
+        notification (CreateNotificationRequest): The notification data to be logged.
+        user (dict, optional): The authenticated user information, injected via dependency.
+
+    Returns:
+        dict: A message indicating the result of the logging operation.
+
+    Raises:
+        HTTPException: If logging the notification fails or an HTTP-related error occurs.
+    """
     try:
         notification_data = notification.model_dump()
         notification_data["user_id"] = user["sub"]
