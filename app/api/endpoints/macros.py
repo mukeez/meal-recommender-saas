@@ -3,6 +3,7 @@
 This module contains the FastAPI routes for calculating macronutrient requirements
 with support for both metric and imperial unit systems.
 """
+
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from enum import Enum
@@ -13,12 +14,14 @@ router = APIRouter()
 
 class Sex(str, Enum):
     """Sex enumeration for BMR calculation."""
+
     MALE = "male"
     FEMALE = "female"
 
 
 class ActivityLevel(str, Enum):
     """Activity level enumeration for TDEE calculation."""
+
     SEDENTARY = "sedentary"
     MODERATE = "moderate"
     ACTIVE = "active"
@@ -26,6 +29,7 @@ class ActivityLevel(str, Enum):
 
 class Goal(str, Enum):
     """Fitness goal enumeration."""
+
     LOSE = "lose"
     MAINTAIN = "maintain"
     GAIN = "gain"
@@ -33,6 +37,7 @@ class Goal(str, Enum):
 
 class UnitSystem(str, Enum):
     """Unit system enumeration for height and weight."""
+
     METRIC = "metric"
     IMPERIAL = "imperial"
 
@@ -46,6 +51,7 @@ class ManualMacros(BaseModel):
         carbs: User-specified daily carbohydrate target in grams
         fat: User-specified daily fat target in grams
     """
+
     calories: int = Field(..., gt=0, description="Daily calorie target")
     protein: int = Field(..., ge=0, description="Daily protein target in grams")
     carbs: int = Field(..., ge=0, description="Daily carbohydrate target in grams")
@@ -65,6 +71,7 @@ class MacroCalculatorRequest(BaseModel):
         unit_system: Measurement system for weight and height
         manual_macros: Optional manual macros to override calculations
     """
+
     age: int = Field(..., ge=18, le=100, description="Age in years (18-100)")
     weight: float = Field(..., gt=0, description="Weight (in kg or lbs)")
     height: float = Field(..., gt=0, description="Height (in cm or inches)")
@@ -72,7 +79,9 @@ class MacroCalculatorRequest(BaseModel):
     activity_level: ActivityLevel = Field(..., description="Activity level")
     goal: Goal = Field(..., description="Fitness goal")
     unit_system: UnitSystem = Field(..., description="Unit system for measurements")
-    manual_macros: Optional[ManualMacros] = Field(None, description="Optional manual macro values")
+    manual_macros: Optional[ManualMacros] = Field(
+        None, description="Optional manual macro values"
+    )
 
 
 class MacroCalculatorResponse(BaseModel):
@@ -84,6 +93,7 @@ class MacroCalculatorResponse(BaseModel):
         carbs: Daily carbohydrate target in grams
         fat: Daily fat target in grams
     """
+
     calories: int = Field(..., description="Total daily calorie target")
     protein: int = Field(..., description="Daily protein target in grams")
     carbs: int = Field(..., description="Daily carbohydrate target in grams")
@@ -93,13 +103,13 @@ class MacroCalculatorResponse(BaseModel):
 ACTIVITY_MULTIPLIERS: Dict[ActivityLevel, float] = {
     ActivityLevel.SEDENTARY: 1.2,
     ActivityLevel.MODERATE: 1.55,
-    ActivityLevel.ACTIVE: 1.725
+    ActivityLevel.ACTIVE: 1.725,
 }
 
 GOAL_ADJUSTMENTS: Dict[Goal, float] = {
     Goal.LOSE: 0.8,
     Goal.MAINTAIN: 1.0,
-    Goal.GAIN: 1.15
+    Goal.GAIN: 1.15,
 }
 
 # Macronutrient constants
@@ -114,7 +124,9 @@ LBS_TO_KG = 0.453592
 INCHES_TO_CM = 2.54
 
 
-def convert_to_metric(weight: float, height: float, unit_system: UnitSystem) -> tuple[float, float]:
+def convert_to_metric(
+    weight: float, height: float, unit_system: UnitSystem
+) -> tuple[float, float]:
     """Convert weight and height to metric units (kg and cm) if needed.
 
     Args:
@@ -203,10 +215,7 @@ def calculate_macros(weight_kg: float, calories: int) -> MacroCalculatorResponse
         calories = protein_cals + fat_cals + carbs_cals
 
     return MacroCalculatorResponse(
-        calories=calories,
-        protein=protein_g,
-        carbs=carbs_g,
-        fat=fat_g
+        calories=calories, protein=protein_g, carbs=carbs_g, fat=fat_g
     )
 
 
@@ -215,9 +224,11 @@ def calculate_macros(weight_kg: float, calories: int) -> MacroCalculatorResponse
     response_model=MacroCalculatorResponse,
     status_code=status.HTTP_200_OK,
     summary="Calculate daily macronutrient targets",
-    description="Calculate daily calorie and macronutrient targets based on personal metrics. Supports both metric and imperial units."
+    description="Calculate daily calorie and macronutrient targets based on personal metrics. Supports both metric and imperial units.",
 )
-async def calculate_macros_endpoint(request: MacroCalculatorRequest) -> MacroCalculatorResponse:
+async def calculate_macros_endpoint(
+    request: MacroCalculatorRequest,
+) -> MacroCalculatorResponse:
     """Calculate daily macronutrient targets.
 
     This endpoint calculates Basal Metabolic Rate (BMR) using the Mifflin-St Jeor
@@ -238,20 +249,13 @@ async def calculate_macros_endpoint(request: MacroCalculatorRequest) -> MacroCal
     """
     try:
         if request.manual_macros:
-            return MacroCalculatorResponse(**request.manual_macros.dict())
+            return MacroCalculatorResponse(**request.manual_macros.model_dump())
 
         weight_kg, height_cm = convert_to_metric(
-            request.weight,
-            request.height,
-            request.unit_system
+            request.weight, request.height, request.unit_system
         )
 
-        bmr = calculate_bmr(
-            request.sex,
-            weight_kg,
-            height_cm,
-            request.age
-        )
+        bmr = calculate_bmr(request.sex, weight_kg, height_cm, request.age)
 
         tdee = calculate_tdee(bmr, request.activity_level)
 
@@ -262,5 +266,5 @@ async def calculate_macros_endpoint(request: MacroCalculatorRequest) -> MacroCal
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error calculating macros: {str(e)}"
+            detail=f"Error calculating macros",
         )

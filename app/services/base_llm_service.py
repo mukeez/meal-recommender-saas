@@ -44,7 +44,7 @@ class BaseLLMService:
     ) -> str:
         try:
             response = self.client.chat.completions.create(
-                model=self.model,
+                model=settings.MODEL_NAME,
                 messages=[
                     {
                         "role": "system",

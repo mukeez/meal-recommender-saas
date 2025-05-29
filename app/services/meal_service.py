@@ -2,6 +2,7 @@
 
 This module provides functions to log meals and track daily nutrition progress.
 """
+
 from typing import Dict, Any, List
 import logging
 from datetime import datetime, date
@@ -10,7 +11,12 @@ import httpx
 from fastapi import HTTPException, status
 
 from app.core.config import settings
-from app.models.meal import LogMealRequest, LoggedMeal, MacroNutrients, DailyProgressResponse
+from app.models.meal import (
+    LogMealRequest,
+    LoggedMeal,
+    MacroNutrients,
+    DailyProgressResponse,
+)
 from app.services.user_service import user_service
 
 logger = logging.getLogger(__name__)
@@ -55,9 +61,9 @@ class MealService:
                         "apikey": self.api_key,
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
-                        "Prefer": "return=representation"
+                        "Prefer": "return=representation",
                     },
-                    json=meal_record
+                    json=meal_record,
                 )
 
                 if response.status_code not in (201, 200):
@@ -72,21 +78,21 @@ class MealService:
                     logger.error(f"Meal logging failed: {error_detail}")
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to log meal: {error_detail}"
+                        detail=f"Failed to log meal: {error_detail}",
                     )
 
                 logged_meal_data = response.json()[0]
                 logged_meal = LoggedMeal(
-                    id=logged_meal_data['id'],
-                    user_id=logged_meal_data['user_id'],
-                    name=logged_meal_data['name'],
-                    protein=logged_meal_data['protein'],
-                    carbs=logged_meal_data['carbs'],
-                    fat=logged_meal_data['fat'],
-                    calories=logged_meal_data['calories'],
-                    meal_time=self._parse_datetime(logged_meal_data['meal_time']),
-                    created_at=self._parse_datetime(logged_meal_data['created_at']),
-                    notes=logged_meal_data.get('notes')
+                    id=logged_meal_data["id"],
+                    user_id=logged_meal_data["user_id"],
+                    name=logged_meal_data["name"],
+                    protein=logged_meal_data["protein"],
+                    carbs=logged_meal_data["carbs"],
+                    fat=logged_meal_data["fat"],
+                    calories=logged_meal_data["calories"],
+                    meal_time=self._parse_datetime(logged_meal_data["meal_time"]),
+                    created_at=self._parse_datetime(logged_meal_data["created_at"]),
+                    notes=logged_meal_data.get("notes"),
                 )
 
                 logger.info(f"Meal logged successfully for user: {user_id}")
@@ -96,13 +102,13 @@ class MealService:
             logger.error(f"Request error logging meal: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Error communicating with database: {str(e)}"
+                detail=f"Error communicating with database: {str(e)}",
             )
         except Exception as e:
             logger.error(f"Unexpected error logging meal: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error logging meal: {str(e)}"
+                detail=f"Error logging meal: {str(e)}",
             )
 
     async def get_meals_for_today(self, user_id: str) -> List[LoggedMeal]:
@@ -124,11 +130,9 @@ class MealService:
                     headers={
                         "apikey": self.api_key,
                         "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
+                        "Content-Type": "application/json",
                     },
-                    json={
-                        "user_id_param": user_id
-                    }
+                    json={"user_id_param": user_id},
                 )
 
                 if response.status_code == 404:
@@ -140,38 +144,40 @@ class MealService:
                         headers={
                             "apikey": self.api_key,
                             "Authorization": f"Bearer {self.api_key}",
-                            "Content-Type": "application/json"
+                            "Content-Type": "application/json",
                         },
                         params={
                             "user_id": f"eq.{user_id}",
                             "created_at": f"ilike.{today}%",
-                            "order": "meal_time.desc"
-                        }
+                            "order": "meal_time.desc",
+                        },
                     )
 
                 if response.status_code not in (200, 201, 204):
                     logger.error(f"Failed to fetch meals: {response.text}")
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to retrieve meals: {response.text}"
+                        detail=f"Failed to retrieve meals: {response.text}",
                     )
 
                 meals_data = response.json()
                 meals = []
 
                 for meal in meals_data:
-                    meals.append(LoggedMeal(
-                        id=meal['id'],
-                        user_id=meal['user_id'],
-                        name=meal['name'],
-                        protein=meal['protein'],
-                        carbs=meal['carbs'],
-                        fat=meal['fat'],
-                        calories=meal['calories'],
-                        meal_time=self._parse_datetime(meal['meal_time']),
-                        created_at=self._parse_datetime(meal['created_at']),
-                        notes=meal.get('notes')
-                    ))
+                    meals.append(
+                        LoggedMeal(
+                            id=meal["id"],
+                            user_id=meal["user_id"],
+                            name=meal["name"],
+                            protein=meal["protein"],
+                            carbs=meal["carbs"],
+                            fat=meal["fat"],
+                            calories=meal["calories"],
+                            meal_time=self._parse_datetime(meal["meal_time"]),
+                            created_at=self._parse_datetime(meal["created_at"]),
+                            notes=meal.get("notes"),
+                        )
+                    )
 
                 logger.info(f"Retrieved {len(meals)} meals for today")
                 return meals
@@ -180,10 +186,12 @@ class MealService:
             logger.error(f"Unexpected error fetching meals: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error retrieving meals: {str(e)}"
+                detail=f"Error retrieving meals: {str(e)}",
             )
 
-    async def get_meals_by_date_range(self, user_id: str, start_date: date, end_date: date) -> List[LoggedMeal]:
+    async def get_meals_by_date_range(
+        self, user_id: str, start_date: date, end_date: date
+    ) -> List[LoggedMeal]:
         """Retrieve meals logged by the user within a date range.
 
         Args:
@@ -194,7 +202,9 @@ class MealService:
         Returns:
             List of meals logged within the date range
         """
-        logger.info(f"Fetching meals for user {user_id} from {start_date} to {end_date}")
+        logger.info(
+            f"Fetching meals for user {user_id} from {start_date} to {end_date}"
+        )
 
         try:
             # Use the SQL function via RPC call
@@ -204,20 +214,20 @@ class MealService:
                     headers={
                         "apikey": self.api_key,
                         "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
+                        "Content-Type": "application/json",
                     },
                     json={
                         "user_id_param": user_id,
                         "start_date_param": start_date.isoformat(),
-                        "end_date_param": end_date.isoformat()
-                    }
+                        "end_date_param": end_date.isoformat(),
+                    },
                 )
 
                 if response.status_code not in (200, 201, 204):
                     logger.error(f"Failed to fetch meals: {response.text}")
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to retrieve meals: {response.text}"
+                        detail=f"Failed to retrieve meals: {response.text}",
                     )
 
                 # Parse the meals
@@ -225,18 +235,20 @@ class MealService:
                 meals = []
 
                 for meal in meals_data:
-                    meals.append(LoggedMeal(
-                        id=meal['id'],
-                        user_id=meal['user_id'],
-                        name=meal['name'],
-                        protein=meal['protein'],
-                        carbs=meal['carbs'],
-                        fat=meal['fat'],
-                        calories=meal['calories'],
-                        meal_time=self._parse_datetime(meal['meal_time']),
-                        created_at=self._parse_datetime(meal['created_at']),
-                        notes=meal.get('notes')
-                    ))
+                    meals.append(
+                        LoggedMeal(
+                            id=meal["id"],
+                            user_id=meal["user_id"],
+                            name=meal["name"],
+                            protein=meal["protein"],
+                            carbs=meal["carbs"],
+                            fat=meal["fat"],
+                            calories=meal["calories"],
+                            meal_time=self._parse_datetime(meal["meal_time"]),
+                            created_at=self._parse_datetime(meal["created_at"]),
+                            notes=meal.get("notes"),
+                        )
+                    )
 
                 logger.info(f"Retrieved {len(meals)} meals for date range")
                 return meals
@@ -245,7 +257,7 @@ class MealService:
             logger.error(f"Unexpected error fetching meals by date range: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error retrieving meals: {str(e)}"
+                detail=f"Error retrieving meals: {str(e)}",
             )
 
     async def get_daily_progress(self, user_id: str) -> DailyProgressResponse:
@@ -267,36 +279,64 @@ class MealService:
                 calories=sum(meal.calories for meal in meals),
                 protein=sum(meal.protein for meal in meals),
                 carbs=sum(meal.carbs for meal in meals),
-                fat=sum(meal.fat for meal in meals)
+                fat=sum(meal.fat for meal in meals),
             )
 
             preferences = await user_service.get_user_preferences(user_id)
 
             target_macros = MacroNutrients(
-                calories=preferences.get('calorie_target', 2000),
-                protein=preferences.get('protein_target', 150),
-                carbs=preferences.get('carbs_target', 200),
-                fat=preferences.get('fat_target', 70)
+                calories=preferences.get("calorie_target", 2000),
+                protein=preferences.get("protein_target", 150),
+                carbs=preferences.get("carbs_target", 200),
+                fat=preferences.get("fat_target", 70),
             )
 
             progress_percentage = {
-                'calories': min(100, (logged_macros.calories / target_macros.calories * 100) if target_macros.calories else 0),
-                'protein': min(100, (logged_macros.protein / target_macros.protein * 100) if target_macros.protein else 0),
-                'carbs': min(100, (logged_macros.carbs / target_macros.carbs * 100) if target_macros.carbs else 0),
-                'fat': min(100, (logged_macros.fat / target_macros.fat * 100) if target_macros.fat else 0)
+                "calories": min(
+                    100,
+                    (
+                        (logged_macros.calories / target_macros.calories * 100)
+                        if target_macros.calories
+                        else 0
+                    ),
+                ),
+                "protein": min(
+                    100,
+                    (
+                        (logged_macros.protein / target_macros.protein * 100)
+                        if target_macros.protein
+                        else 0
+                    ),
+                ),
+                "carbs": min(
+                    100,
+                    (
+                        (logged_macros.carbs / target_macros.carbs * 100)
+                        if target_macros.carbs
+                        else 0
+                    ),
+                ),
+                "fat": min(
+                    100,
+                    (
+                        (logged_macros.fat / target_macros.fat * 100)
+                        if target_macros.fat
+                        else 0
+                    ),
+                ),
             }
 
             return DailyProgressResponse(
                 logged_macros=logged_macros,
                 target_macros=target_macros,
-                progress_percentage=progress_percentage
+                progress_percentage=progress_percentage,
             )
 
         except Exception as e:
             logger.error(f"Unexpected error calculating daily progress: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error calculating daily progress: {str(e)}"
+                detail=f"Error calculating daily progress: {str(e)}",
             )
 
     def _parse_datetime(self, dt_str: str) -> datetime:
@@ -311,8 +351,8 @@ class MealService:
         if not dt_str:
             return datetime.now()
 
-        if 'Z' in dt_str:
-            dt_str = dt_str.replace('Z', '+00:00')
+        if "Z" in dt_str:
+            dt_str = dt_str.replace("Z", "+00:00")
 
         try:
             return datetime.fromisoformat(dt_str)
