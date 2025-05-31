@@ -53,7 +53,13 @@ class Settings:
         self.AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
         self.AWS_REGION = os.getenv("AWS_REGION")
 
-
+        # Firebase Settings
+        self.FIREBASE_SERVICE_ACCOUNT_FILE = os.getenv("FIREBASE_SERVICE_ACCOUNT_FILE")
+        if not self.FIREBASE_SERVICE_ACCOUNT_FILE:
+            raise ValueError("FIREBASE_SERVICE_ACCOUNT_FILE environment variable is not set")
+        self.FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID")
+        if not self.FIREBASE_PROJECT_ID:
+            raise ValueError("FIREBASE_PROJECT_ID environment variable is not set")
 
 
 

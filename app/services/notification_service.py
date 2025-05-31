@@ -22,12 +22,7 @@ logger = logging.getLogger(__name__)
 class FirebaseNotificationService:
     def __init__(self):
         self.SCOPES = ["https://www.googleapis.com/auth/firebase.messaging"]
-        self.service_file = os.path.join(
-            os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            ),
-            "macro-meals-mobile-d3f2c02bc942.json",
-        )
+        self.service_file = settings.FIREBASE_SERVICE_ACCOUNT_FILE
 
     def get_access_token(self) -> str:
         credentials = service_account.Credentials.from_service_account_file(
@@ -71,7 +66,7 @@ class NotificationService:
     ) -> dict:
         return firebase_notification_service.make_request(
             method="POST",
-            url="https://fcm.googleapis.com/v1/projects/macro-meals-mobile/messages:send",
+            url=f"https://fcm.googleapis.com/v1/projects/{settings.FIREBASE_PROJECT_ID}/messages:send",
             payload={
                 "message": {
                     "token": fcm_token,
