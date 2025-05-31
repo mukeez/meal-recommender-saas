@@ -56,3 +56,21 @@ class TestNotificationsEndpoint:
         }
 
         mock_notification_mark_notification_as_read.assert_called_once()
+
+    async def test_send_push_notification_success(
+        self, authenticated_client, mock_notification_send_push_notification
+    ):
+        notification_data = {
+            "fcm_token": "test-fcm-token",
+            "title": "Hello",
+            "body": "World!",
+        }
+
+        response = authenticated_client.post(
+            f"{settings.API_V1_STR}/notifications/push", json=notification_data
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Push notification sent successfully"}
+
+        mock_notification_send_push_notification.assert_called_once()

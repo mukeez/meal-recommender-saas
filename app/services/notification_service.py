@@ -1,9 +1,15 @@
+import os
+import requests
 import datetime
 import logging
 from typing import Optional
 
 from supabase import create_client
 from fastapi import HTTPException, status
+
+import google.auth.transport.requests
+from google.oauth2 import service_account
+
 from app.core.config import settings
 from app.models.notification import (
     Notification,
@@ -13,11 +19,70 @@ from app.models.notification import (
 logger = logging.getLogger(__name__)
 
 
+class FirebaseNotificationService:
+    def __init__(self):
+        self.SCOPES = ["https://www.googleapis.com/auth/firebase.messaging"]
+        self.service_file = os.path.join(
+            os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            ),
+            "macro-meals-mobile-d3f2c02bc942.json",
+        )
+
+    def get_access_token(self) -> str:
+        credentials = service_account.Credentials.from_service_account_file(
+            self.service_file, scopes=self.SCOPES
+        )
+        request = google.auth.transport.requests.Request()
+        credentials.refresh(request)
+        return credentials.token
+
+    def make_request(
+        self, method: str, url: str, payload: Optional[dict] = None
+    ) -> dict:
+        try:
+            response = requests.request(
+                method=method,
+                url=url,
+                headers={
+                    "Authorization": f"Bearer {self.get_access_token()}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request failed: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error making request: {str(e)}",
+            )
+
+
 class NotificationService:
     def __init__(self):
         self.base_url = settings.SUPABASE_URL
         self.api_key = settings.SUPABASE_SERVICE_ROLE_KEY
         self.client = create_client(self.base_url, self.api_key)
+
+    async def send_push_notification(
+        self, fcm_token: str, title: str, body: str
+    ) -> dict:
+        return firebase_notification_service.make_request(
+            method="POST",
+            url="https://fcm.googleapis.com/v1/projects/macro-meals-mobile/messages:send",
+            payload={
+                "message": {
+                    "token": fcm_token,
+                    "notification": {
+                        "title": title,
+                        "body": body,
+                    },
+                    "data": {},
+                }
+            },
+        )
 
     async def get_notifications(
         self,
@@ -149,3 +214,4 @@ class NotificationService:
 
 
 notification_service = NotificationService()
+firebase_notification_service = FirebaseNotificationService()
