@@ -22,6 +22,7 @@ class UserProfile(BaseModel):
         avatar: User's avatar (optional)
         is_active: Whether the user account is active
         is_pro: Whether the user has a subscription
+        fcm_token: Firebase Cloud Messaging token for push notifications (optional)
         created_at: Profile creation timestamp
         updated_at: Profile last update timestamp
     """
@@ -33,6 +34,12 @@ class UserProfile(BaseModel):
     avatar_url : Annotated[Optional[str], Field(None, description="User's avatar(optional)")]
     is_active: Annotated[bool, Field(True, description="Whether the user account is active")]
     is_pro: Annotated[bool, Field(False, description="Whether the user has a subscription"), BeforeValidator(lambda x : bool(x))]
+    fcm_token: Annotated[
+        Optional[str],
+        Field(
+            None, description="Firebase Cloud Messaging token for push notifications"
+        ),
+    ]
     created_at: Annotated[datetime, Field(False, description="Whether the user has a subscription"), BeforeValidator(parse_datetime)]
     updated_at: Annotated[datetime, Field(False, description="Whether the user has a subscription"), BeforeValidator(parse_datetime)]
 

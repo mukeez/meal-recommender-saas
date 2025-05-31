@@ -9,6 +9,7 @@ import httpx
 import logging
 
 from app.core.config import settings
+from app.models.user import UpdateUserProfileRequest
 from app.services.user_service import user_service, UserProfileData
 from app.services.mail_service import mail_service
 from app.models.auth import LoginRequest, LoginResponse, SignupRequest, SignUpResponse
@@ -34,7 +35,7 @@ async def login(payload: LoginRequest) -> LoginResponse:
 
     Args:
         request: The incoming FastAPI request
-        payload: Login credentials containing email and password
+        payload: Login credentials containing email and password and optional FCM token
 
     Returns:
         The authentication response from Supabase, including access token and user data
@@ -74,6 +75,14 @@ async def login(payload: LoginRequest) -> LoginResponse:
             logger.warning(f"Login failed for user {payload.email}: {error_detail}")
             raise HTTPException(status_code=response.status_code, detail=error_detail)
 
+        fcm_token = payload.fcm_token
+        if fcm_token:
+            await user_service.update_user_profile(
+                token=response.json().get("access_token"),
+                user_id=response.json().get("user", {}).get("id"),
+                user_data=UpdateUserProfileRequest(fcm_token=fcm_token),
+            )
+
         logger.info(f"User {payload.email} logged in successfully")
         return response.json()
 
@@ -92,7 +101,7 @@ async def login(payload: LoginRequest) -> LoginResponse:
     "/signup",
     status_code=status.HTTP_201_CREATED,
     summary="Register a new user",
-    description="Register a new user with email and password, and create their profile.",
+    description="Register a new user with email and password (and an fcm token if available), and create their profile.",
     response_model=SignUpResponse,
 )
 async def signup(payload: SignupRequest) -> SignUpResponse:
@@ -120,7 +129,6 @@ async def signup(payload: SignupRequest) -> SignUpResponse:
                     "options": {"emailRedirectTo": None, "shouldCreateUser": True},
                 },
             )
-        print(response.json())
         response_data = response.json()
         logger.info(f"Full Supabase signup response: {response_data}")
 
@@ -150,7 +158,10 @@ async def signup(payload: SignupRequest) -> SignUpResponse:
             )
 
         profile_data = UserProfileData(
-            user_id=user_id, email=payload.email, display_name=payload.display_name
+            user_id=user_id,
+            email=payload.email,
+            display_name=payload.display_name,
+            fcm_token=payload.fcm_token,
         )
 
         await user_service.create_profile(profile_data)
