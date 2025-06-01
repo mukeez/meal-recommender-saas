@@ -14,9 +14,13 @@ class LoginRequest(BaseModel):
     Attributes:
         email: User's email address
         password: User's password
+        fcm_token: Optional Firebase Cloud Messaging token for push notifications
     """
     email: EmailStr = Field(..., description="User's email address")
     password: str = Field(..., description="User's password")
+    fcm_token: Optional[str] = Field(
+        None, description="Firebase Cloud Messaging token for push notifications"
+    )
 
 
 class UserMetadata(BaseModel):
@@ -66,10 +70,14 @@ class SignupRequest(BaseModel):
         email: User's email address
         password: User's password
         display_name: User's display name (optional)
+        fcm_token: Optional Firebase Cloud Messaging token for push notifications
     """
     email: EmailStr = Field(..., description="User's email address")
     password: str = Field(..., min_length=6, description="User's password (min 6 characters)")
     display_name: Optional[str] = Field(None, description="User's display name")
+    fcm_token: Optional[str] = Field(
+        None, description="Firebase Cloud Messaging token for push notifications"
+    )
 
     @field_validator('password')
     def validate_password_length(cls, value):

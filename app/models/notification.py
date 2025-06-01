@@ -127,3 +127,18 @@ class LoggedNotification(Notification):
 
 class UpdateNotificationStatusRequest(BaseModel):
     status: str
+
+
+class SendPushNotificationRequest(BaseModel):
+    """
+    Request model for sending a push notification.
+
+    Attributes:
+        fcm_token (str): The FCM token of the device to send the notification to.
+        title (str): The title of the notification.
+        body (str): The body content of the notification.
+    """
+
+    fcm_token: str
+    title: str
+    body: str

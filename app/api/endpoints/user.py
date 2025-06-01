@@ -129,6 +129,38 @@ async def update_user_profile(
         raise HTTPException(status_code=500, detail="Failed to update user profile")
 
 
+@router.patch(
+    "/me/fcm-token",
+    summary="Update FCM token",
+    description="Update the FCM token for push notifications.",
+)
+async def update_fcm_token(
+    body: dict,
+    user=Depends(auth_guard),
+):
+    """Update the FCM token for the current user.
+
+    This is a protected endpoint that requires authentication.
+
+    Args:
+        body: Dict containing the new FCM token (expects {"fcm_token": ...})
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        A success message indicating the token was updated
+    """
+    try:
+        fcm_token = body.get("fcm_token")
+        user_id = user.get("sub")
+        await user_service.update_fcm_token(user_id=user_id, fcm_token=fcm_token)
+        return {"message": "FCM token updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update FCM token with error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update FCM token")
+
+
 @router.get(
     "/preferences",
     response_model=UserPreferences,

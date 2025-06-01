@@ -7,6 +7,7 @@ from app.api.auth_guard import auth_guard
 from app.models.notification import (
     CreateNotificationRequest,
     NotificationResponse,
+    SendPushNotificationRequest,
     UpdateNotificationStatusRequest,
 )
 from app.services.notification_service import notification_service
@@ -141,3 +142,41 @@ async def update_notification_status(
         raise HTTPException(
             status_code=500, detail="Failed to update notification status"
         )
+
+
+@router.post(
+    "/push",
+    status_code=status.HTTP_200_OK,
+    summary="Send push notification",
+    description="Send a push notification to a user's device.",
+)
+async def send_push_notification(
+    notification: SendPushNotificationRequest,
+    user=Depends(auth_guard),
+) -> dict:
+    """
+    Send a push notification to the user's device.
+
+    Args:
+        notification (SendPushNotificationRequest): The notification data to be sent.
+        user: The authenticated user (injected by dependency).
+
+    Returns:
+        dict: A message indicating the result of the push notification operation.
+
+    Raises:
+        HTTPException: If sending the push notification fails or an error occurs.
+    """
+    try:
+        await notification_service.send_push_notification(
+            fcm_token=notification.fcm_token,
+            title=notification.title,
+            body=notification.body,
+        )
+        return {"message": "Push notification sent successfully"}
+    except HTTPException:
+        traceback.print_exc()
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Failed to send push notification")

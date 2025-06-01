@@ -27,3 +27,12 @@ def mock_notification_mark_notification_as_read(mocker):
         new_callable=AsyncMock,
     )
     return mock
+
+
+@pytest.fixture(scope="function")
+def mock_notification_send_push_notification(mocker):
+    mock = mocker.patch(
+        "app.services.notification_service.NotificationService.send_push_notification",
+        new_callable=AsyncMock,
+    )
+    return mock
