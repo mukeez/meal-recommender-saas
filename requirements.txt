@@ -1,5 +1,6 @@
 APScheduler==3.11.0
 boto3==1.38.5
+celery==5.5.2
 email_validator==2.2.0
 fastapi==0.115.12
 geopy==2.4.1
@@ -9,6 +10,7 @@ Jinja2==3.1.6
 openai==1.70.0
 openfoodfacts==2.5.1
 pillow==11.2.1
+playwright==1.52.0
 pydantic==2.11.3
 pydantic_core==2.33.1
 pytest==8.3.5
@@ -16,6 +18,8 @@ pytest-asyncio==0.26.0
 python-dotenv==1.0.1
 python-jose==3.4.0
 python-multipart==0.0.20
+redis==6.2.0
+slack_sdk==3.35.0
 stripe==12.0.0
 supabase==2.15.0
 uvicorn==0.27.1
