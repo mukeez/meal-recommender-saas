@@ -484,5 +484,439 @@ class UserProfileService:
                 detail=f"Error uploading user auth details",
             )
 
+    async def update_password(self, email: str, password: str) -> None:
+        """Update the user's password in the database."""
+        logger.info(f"Updating password for user: {email}")
+
+        try:
+            async with httpx.AsyncClient() as client:
+                user = await self.get_user_by_email(email=email)
+                user_id = user.get("id") if user else None
+                response = await client.put(
+                    f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}",
+                    headers={
+                        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+                        "Content-Type": "application/json",
+                    },
+
+                    json={"password": password},
+                )
+
+                if response.status_code not in (200, 204):
+                    error_detail = "Failed to update password"
+                    try:
+                        error_data = response.json()
+                        if "message" in error_data:
+                            error_detail = error_data["message"]
+                    except Exception:
+                        pass
+
+                    logger.error(f"Password update failed for {email}: {error_detail}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to update password",
+                    )
+
+                logger.info(f"Password updated successfully for user: {email}")
+
+        except httpx.RequestError as e:
+            logger.error(f"Request error updating password: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database",
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error updating password: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error updating password",
+            )
+
+    async def invalidate_session_token(self, email: str) -> None:
+        """Invalidate the session token for the user."""
+        logger.info(f"Invalidating session token for user: {email}")
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.delete(
+                    f"{self.base_url}/rest/v1/session_tokens",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params={"email": f"eq.{email}"},
+                )
+
+                if response.status_code not in (200, 204):
+                    error_detail = "Failed to invalidate session token"
+                    try:
+                        error_data = response.json()
+                        if "message" in error_data:
+                            error_detail = error_data["message"]
+                    except Exception:
+                        pass
+
+                    logger.error(f"Session token invalidation failed for {email}: {error_detail}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to invalidate session token",
+                    )
+
+                logger.info(f"Session token invalidated successfully for user: {email}")
+
+        except httpx.RequestError as e:
+            logger.error(f"Request error invalidating session token: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database",
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error invalidating session token: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error invalidating session token",
+            )
+
+    async def get_otp(self, email: str) -> Optional[Dict[str, Any]]:
+        """Retrieve the OTP entry for the user."""
+        logger.info(f"Retrieving OTP for user: {email}")
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.base_url}/rest/v1/otp",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params={"email": f"eq.{email}"},
+                )
+
+                if response.status_code not in (200, 204):
+                    error_detail = "Failed to retrieve OTP"
+                    try:
+                        error_data = response.json()
+                        if "message" in error_data:
+                            error_detail = error_data["message"]
+                    except Exception:
+                        pass
+
+                    logger.error(f"OTP retrieval failed for {email}: {error_detail}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to retrieve OTP",
+                    )
+
+                otp_data = response.json()
+                return otp_data[0] if otp_data else None
+
+        except httpx.RequestError as e:
+            logger.error(f"Request error retrieving OTP: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database",
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error retrieving OTP: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error retrieving OTP",
+            )
+
+    async def store_session_token(self, email: str, session_token: str) -> None:
+        """Store the session token for the user."""
+        logger.info(f"Storing session token for user: {email}")
+
+        try:
+            session_data = {
+                "email": email,
+                "token": session_token,
+                "created_at": datetime.now().isoformat(),
+            }
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.base_url}/rest/v1/session_tokens",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                        "Prefer": "return=representation",
+                    },
+                    json=session_data,
+                )
+
+                if response.status_code not in (201, 200):
+                    error_detail = "Failed to store session token"
+                    try:
+                        error_data = response.json()
+                        if "message" in error_data:
+                            error_detail = error_data["message"]
+                    except Exception:
+                        pass
+
+                    logger.error(f"Session token storage failed for {email}: {error_detail}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to store session token",
+                    )
+
+                logger.info(f"Session token stored successfully for user: {email}")
+
+        except httpx.RequestError as e:
+            logger.error(f"Request error storing session token: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database",
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error storing session token: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error storing session token",
+            )
+
+    async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve a user by their email address from user_profiles table.
+        
+        Args:
+            email: The email address of the user to retrieve
+            
+        Returns:
+            User data dictionary if found, None otherwise
+            
+        Raises:
+            HTTPException: If there's an error communicating with the database
+        """
+        logger.info(f"Retrieving user with email: {email}")
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                # Check user_profiles table for the user
+                response = await client.get(
+                    f"{self.base_url}/rest/v1/user_profiles",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params={"email": f"eq.{email}"}
+                )
+                
+                if response.status_code == 200:
+                    profiles = response.json()
+                    if profiles and len(profiles) > 0:
+                        return profiles[0]
+                        
+                # User not found
+                logger.info(f"No user found with email: {email}")
+                return None
+                
+        except httpx.RequestError as e:
+            logger.error(f"Request error retrieving user: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database",
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error retrieving user: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error retrieving user data",
+            )
+
+    async def store_otp(self, email: str, hashed_otp: str, expiration_time: datetime) -> None:
+        """
+        Store the OTP (One-Time Password) for the user's password reset request.
+        
+        Args:
+            email: The user's email address
+            hashed_otp: The SHA-256 hash of the OTP (not the actual OTP)
+            expiration_time: When the OTP expires
+            
+        Raises:
+            HTTPException: If there's an error communicating with the database
+        """
+        logger.info(f"Storing OTP for user: {email}")
+        
+        try:
+            otp_data = {
+                "email": email,
+                "otp_hash": hashed_otp,
+                "expires_at": expiration_time.isoformat(),
+                "created_at": datetime.now().isoformat()
+            }
+            
+            async with httpx.AsyncClient() as client:
+                # First check if an OTP already exists for this email
+                check_response = await client.get(
+                    f"{self.base_url}/rest/v1/otp",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params={"email": f"eq.{email}"}
+                )
+                
+                if check_response.status_code == 200 and check_response.json():
+                    # OTP exists, update it
+                    update_response = await client.patch(
+                        f"{self.base_url}/rest/v1/otp",
+                        headers={
+                            "apikey": self.api_key,
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                            "Prefer": "return=representation",
+                        },
+                        params={"email": f"eq.{email}"},
+                        json=otp_data
+                    )
+                    
+                    if update_response.status_code not in (200, 204):
+                        logger.error(f"Failed to update OTP for {email}")
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Failed to update OTP"
+                        )
+                else:
+                    # No OTP exists, create a new one
+                    create_response = await client.post(
+                        f"{self.base_url}/rest/v1/otp",
+                        headers={
+                            "apikey": self.api_key,
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                            "Prefer": "return=representation",
+                        },
+                        json=otp_data
+                    )
+                    
+                    if create_response.status_code not in (201, 200):
+                        logger.error(f"Failed to create OTP for {email}")
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Failed to create OTP"
+                        )
+                
+                logger.info(f"OTP stored successfully for user: {email}")
+                
+        except httpx.RequestError as e:
+            logger.error(f"Request error storing OTP: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database"
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error storing OTP: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error storing OTP"
+            )
+
+    async def get_session_token(self, email: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve the session token entry for a user.
+        
+        Args:
+            email: The email address of the user
+            
+        Returns:
+            Dictionary containing session token data if found, None otherwise
+            
+        Raises:
+            HTTPException: If there's an error communicating with the database
+        """
+        logger.info(f"Retrieving session token for user: {email}")
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.base_url}/rest/v1/session_tokens",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params={"email": f"eq.{email}"}
+                )
+                
+                if response.status_code == 200:
+                    tokens = response.json()
+                    if tokens and len(tokens) > 0:
+                        return tokens[0]
+            
+            # No token found
+            logger.info(f"No session token found for user: {email}")
+            return None
+            
+        except httpx.RequestError as e:
+            logger.error(f"Request error retrieving session token: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database",
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error retrieving session token: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error retrieving session token",
+            )
+
+    async def invalidate_otp(self, email: str) -> None:
+        """
+        Invalidate (delete) the OTP entry for the user.
+        
+        Args:
+            email: The email address of the user
+            
+        Raises:
+            HTTPException: If there's an error communicating with the database
+        """
+        logger.info(f"Invalidating OTP for user: {email}")
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.delete(
+                    f"{self.base_url}/rest/v1/otp",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params={"email": f"eq.{email}"}
+                )
+                
+                if response.status_code not in (200, 204):
+                    error_detail = "Unknown error"
+                    try:
+                        error_detail = response.json().get("message", "Unknown error")
+                    except:
+                        pass
+                
+                    logger.error(f"OTP invalidation failed for {email}: {error_detail}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to invalidate OTP",
+                    )
+                    
+                logger.info(f"OTP invalidated successfully for user: {email}")
+                
+        except httpx.RequestError as e:
+            logger.error(f"Request error invalidating OTP: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database",
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error invalidating OTP: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error invalidating OTP",
+            )
 
 user_service = UserProfileService()
