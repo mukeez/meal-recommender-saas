@@ -353,7 +353,6 @@ async def reset_password(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid session token.")
 
     # Update the user's password
-    hashed_password = hashlib.sha256(request.new_password.encode()).hexdigest()
     await user_service.update_password(email=request.email, password=request.new_password)
 
     # Invalidate the OTP/session token
