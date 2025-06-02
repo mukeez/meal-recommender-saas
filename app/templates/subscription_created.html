@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Welcome to Macro Meals Pro!</h2>
+
+<p>Thank you for subscribing to {{ subscription_type }}. Your account has been upgraded to Pro status.</p>
+
+<p>You now have access to all premium features including:</p>
+<ul>
+    <li>Unlimited meal recommendations</li>
+    <li>Advanced nutrition tracking</li>
+    <li>Restaurant menu database access</li>
+    <li>Personalized macro plans</li>
+    <li>Custom meal planning</li>
+</ul>
+
+<p>Your subscription includes a {{ trial_days }}-day free trial period. You won't be charged until the trial ends.</p>
+
+<p>If you have any questions about your subscription or need help getting started, please contact our support team at support@macromealsapp.com.</p>
+
+<p>Enjoy your premium experience!</p>
+
+<p>Best regards,<br>The Macro Meals Team</p>
+{% endblock %}
