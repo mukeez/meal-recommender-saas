@@ -77,6 +77,7 @@ async def update_user_profile(
         None, description="new user first name (optional)"
     ),
     last_name: Optional[str] = Form(None, description="new user last name (optional)"),
+    age: Optional[int] = Form(None, description="new user age (optional)"),
     avatar: Optional[UploadFile] = File(None, description="new avatar image(optional)"),
     user=Depends(auth_guard),
 ):
@@ -89,6 +90,7 @@ async def update_user_profile(
         display_name: new user email(optional)
         first_name: new user first name(optional)
         last_name: new user last name(optional)
+        age: new user age(optional)
         avatar: new avatar image(optional)
 
     Returns:
@@ -111,12 +113,14 @@ async def update_user_profile(
                 first_name=first_name,
                 last_name=last_name,
                 avatar_url=avatar_url,
+                age=age,
             )
         else:
             user_data = UpdateUserProfileRequest(
                 display_name=display_name,
                 first_name=first_name,
                 last_name=last_name,
+                age=age,
             )
         profile = await user_service.update_user_profile(
             token=token, user_id=user_id, user_data=user_data

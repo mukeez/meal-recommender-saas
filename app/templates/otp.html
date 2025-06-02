@@ -1,7 +1,21 @@
-% extends "base_email.html" %}
-{% block body %}
-  <p>Hi {{ user_name }},</p>
-  <p>Your One-Time Passcode (OTP) is:</p>
-  <h2>{{ otp_code }}</h2>
+{% extends "base.html" %}
+
+{% block content %}
+<div class="email-container">
+  <h2>Password Reset Code</h2>
+  <p>Hello{% if user_name %} {{ user_name }}{% endif %},</p>
+  
+  <p>You requested a password reset for your MacroMeals account. Use the following code to verify your identity:</p>
+  
+  <div class="otp-container">
+    <h1 class="otp-code">{{ otp_code }}</h1>
+  </div>
+  
   <p>This code will expire in {{ otp_expiry_minutes }} minutes.</p>
+  
+  <p>If you didn't request this password reset, please ignore this email or contact support if you have concerns.</p>
+  
+  <p>Best regards,<br>
+  The MacroMeals Team</p>
+</div>
 {% endblock %}

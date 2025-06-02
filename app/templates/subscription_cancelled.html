@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Subscription Cancelled</h2>
+
+<p>We're sorry to see you go! Your {{ subscription_type }} subscription has been cancelled as of {{ cancellation_date }}.</p>
+
+<p>You'll continue to have access to premium features until the end of your current billing period.</p>
+
+<p>If you cancelled by mistake or would like to resubscribe in the future, you can do so anytime through the app.</p>
+
+<p>We'd love to hear your feedback on how we could improve our service. Please let us know at feedback@macromealsapp.com.</p>
+
+<p>Best regards,<br>The Macro Meals Team</p>
+{% endblock %}

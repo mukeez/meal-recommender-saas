@@ -24,7 +24,7 @@ from app.api.endpoints import (
     products,
 )
 from app.core.config import settings
-from app.utils.tasks import macromeals_tasks
+from app.tasks.macromeals_tasks import macromeals_tasks
 import logging
 import json
 
