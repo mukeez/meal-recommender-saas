@@ -79,13 +79,13 @@ class MacroMealsTasks:
             )
 
     def schedule_end_of_day_meal_reminders(self) -> None:
-        """Schedule end of day meal reminders for users with meal_reminders_set key as False."""
+        """Schedule end of day meal reminders for users with meal_reminder_preferences_set key as False."""
         try:
             logger.info("preparing to schedule end of day meal reminders")
             users = (
                 self.supabase_client.table("user_profiles")
                 .select("id, fcm_token, first_name")
-                .eq("meal_reminders_set", False)
+                .eq("meal_reminder_preferences_set", False)
                 .execute()
             )
             user_list = users.data if hasattr(users, "data") else users
