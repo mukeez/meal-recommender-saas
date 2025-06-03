@@ -64,7 +64,7 @@ class MealService:
                 "protein": meal_data.protein,
                 "carbs": meal_data.carbs,
                 "fat": meal_data.fat,
-                "timestamp": timestamp,
+                "meal_time": timestamp,
                 "meal_type": meal_type,
             }
 

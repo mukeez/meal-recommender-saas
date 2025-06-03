@@ -6,9 +6,10 @@ response data for the meal recommendation API.
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, field_validator, Field
-from app.models.location import ReverseGeocode
+from typing import List, Optional, Dict
+from typing_extensions import Annotated
+from pydantic import BaseModel, field_validator, Field, BeforeValidator
+from app.utils.helper_functions import parse_datetime
 from typing_extensions import Annotated
 
 
@@ -141,9 +142,8 @@ class LogMealRequest(BaseModel):
     carbs: float = Field(..., description="Carbohydrate amount in grams", gt=0)
     fat: float = Field(..., description="Fat amount in grams", gt=0)
     calories: float = Field(..., description="Total calories", gt=0)
-    meal_time: Optional[datetime] = Field(
-        default_factory=datetime.now, description="Timestamp of meal consumption"
-    )
+    meal_time: Annotated[Optional[datetime],Field(
+        default_factory=datetime.now, description="Timestamp of meal consumption")]
     meal_type: Optional[MealType] = Field(
         None, 
         description="Type of meal (breakfast, lunch, dinner, other). Will be auto-classified if not provided."
@@ -154,9 +154,16 @@ class LoggedMeal(BaseModel):
     """Logged meal model with additional tracking information.
 
     Attributes:
-        id: Unique identifier for the logged meal
+        id: Unique identifier for the meal
         user_id: ID of the user who logged the meal
-        created_at: Timestamp when the meal was logged
+        name: Name of the meal
+        description: Description of the meal
+        calories: Total calories in kcal
+        protein: Protein amount in grams
+        carbs: Carbohydrate amount in grams
+        fat: Fat amount in grams
+        meal_time: Timestamp when the meal was logged (ISO format)
+        meal_type: Type of meal (breakfast, lunch, dinner, other)
     """
 
     id: str = Field(..., description="Unique identifier for the meal")
@@ -167,7 +174,7 @@ class LoggedMeal(BaseModel):
     protein: float = Field(..., description="Protein in grams")
     carbs: float = Field(..., description="Carbohydrates in grams")
     fat: float = Field(..., description="Fat in grams")
-    timestamp: str = Field(..., description="ISO format timestamp when the meal was logged")
+    meal_time: Annotated[datetime, Field(..., description="ISO format timestamp when the meal was logged")]
     meal_type: MealType = Field(
         MealType.OTHER, 
         description="Classification of the meal based on time of day"

@@ -109,7 +109,7 @@ class TestMealsEndpoint:
             "protein": 35,
             "carbs": 50,
             "fat": 15,
-            "timestamp": "2025-05-31T12:00:00Z",
+            "meal_time": "2025-05-31T12:00:00Z",
             "meal_type": "lunch"
         }
 
@@ -173,7 +173,7 @@ class TestMealsEndpoint:
                 "protein": 15,
                 "carbs": 50,
                 "fat": 5,
-                "timestamp": "2025-05-31T08:00:00Z",
+                "meal_time": "2025-05-31T08:00:00Z",
                 "meal_type": "breakfast"
             },
             {
@@ -185,7 +185,7 @@ class TestMealsEndpoint:
                 "protein": 35,
                 "carbs": 50,
                 "fat": 15,
-                "timestamp": "2025-05-31T12:00:00Z",
+                "meal_time": "2025-05-31T12:00:00Z",
                 "meal_type": "lunch"
             }
         ]
