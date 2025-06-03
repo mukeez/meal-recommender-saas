@@ -41,6 +41,24 @@ scheduler = BackgroundScheduler()
 # scheduled for midnight each day
 scheduler.add_job(macromeals_tasks.downgrade_users, CronTrigger(hour="0"))
 
+# scheduled for 8:10 AM daily
+scheduler.add_job(
+    macromeals_tasks.schedule_custom_meal_reminders_breakfast,
+    CronTrigger(hour="8", minute="10"),
+)
+
+# scheduled for 12:00 PM daily
+scheduler.add_job(
+    macromeals_tasks.schedule_custom_meal_reminders_dinner,
+    CronTrigger(hour="12"),
+)
+
+# scheduled for 7:00 PM daily
+scheduler.add_job(
+    macromeals_tasks.schedule_custom_meal_reminders_dinner,
+    CronTrigger(hour="19"),
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
