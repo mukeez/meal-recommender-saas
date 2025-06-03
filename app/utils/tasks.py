@@ -3,6 +3,9 @@ from app.core.config import settings
 from datetime import datetime
 import logging
 
+from app.services.notification_service import notification_service
+import asyncio
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,6 +30,100 @@ class MacroMealsTasks:
             logger.info("success")
         except Exception as e:
             logger.error(f"Failed to downgrade users with error: {e}")
+
+    def schedule_start_of_day_meal_reminders(self) -> None:
+        """Schedule start of day meal reminders for users with meal_reminder_preferences_set as False."""
+        try:
+            logger.info("preparing to schedule start of day meal reminders")
+            users = (
+                self.supabase_client.table("user_profiles")
+                .select("id, fcm_token, first_name")
+                .eq("meal_reminder_preferences_set", False)
+                .execute()
+            )
+            user_list = users.data if hasattr(users, "data") else users
+            for user in user_list:
+                user_id = user.get("id")
+                token = user.get("fcm_token")
+                first_name = user.get("first_name", None)
+                if token:
+                    logger.info(
+                        f"Sending meal reminder notification to user: {user_id}"
+                    )
+                    title = (
+                        f"Good morning, {first_name}!"
+                        if first_name
+                        else "Good morning!"
+                    )
+                    body = "Ready to fuel your day right? Tap to plan your meals and hit those macro goals today!"
+                    asyncio.run(
+                        notification_service.send_push_notification(
+                            fcm_token=token,
+                            title=title,
+                            body=body,
+                        )
+                    )
+                    self.supabase_client.table("notifications").insert(
+                        {
+                            "user_id": user_id,
+                            "type": "reminder",
+                            "subtype": "start_of_day",
+                            "title": title,
+                            "body": body,
+                            "status": "unread",
+                        }
+                    ).execute()
+        except Exception as e:
+            logger.error(
+                f"Failed to schedule start of day meal reminders with error: {e}"
+            )
+
+    def schedule_end_of_day_meal_reminders(self) -> None:
+        """Schedule end of day meal reminders for users with meal_reminders_set key as False."""
+        try:
+            logger.info("preparing to schedule end of day meal reminders")
+            users = (
+                self.supabase_client.table("user_profiles")
+                .select("id, fcm_token, first_name")
+                .eq("meal_reminders_set", False)
+                .execute()
+            )
+            user_list = users.data if hasattr(users, "data") else users
+            for user in user_list:
+                user_id = user.get("id")
+                token = user.get("fcm_token")
+                first_name = user.get("first_name", None)
+                if token:
+                    logger.info(
+                        f"Sending end of day meal reminder notification to user: {user_id}"
+                    )
+                    title = (
+                        f"Day is almost over, {first_name}!"
+                        if first_name
+                        else "Day is almost over!"
+                    )
+                    body = "Don’t forget to log your meals. It only takes a minute to stay on track."
+                    asyncio.run(
+                        notification_service.send_push_notification(
+                            fcm_token=token,
+                            title=title,
+                            body=body,
+                        )
+                    )
+                    self.supabase_client.table("notifications").insert(
+                        {
+                            "user_id": user_id,
+                            "type": "reminder",
+                            "subtype": "end_of_day",
+                            "title": title,
+                            "body": body,
+                            "status": "unread",
+                        }
+                    ).execute()
+        except Exception as e:
+            logger.error(
+                f"Failed to schedule end of day meal reminders with error: {e}"
+            )
 
 
 macromeals_tasks = MacroMealsTasks()
