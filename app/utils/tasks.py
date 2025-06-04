@@ -1,10 +1,10 @@
+import asyncio
+import logging
+from datetime import datetime
 from supabase import create_client
 from app.core.config import settings
-from datetime import datetime
-import logging
-
 from app.services.notification_service import notification_service
-import asyncio
+
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +124,126 @@ class MacroMealsTasks:
             logger.error(
                 f"Failed to schedule end of day meal reminders with error: {e}"
             )
+
+    def schedule_custom_meal_reminders_breakfast(self) -> None:
+        """Schedule custom meal reminders for breakfast."""
+        try:
+            logger.info("scheduling custom meal reminders for breakfast")
+            users = (
+                self.supabase_client.table("user_profiles")
+                .select("id, fcm_token, first_name")
+                .eq("meal_reminder_preferences_set", True)
+                .execute()
+            )
+            user_list = users.data if hasattr(users, "data") else users
+            for user in user_list:
+                user_id = user.get("id")
+                token = user.get("fcm_token")
+                first_name = user.get("first_name", None)
+                if token:
+                    title = (
+                        f"Time for breakfast, {first_name}!"
+                        if first_name
+                        else "Time for breakfast!"
+                    )
+                    body = "Log your morning meal to start your macro tracking off right today. 🍳"
+                    asyncio.run(
+                        notification_service.send_push_notification(
+                            fcm_token=token,
+                            title=title,
+                            body=body,
+                        )
+                    )
+                    self.supabase_client.table("notifications").insert(
+                        {
+                            "user_id": user_id,
+                            "type": "reminder",
+                            "subtype": "breakfast",
+                            "title": title,
+                            "body": body,
+                            "status": "unread",
+                        }
+                    ).execute()
+        except Exception as e:
+            logger.error(f"Failed to schedule breakfast reminders with error: {e}")
+
+    def schedule_custom_meal_reminders_lunch(self) -> None:
+        """Schedule custom meal reminders for lunch."""
+        try:
+            logger.info("scheduling custom meal reminders for lunch")
+            users = (
+                self.supabase_client.table("user_profiles")
+                .select("id, fcm_token, first_name")
+                .eq("meal_reminder_preferences_set", True)
+                .execute()
+            )
+            user_list = users.data if hasattr(users, "data") else users
+            for user in user_list:
+                user_id = user.get("id")
+                token = user.get("fcm_token")
+                first_name = user.get("first_name", None)
+                if token:
+                    title = f"Lunchtime, {first_name}!" if first_name else "Lunchtime!"
+                    body = "Take a moment to log your meal and see how your macros are stacking up. 🥗"
+                    asyncio.run(
+                        notification_service.send_push_notification(
+                            fcm_token=token,
+                            title=title,
+                            body=body,
+                        )
+                    )
+                    self.supabase_client.table("notifications").insert(
+                        {
+                            "user_id": user_id,
+                            "type": "reminder",
+                            "subtype": "lunch",
+                            "title": title,
+                            "body": body,
+                            "status": "unread",
+                        }
+                    ).execute()
+        except Exception as e:
+            logger.error(f"Failed to schedule lunch reminders with error: {e}")
+
+    def schedule_custom_meal_reminders_dinner(self) -> None:
+        """Schedule custom meal reminders for dinner."""
+        try:
+            logger.info("scheduling custom meal reminders for dinner")
+            users = (
+                self.supabase_client.table("user_profiles")
+                .select("id, fcm_token, first_name")
+                .eq("meal_reminder_preferences_set", True)
+                .execute()
+            )
+            user_list = users.data if hasattr(users, "data") else users
+            for user in user_list:
+                user_id = user.get("id")
+                token = user.get("fcm_token")
+                first_name = user.get("first_name", None)
+                if token:
+                    title = (
+                        f"Dinner time, {first_name}!" if first_name else "Dinner time!"
+                    )
+                    body = "Log your evening meal to complete your day's macro tracking. What's on the menu? 🍽️"
+                    asyncio.run(
+                        notification_service.send_push_notification(
+                            fcm_token=token,
+                            title=title,
+                            body=body,
+                        )
+                    )
+                    self.supabase_client.table("notifications").insert(
+                        {
+                            "user_id": user_id,
+                            "type": "reminder",
+                            "subtype": "dinner",
+                            "title": title,
+                            "body": body,
+                            "status": "unread",
+                        }
+                    ).execute()
+        except Exception as e:
+            logger.error(f"Failed to schedule dinner reminders with error: {e}")
 
 
 macromeals_tasks = MacroMealsTasks()
