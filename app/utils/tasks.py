@@ -1,7 +1,8 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, date, time, timezone
 from supabase import create_client
+from app.api.endpoints.meals import get_daily_progress
 from app.core.config import settings
 from app.services.notification_service import notification_service
 
@@ -244,6 +245,83 @@ class MacroMealsTasks:
                     ).execute()
         except Exception as e:
             logger.error(f"Failed to schedule dinner reminders with error: {e}")
+
+    def trigger_macro_goal_completion_notification(self) -> None:
+        """Trigger a notification when a user completes their macro goals."""
+        try:
+            logger.info("triggering macro goal completion notification")
+            today = date.today()
+            start_of_day = datetime.combine(today, time.min, tzinfo=timezone.utc)
+            end_of_day = datetime.combine(today, time.max, tzinfo=timezone.utc)
+            users_who_completed_their_macro_goals_today = (
+                self.supabase_client.table("meal_logs")
+                .select("user_id, user_profiles(fcm_token, first_name)", count="exact")
+                .gte("created_at", start_of_day.isoformat())
+                .lte("created_at", end_of_day.isoformat())
+                .execute()
+            )
+            user_list = (
+                users_who_completed_their_macro_goals_today.data
+                if hasattr(users_who_completed_their_macro_goals_today, "data")
+                else users_who_completed_their_macro_goals_today
+            )
+            for user in user_list:
+                user_id = user.get("user_id")
+                try:
+                    daily_progress = asyncio.run(get_daily_progress(user_id))
+                    target_macros = daily_progress.target_macros
+                    progress_percentage = daily_progress.progress_percentage
+
+                    protein = progress_percentage.get("protein", 0)
+                    carbs = progress_percentage.get("carbs", 0)
+                    fat = progress_percentage.get("fat", 0)
+
+                    protein_target = getattr(target_macros, "protein", 0)
+                    carbs_target = getattr(target_macros, "carbs", 0)
+                    fat_target = getattr(target_macros, "fat", 0)
+                except Exception as e:
+                    logger.error(
+                        f"Error fetching daily progress for user {user_id}: {e}"
+                    )
+                    continue
+                if not (
+                    protein >= protein_target
+                    and carbs >= carbs_target
+                    and fat >= fat_target
+                ):
+                    continue
+                token = user.get("user_profiles", {}).get("fcm_token")
+                first_name = user.get("user_profiles", {}).get("first_name", None)
+                if token:
+                    title = (
+                        f"You crushed it today, {first_name}!"
+                        if first_name
+                        else "You crushed it today!"
+                    )
+                    body = "You’ve hit all your macro targets perfectly. Keep up the amazing work!"
+                    asyncio.run(
+                        notification_service.send_push_notification(
+                            fcm_token=token,
+                            title=title,
+                            body=body,
+                        )
+                    )
+                    self.supabase_client.table("notifications").insert(
+                        {
+                            "user_id": user_id,
+                            "type": "achievement",
+                            "subtype": "macro_goal_completed",
+                            "title": title,
+                            "body": body,
+                            "status": "unread",
+                        }
+                    ).execute()
+                    logger.info(
+                        f"sent macro goal completion notification to user: {user_id}"
+                    )
+        except Exception as e:
+            logger.error(f"Failed to trigger macro goal completion notification: {e}")
+        pass
 
 
 macromeals_tasks = MacroMealsTasks()

@@ -46,11 +46,6 @@ scheduler.add_job(
     macromeals_tasks.schedule_start_of_day_meal_reminders, CronTrigger(hour="8")
 )
 
-# scheduled for 5:00pm each day
-scheduler.add_job(
-    macromeals_tasks.schedule_end_of_day_meal_reminders, CronTrigger(hour="17")
-)
-
 # scheduled for 8:10 AM daily
 scheduler.add_job(
     macromeals_tasks.schedule_custom_meal_reminders_breakfast,
@@ -63,10 +58,21 @@ scheduler.add_job(
     CronTrigger(hour="12"),
 )
 
+# scheduled for 5:00pm each day
+scheduler.add_job(
+    macromeals_tasks.schedule_end_of_day_meal_reminders, CronTrigger(hour="17")
+)
+
 # scheduled for 7:00 PM daily
 scheduler.add_job(
     macromeals_tasks.schedule_custom_meal_reminders_dinner,
     CronTrigger(hour="19"),
+)
+
+# scheduled for 8:00 PM daily
+scheduler.add_job(
+    macromeals_tasks.trigger_macro_goal_completion_notifications,
+    CronTrigger(hour="20"),
 )
 
 
