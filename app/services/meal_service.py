@@ -5,13 +5,14 @@ This module provides functions to log meals and track daily nutrition progress.
 
 from typing import Dict, Any, List
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, time
 
 import httpx
 from fastapi import HTTPException, status
 
 from app.core.config import settings
 from app.models.meal import (
+    MealType,
     LogMealRequest,
     LoggedMeal,
     MacroNutrients,
@@ -43,15 +44,28 @@ class MealService:
         logger.info(f"Logging meal for user: {user_id}")
 
         try:
-            meal_record = {
+            # Use current timestamp if not provided
+            current_time = datetime.now().time()
+
+            # Determine meal type based on time if not explicitly provided
+            meal_type = meal_data.meal_type
+            if not meal_type:
+                meal_type = self._classify_meal_by_time(current_time)
+
+            # Generate timestamp in ISO format
+            timestamp = datetime.now().isoformat()
+
+            # Create the meal entry
+            meal_entry = {
                 "user_id": user_id,
                 "name": meal_data.name,
+                "description": meal_data.description,
+                "calories": meal_data.calories,
                 "protein": meal_data.protein,
                 "carbs": meal_data.carbs,
                 "fat": meal_data.fat,
-                "calories": meal_data.calories,
-                "meal_time": meal_data.meal_time.isoformat(),
-                "created_at": datetime.now().isoformat(),
+                "meal_time": timestamp,
+                "meal_type": meal_type,
             }
 
             async with httpx.AsyncClient() as client:
@@ -63,7 +77,7 @@ class MealService:
                         "Content-Type": "application/json",
                         "Prefer": "return=representation",
                     },
-                    json=meal_record,
+                    json=meal_entry,
                 )
 
                 if response.status_code not in (201, 200):
@@ -86,6 +100,7 @@ class MealService:
                     id=logged_meal_data["id"],
                     user_id=logged_meal_data["user_id"],
                     name=logged_meal_data["name"],
+                    description=logged_meal_data["description"],
                     protein=logged_meal_data["protein"],
                     carbs=logged_meal_data["carbs"],
                     fat=logged_meal_data["fat"],
@@ -93,6 +108,7 @@ class MealService:
                     meal_time=self._parse_datetime(logged_meal_data["meal_time"]),
                     created_at=self._parse_datetime(logged_meal_data["created_at"]),
                     notes=logged_meal_data.get("notes"),
+                    meal_type=logged_meal_data.get("meal_type"),
                 )
 
                 logger.info(f"Meal logged successfully for user: {user_id}")
@@ -176,6 +192,7 @@ class MealService:
                             meal_time=self._parse_datetime(meal["meal_time"]),
                             created_at=self._parse_datetime(meal["created_at"]),
                             notes=meal.get("notes"),
+                            meal_type=meal.get("meal_type"),
                         )
                     )
 
@@ -247,6 +264,7 @@ class MealService:
                             meal_time=self._parse_datetime(meal["meal_time"]),
                             created_at=self._parse_datetime(meal["created_at"]),
                             notes=meal.get("notes"),
+                            meal_type=meal.get("meal_type"),
                         )
                     )
 
@@ -359,6 +377,37 @@ class MealService:
         except ValueError:
             logger.warning(f"Could not parse datetime: {dt_str}")
             return datetime.now()
+
+    def _classify_meal_by_time(self, current_time: time) -> MealType:
+        """
+        Classify a meal based on the time of day.
+
+        Args:
+            current_time: The time to classify
+
+        Returns:
+            MealType enum value corresponding to the time of day
+        """
+        # Breakfast: 4:00 AM – 10:59 AM
+        breakfast_start = time(4, 0)
+        breakfast_end = time(10, 59)
+
+        # Lunch: 11:00 AM – 3:59 PM
+        lunch_start = time(11, 0)
+        lunch_end = time(15, 59)
+
+        # Dinner: 4:00 PM – 10:00 PM
+        dinner_start = time(16, 0)
+        dinner_end = time(22, 0)
+
+        if breakfast_start <= current_time <= breakfast_end:
+            return MealType.BREAKFAST
+        elif lunch_start <= current_time <= lunch_end:
+            return MealType.LUNCH
+        elif dinner_start <= current_time <= dinner_end:
+            return MealType.DINNER
+        else:
+            return MealType.OTHER
 
 
 meal_service = MealService()

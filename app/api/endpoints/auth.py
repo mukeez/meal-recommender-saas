@@ -7,12 +7,14 @@ from fastapi import APIRouter, HTTPException, status, Request, Depends, Body
 from fastapi.templating import Jinja2Templates
 import httpx
 import logging
+from datetime import datetime, timedelta
+import random, hashlib
 
 from app.core.config import settings
 from app.models.user import UpdateUserProfileRequest
 from app.services.user_service import user_service, UserProfileData
 from app.services.mail_service import mail_service
-from app.models.auth import LoginRequest, LoginResponse, SignupRequest, SignUpResponse
+from app.models.auth import LoginRequest, LoginResponse, SignupRequest, SignUpResponse, VerifyOtpRequest, VerifyOtpResponse, ResetPasswordRequest
 from app.api.auth_guard import auth_guard
 from typing import Dict
 
@@ -193,78 +195,13 @@ async def signup(payload: SignupRequest) -> SignUpResponse:
         )
 
 
-@router.post(
-    "/reset-password",
-    status_code=status.HTTP_200_OK,
-    summary="Request password reset",
-    description="Send a password reset email to the user.",
-)
-async def request_password_reset(request: Request, email: str):
-    """Request a password reset for a user.
-
-    Args:
-        request: The incoming FastAPI request
-        email: User's email address
-
-    Returns:
-        Confirmation message
-
-    Raises:
-        HTTPException: If the request fails
-    """
-    logger.info(f"Password reset requested for: {email}")
-
-    if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_ROLE_KEY:
-        logger.error("Supabase configuration is missing")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase configuration is missing",
-        )
-
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{settings.SUPABASE_URL}/auth/v1/recover",
-                headers={
-                    "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
-                    "Content-Type": "application/json",
-                },
-                json={"email": email},
-            )
-
-        if response.status_code != 200:
-            error_detail = "Password reset request failed"
-            try:
-                error_data = response.json()
-                if "error" in error_data and "message" in error_data:
-                    error_detail = error_data["message"]
-            except Exception:
-                pass
-
-            logger.warning(f"Password reset failed for {email}: {error_detail}")
-            raise HTTPException(status_code=response.status_code, detail=error_detail)
-        logger.info(f"Password reset email sent to: {email}")
-        return {"message": "Password reset instructions sent to your email"}
-
-    except httpx.RequestError as e:
-        logger.error(f"Error communicating with Supabase: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Error communicating with authentication service: {str(e)}",
-        )
-
-
 @router.patch(
     "/change-password",
     status_code=status.HTTP_200_OK,
-    summary="Request password reset",
-    description="Send a password reset email to the user.",
+    summary="change password",
+    description="Change the user's password using their current session token.",
 )
-async def change_password(
-    request: Request,
-    password: str = Body(..., embed=True, description="new user password"),
-    user=Depends(auth_guard),
-) -> Dict:
+async def change_password(request: Request, password: str = Body(..., embed=True, description="new user password"), user=Depends(auth_guard)) -> Dict:
     """Request a password reset for a user.
 
     Args:
@@ -282,7 +219,7 @@ async def change_password(
         logger.error("Supabase configuration is missing")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase configuration is missing",
+            detail="An error occurred while trying to change the password",
         )
 
     try:
@@ -296,6 +233,7 @@ async def change_password(
                     "Authorization": f"Bearer {token}",
                     "Content-Type": "application/json",
                 },
+
                 json={"password": password},
             )
 
@@ -316,5 +254,121 @@ async def change_password(
         logger.error(f"Error communicating with Supabase: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Error communicating with authentication service: {str(e)}",
+            detail=f"Error communicating with authentication service",
         )
+
+
+@router.post(
+    "/forgot-password",
+    status_code=status.HTTP_200_OK,
+    summary="Request password reset OTP",
+    description="Generate and send a secure OTP for password reset.",
+)
+async def forgot_password(email: str = Body(..., embed=True)) -> Dict:
+    """Generate and send OTP for password reset."""
+
+    try:
+        logger.info(f"Password reset OTP requested for: {email}")
+
+        user = await user_service.get_user_by_email(email)
+        # still return success response to prevent email renumeration
+        if not user:
+            return {"message": "An OTP has been sent to your mail."}
+
+        # Generate a 6-digit OTP
+        otp = random.randint(100000, 999999)
+        hashed_otp = hashlib.sha256(str(otp).encode()).hexdigest()
+        expiration_time = datetime.now() + timedelta(minutes=10)
+
+        # Store OTP securely in the database
+        await user_service.store_otp(email, hashed_otp, expiration_time)
+
+        # Send OTP via email
+        await mail_service.send_email(
+            recipient=email,
+            subject="Password Reset OTP",
+            template_name="otp.html",  # Changed from otp_email.html to match your actual file
+            context={"otp_code": otp, "otp_expiry_minutes": 10},
+        )
+
+        logger.info(f"OTP sent to {email}")
+        return {"message": "An OTP has been sent to your mail."}
+    except HTTPException as e:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating OTP for {email}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while processing your request.",
+        )
+
+
+@router.post(
+    "/verify-otp",
+    status_code=status.HTTP_200_OK,
+    summary="Verify OTP",
+    description="Verify the OTP for password reset.",
+    response_model=VerifyOtpResponse
+)
+async def verify_otp(request: VerifyOtpRequest) -> VerifyOtpResponse:
+    """Verify the OTP for password reset."""
+    try:
+        logger.info(f"Verifying OTP for {request.email}")
+
+        otp_entry = await user_service.get_otp(request.email)
+        if not otp_entry:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP.")
+        
+        # Parse the expires_at string to datetime
+        expires_at = datetime.fromisoformat(otp_entry["expires_at"].replace("Z", "+00:00"))
+        
+        # Check if OTP has expired
+        if expires_at < datetime.now(expires_at.tzinfo):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Expired OTP.")
+
+        hashed_otp = hashlib.sha256(request.otp.encode()).hexdigest()
+        if hashed_otp != otp_entry["otp_hash"]:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OTP.")
+
+        # Generate a temporary session token
+        session_token = hashlib.sha256(f"{request.email}{datetime.now().isoformat()}".encode()).hexdigest()
+        await user_service.store_session_token(request.email, session_token)
+
+        logger.info(f"OTP verified for {request.email}")
+        return {"message": "OTP verified.", "session_token": session_token}
+    except HTTPException as e:
+        raise
+    except Exception as e:
+        logger.error(f"Error verifying OTP for {request.email}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while processing your request.",
+        )
+
+
+@router.post(
+    "/reset-password",
+    status_code=status.HTTP_200_OK,
+    summary="Reset password",
+    description="Reset the user's password using a verified OTP or session token.",
+)
+async def reset_password(
+    request: ResetPasswordRequest
+) -> Dict:
+    """Reset the user's password."""
+    logger.info(f"Resetting password for {request.email}")
+
+    session_entry = await user_service.get_session_token(request.email)
+    # Fix this line - use dictionary access with brackets instead of dot notation
+    if not session_entry or session_entry["token"] != request.session_token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid session token.")
+
+    # Update the user's password
+    await user_service.update_password(email=request.email, password=request.new_password)
+
+    # Invalidate the OTP/session token
+    await user_service.invalidate_otp(request.email)
+    await user_service.invalidate_session_token(request.email)
+
+    logger.info(f"Password reset successful for {request.email}")
+    return {"message": "Password reset successful."}

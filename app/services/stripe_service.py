@@ -1,3 +1,7 @@
+"""Stripe Service Module
+Handles Stripe API interactions for billing, subscriptions and customer management.
+"""
+
 import logging
 from fastapi import status
 from fastapi.exceptions import HTTPException
@@ -17,11 +21,14 @@ logger = logging.getLogger(__name__)
 
 
 class StripeServiceError(Exception):
+    """Custom exception for Stripe service operations."""
     pass
 
 
 class StripeService:
+    """Service for managing Stripe billing and subscriptions."""
     def __init__(self):
+        """Initialize with Stripe API credentials and configuration."""
         stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
         self.webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
         self.price_id = os.getenv("STRIPE_PRICE_ID")
@@ -40,6 +47,19 @@ class StripeService:
     async def create_checkout_session(
         self, email: str, user_id: str
     ) -> CheckoutSessionResponse:
+        """Create a Stripe checkout session for subscription.
+
+        Args:
+            email: User's email address
+            user_id: User's unique identifier
+
+        Returns:
+            CheckoutSessionResponse with checkout URL and session ID
+
+        Raises:
+            StripeServiceError: On checkout session creation failure
+            HTTPException: If user already has payment details
+        """
         try:
             logger.info(f"Creating checkout session for user: {user_id}")
 
@@ -84,6 +104,18 @@ class StripeService:
     def verify_webhook_signature(
         self, payload: bytes, signature: str
     ) -> Dict[str, Any]:
+        """Verify Stripe webhook signature.
+
+        Args:
+            payload: Raw webhook payload
+            signature: Signature header from request
+
+        Returns:
+            Verified event data
+
+        Raises:
+            StripeServiceError: On signature verification failure
+        """
         try:
             logger.info("Verifying webhook signature")
 
@@ -109,6 +141,17 @@ class StripeService:
             raise StripeServiceError(f"Unexpected error: {str(e)}")
 
     async def handle_checkout_completed(self, session: Dict[str, Any]) -> str:
+        """Handle checkout session completion.
+
+        Args:
+            session: Stripe session data containing customer information
+
+        Returns:
+            Stripe customer ID
+
+        Raises:
+            StripeServiceError: When customer ID not found or update fails
+        """
         try:
             # get stripe customer id
             customer = session.get("customer", None)
@@ -130,20 +173,15 @@ class StripeService:
             raise StripeServiceError(f"Error handling checkout completed: {str(e)}")
 
     async def handle_stripe_customer_created(self, session: Dict[str, Any]) -> None:
-        """
-        Handles the event when a new Stripe customer is created.
+        """Handle new Stripe customer creation.
 
-        Extracts the customer's email and Stripe customer ID from the session data
-        and updates the corresponding user profile in the Supabase database with
-        the Stripe customer ID.
+        Updates user profile with Stripe customer and subscription details.
 
         Args:
-            session (Dict[str, Any]): A dictionary containing the Stripe session data,
-                                       expected to have keys "customer_email" and "id".
+            session: Stripe session data with email and customer ID
 
         Raises:
-            StripeServiceError: If the customer email is not found in the session
-                                or if any error occurs during the database update.
+            StripeServiceError: When customer email missing or DB update fails
         """
         try:
             customer_email = session.get("email", None)
@@ -162,7 +200,7 @@ class StripeService:
             )
 
             # update user data with stripe customer id
-            await BaseDatabaseService.subclasses[0]().update_data(
+            BaseDatabaseService.subclasses[0]().update_data(
                 table_name="user_profiles",
                 data={
                     "stripe_customer_id": customer_id,
@@ -183,20 +221,14 @@ class StripeService:
     async def update_stripe_user_subscription(
         self, customer: str, subscription_data: SubscriptionUpdate
     ) -> None:
-        """
-         Update a user's subscription information based on the provided data.
-
-        If `is_pro` is True, the user is marked as subscribed and their subscription
-        start and end dates are updated. If False, the user is marked as unsubscribed.
-        Also updates Stripe-related metadata such as the customer and subscription IDs.
+        """Update user subscription information.
 
         Args:
-            customer (str): The stripe customer id of the user whose subscription is being updated.
-            subscription_data (SubscriptionUpdate): Contains subscription details including
-                pro status, Stripe customer ID, subscription ID, and the start/end dates.
+            customer: Stripe customer ID
+            subscription_data: Subscription details including pro status
 
-        Returns:
-            None
+        Raises:
+            StripeServiceError: When database update fails
         """
 
         try:
@@ -210,7 +242,7 @@ class StripeService:
             subscription_data_dict = remove_null_values(subscription_data.model_dump())
 
             # update user's stripe details
-            await BaseDatabaseService.subclasses[0]().update_data(
+            BaseDatabaseService.subclasses[0]().update_data(
                 table_name="user_profiles",
                 data=subscription_data_dict,
                 cols={"stripe_customer_id": customer},
@@ -223,29 +255,17 @@ class StripeService:
     async def cancel_user_subscription(
         self, user_id: str, cancel_at_period_end: bool = True
     ) -> stripe.Subscription:
-        """
-        Cancels the Stripe subscription for a given user.
-
-        Fetches the user's Stripe subscription ID from the database and then
-        initiates the cancellation through the Stripe API. The cancellation
-        can be set to occur at the end of the current billing period or immediately.
+        """Cancel user's Stripe subscription.
 
         Args:
-            user_id (str): The unique identifier of the user whose subscription
-                           needs to be cancelled.
-            cancel_at_period_end (bool, optional): A boolean indicating whether
-                the cancellation should happen at the end of the current billing
-                period (True) or immediately (False). Defaults to True.
+            user_id: User identifier
+            cancel_at_period_end: Whether to cancel at billing period end
 
         Returns:
-            stripe.Subscription: The Stripe Subscription object representing the
-                                 cancelled subscription.
+            Updated Stripe Subscription object
 
         Raises:
-            StripeServiceError: If no database service implementation is available,
-                                if the Stripe subscription ID is not found for the user,
-                                if there is an error interacting with the Stripe API,
-                                or if any unexpected error occurs during the process.
+            StripeServiceError: When subscription not found or cancellation fails
         """
         try:
             logger.info(f"Cancelling subscription for user: {user_id}")
@@ -253,7 +273,7 @@ class StripeService:
                 raise StripeServiceError("No database service implementation available")
 
             # fetch stripe subscription id for user if it exists
-            response = await BaseDatabaseService.subclasses[0]().select_data(
+            response = BaseDatabaseService.subclasses[0]().select_data(
                 table_name="user_profiles", cols={"id": user_id}
             )
             if response and isinstance(response, List):
@@ -267,7 +287,7 @@ class StripeService:
             if not subscription_id:
                 raise StripeServiceError("Subscription id not found for customer")
 
-            data = {"stripe_customer_id": None, "stripe_customer_id": None}
+            data = {"stripe_customer_id": None, "stripe_subscription_id": None}
 
             if cancel_at_period_end:
                 sub = stripe.Subscription.modify(
@@ -278,7 +298,7 @@ class StripeService:
                 sub = stripe.Subscription.delete(subscription_id)
                 data["is_pro"] = False
 
-            await BaseDatabaseService.subclasses[0].update_data(
+            BaseDatabaseService.subclasses[0].update_data(
                 table_name="user_profiles", data=data, cols={"id": user_id}
             )
 
@@ -295,25 +315,18 @@ class StripeService:
     async def get_subscription_with_retry(
         self, customer_id: str, retries: int = 2, delay: float = 2.0
     ) -> Dict:
-        """
-        Asynchronously retrieves the ID, start, and end dates of the first active subscription for a given Stripe customer, with retry logic.
-
-        This function calls the Stripe API to retrieve the customer object and includes the expanded
-        subscriptions data for efficient access. It iterates through the customer's subscriptions,
-        prioritizing the first active subscription found. If an error occurs during the API call
+        """Get customer subscription with retry logic.
 
         Args:
-            customer_id (str): The ID of the Stripe customer.
-            retries (int): The maximum number of retry attempts if the initial request fails or no active subscriptions are found. Defaults to 2.
-            delay (float): The delay in seconds to wait between each retry attempt. Defaults to 2.0 seconds.
+            customer_id: Stripe customer ID
+            retries: Maximum retry attempts
+            delay: Seconds between retries
 
         Returns:
-            Dict: A dictionary containing the 'subscription_id' (str), 'subscription_start' (datetime object),
-                  and 'subscription_end' (datetime object) of the first active subscription found for the customer.
-                  Returns an empty dictionary if no active subscriptions are found after all retries.
+            Dict with subscription_id, subscription_start and subscription_end
 
         Raises:
-            StripeServiceError: If all retry attempts fail due to Stripe API errors or network issues.
+            StripeServiceError: When no active subscriptions found after retries
         """
         for attempt in range(1, retries + 1):
             try:
@@ -348,19 +361,17 @@ class StripeService:
                 time.sleep(delay)
 
     async def create_stripe_customer(self, user_id: str, email: str) -> str:
-        """
-        Creates a Stripe customer using the provided email and user ID,
-        and updates the user's profile in the database with the generated Stripe customer ID.
+        """Create Stripe customer and update user profile.
 
         Args:
-            user_id (str): The ID of the user in your system.
-            email (str): The email address of the user to associate with the Stripe customer.
+            user_id: Internal user ID
+            email: User email address
 
         Returns:
-            str: The newly created Stripe customer ID.
+            New Stripe customer ID
 
         Raises:
-            StripeServiceError: If Stripe or database operations fail.
+            StripeServiceError: On Stripe API or database errors
         """
         try:
             if not BaseDatabaseService.subclasses:
@@ -369,7 +380,7 @@ class StripeService:
                 email=email, metadata={"user_id": user_id}
             )
             # update user's associated stripe customer id
-            await BaseDatabaseService.subclasses[0]().update_data(
+            BaseDatabaseService.subclasses[0]().update_data(
                 table_name="user_profiles",
                 data={"stripe_customer_id": customer.id},
                 cols={"id": user_id},
@@ -385,23 +396,22 @@ class StripeService:
             raise StripeServiceError("Unexpected error while creating stripe customer")
 
     async def get_stripe_customer(self, user_id: str) -> Optional[str]:
-        """
-        Retrieves the Stripe customer ID associated with a given user ID from the database.
+        """Get Stripe customer ID for user.
 
         Args:
-            user_id (str): The ID of the user whose Stripe customer ID should be fetched.
+            user_id: Internal user ID
 
         Returns:
-            Optional[str]: The Stripe customer ID if it exists, otherwise None.
+            Stripe customer ID if exists, otherwise None
 
         Raises:
-            StripeServiceError: If the database query fails.
+            StripeServiceError: On database errors
         """
         try:
             if not BaseDatabaseService.subclasses:
                 raise StripeServiceError("No database service implementation available")
             # fetch stripe customer id for user if it exists
-            response = await BaseDatabaseService.subclasses[0]().select_data(
+            response = BaseDatabaseService.subclasses[0]().select_data(
                 table_name="user_profiles", cols={"id": user_id}
             )
             if response and isinstance(response, List):
@@ -421,21 +431,17 @@ class StripeService:
             )
 
     async def create_ephemeral_key(self, user_id: str, customer_id: str) -> str:
-        """
-        Creates a Stripe ephemeral key for a given customer ID.
-
-        This key is used to securely interact with Stripe APIs on the client side,
-        typically for mobile applications.
+        """Create Stripe ephemeral key for client-side API access.
 
         Args:
-            user_id (str): The internal user ID.
-            customer_id (str): The Stripe customer ID.
+            user_id: Internal user ID
+            customer_id: Stripe customer ID
 
         Returns:
-            str: The secret of the newly created ephemeral key.
+            Ephemeral key secret
 
         Raises:
-            StripeServiceError: If an error occurs during the creation of the ephemeral key.
+            StripeServiceError: On key creation failure
         """
         try:
             ephemeral_key = stripe.EphemeralKey.create(
@@ -452,20 +458,17 @@ class StripeService:
             raise StripeServiceError("Unexpected error occured")
 
     async def create_setup_intent(self, user_id: str, customer_id: str) -> str:
-        """
-        Creates a Stripe setup intent for the given customer ID.
-
-        This setup intent allows the user to save a payment method for future off-session payments.
+        """Create Stripe setup intent for saving payment methods.
 
         Args:
-            user_id (str): The internal user ID.
-            customer_id (str): The Stripe customer ID.
+            user_id: Internal user ID
+            customer_id: Stripe customer ID
 
         Returns:
-            str: The client secret for the setup intent, to be used on the client side.
+            Setup intent client secret
 
         Raises:
-            StripeServiceError: If an error occurs during the creation of the setup intent.
+            StripeServiceError: On setup intent creation failure
         """
         try:
             setup_intent = stripe.SetupIntent.create(
@@ -487,18 +490,17 @@ class StripeService:
     async def create_subscription(
         self, customer_id: str, payment_method_id: str
     ) -> str:
-        """
-        Creates a Stripe subscription with a 3-day trial for the given customer and updates the user's profile.
+        """Create subscription with trial period.
 
         Args:
-            customer_id (str): Stripe customer ID.
-            payment_method_id (str): Stripe payment method ID.
+            customer_id: Stripe customer ID
+            payment_method_id: Stripe payment method ID
 
         Returns:
-            str: Stripe subscription ID.
+            Subscription ID
 
         Raises:
-            StripeServiceError: On missing DB service, Stripe error, or unexpected failure.
+            StripeServiceError: On subscription creation failure
         """
         try:
             if not BaseDatabaseService.subclasses:
@@ -530,18 +532,17 @@ class StripeService:
     async def create_customer_billing_portal(
         self, user_id: str, customer_id: str
     ) -> str:
-        """
-        Creates a Stripe Billing Portal session for the given customer.
+        """Create Stripe billing portal session.
 
         Args:
-            user_id (str): Internal user ID.
-            customer_id (str): Stripe customer ID.
+            user_id: Internal user ID
+            customer_id: Stripe customer ID
 
         Returns:
-            str: URL to the Stripe-hosted billing portal session.
+            URL to Stripe billing portal
 
         Raises:
-            StripeServiceError: If a Stripe or unexpected error occurs during session creation.
+            StripeServiceError: On portal session creation failure
         """
         try:
             session = stripe.billing_portal.Session.create(
@@ -561,6 +562,26 @@ class StripeService:
             raise StripeServiceError(
                 "Unexpected error while creating stripe customer billing portal"
             )
+
+    async def get_customer_email(self, customer_id: str) -> Optional[str]:
+        """Get customer email from Stripe.
+
+        Args:
+            customer_id: Stripe customer ID
+
+        Returns:
+            Customer email or None if not found
+        """
+        try:
+            logger.info(f"Retrieving email for customer: {customer_id}")
+            customer = stripe.Customer.retrieve(customer_id)
+            return customer.get("email")
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe error retrieving customer email: {str(e)}")
+            return None
+        except Exception as e:
+            logger.error(f"Error retrieving customer email: {str(e)}")
+            return None
 
 
 stripe_service = StripeService()

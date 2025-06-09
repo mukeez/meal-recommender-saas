@@ -39,7 +39,7 @@ class SupabaseService(BaseDatabaseService):
         self.api_key = settings.SUPABASE_SERVICE_ROLE_KEY
         self.supabase_client = create_client(self.base_url, self.api_key)
 
-    async def update_data(
+    def update_data(
         self, table_name: str, data: Dict, **kwargs
     ) -> Dict[str, Any]:
         """
@@ -75,7 +75,7 @@ class SupabaseService(BaseDatabaseService):
                 f"An error occured while updating table: {table_name}"
             )
 
-    async def insert_data(
+    def insert_data(
         self, table_name: str, data: Dict, **kwargs
     ) -> Dict[str, Any]:
         """
@@ -109,7 +109,7 @@ class SupabaseService(BaseDatabaseService):
                 f"An error occured while inserting into table: {table_name}"
             )
 
-    async def upsert_data(
+    def upsert_data(
         self, table_name: str, data: Dict, **kwargs
     ) -> Dict[str, Any]:
         """
@@ -144,7 +144,7 @@ class SupabaseService(BaseDatabaseService):
                 f"An error occured while upserting table: {table_name}"
             )
 
-    async def delete_data(self, table_name: str, **kwargs) -> Dict[str, Any]:
+    def delete_data(self, table_name: str, **kwargs) -> Dict[str, Any]:
         """
         Deletes records from the specified Supabase table that match the given criteria.
 
@@ -178,7 +178,7 @@ class SupabaseService(BaseDatabaseService):
                 f"An error occured while deleting data from table: {table_name}"
             )
 
-    async def select_data(self, table_name, **kwargs) -> Union[List[Any], str]:
+    def select_data(self, table_name, **kwargs) -> Union[List[Any], str]:
         """
         Fetches records from the specified Supabase table based on the provided criteria.
 
@@ -220,3 +220,34 @@ class SupabaseService(BaseDatabaseService):
             raise SupbaseException(
                 f"An error occured while fetching data from table: {table_name}"
             )
+        
+    def rpc(self, function_name: str, params: Dict = None, **kwargs) -> Union[List[Any], Dict[str, Any]]:
+        """
+        Calls a stored PostgreSQL function via Supabase's RPC endpoint.
+
+        Args:
+            function_name (str): The name of the PostgreSQL function to call
+            params (Dict, optional): Parameters to pass to the function
+            **kwargs: Additional keyword arguments for future extensions
+
+        Returns:
+            Union[List[Any], Dict[str, Any]]: The response from the function call
+
+        Raises:
+            SupbaseException: If an error occurs during the RPC call
+        """
+        try:
+            logger.info(f"Calling RPC function {function_name} with params: {params}")
+            
+            # Call the function with parameters if provided
+            if params:
+                response = self.supabase_client.rpc(function_name, params).execute().model_dump()
+            else:
+                response = self.supabase_client.rpc(function_name).execute().model_dump()
+            
+            return response.get("data", [])
+        
+        except Exception as e:
+            error_msg = f"Failed to execute RPC function {function_name} with error: {str(e)}"
+            logger.error(error_msg)
+            raise SupbaseException(error_msg)

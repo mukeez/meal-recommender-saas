@@ -16,6 +16,7 @@ class UserTestConstants(Enum):
         "avatar_url": "https://mzlpkriykyspqskncion.supabase.co/storage/v1/object/public/avatars/e269b58e-5e72-46d2-b2ef-5df7f35622ef/avatar.png",
         "is_active": True,
         "is_pro": False,
+        "age": 24,
         "created_at": "2025-05-14T18:42:34.623132Z",
         "updated_at": "2025-05-14T18:42:34.623132Z",
     }

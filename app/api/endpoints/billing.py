@@ -14,6 +14,7 @@ from app.models.billing import (
     PublishableKey,
 )
 from app.services.stripe_service import stripe_service, StripeServiceError
+from app.services.mail_service import mail_service
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,20 @@ async def stripe_webhook(
                 customer_id=customer_id,
                 payment_method_id=payment_method,
             )
+            
+            # Get customer email and send welcome email
+            customer_email = await stripe_service.get_customer_email(customer_id)
+            if customer_email:
+                await mail_service.send_email(
+                    recipient=customer_email,
+                    subject="Welcome to Macro Meals Pro!",
+                    template_name="subscription_created.html",
+                    context={
+                        "subscription_type": "Macro Meals Pro",
+                        "trial_days": 3,
+                    }
+                )
+            
             logger.info(f"Subscription created for user: {customer_id}")
             return {
                 "status": "success",
@@ -120,21 +135,50 @@ async def stripe_webhook(
         elif event["type"] == "checkout.session.completed":
             session = event["data"]["object"]
             user_id = await stripe_service.handle_checkout_completed(session)
+            
+            # Get customer email from session
+            customer_email = session.get("customer_details", {}).get("email")
+            if customer_email:
+                await mail_service.send_email(
+                    recipient=customer_email,
+                    subject="Welcome to Macro Meals Pro!",
+                    template_name="subscription_created.html",
+                    context={
+                        "subscription_type": "Macro Meals Pro",
+                        "trial_days": 3,
+                    }
+                )
+                
             logger.info(f"Checkout completed for user: {user_id}")
             return {"status": "success", "message": "Checkout completed successfully"}
 
         elif event["type"] == "customer.subscription.deleted":
             session = event["data"]["object"]
+            customer_id = session["customer"]
             await stripe_service.update_stripe_user_subscription(
-                customer=session["customer"],
+                customer=customer_id,
                 subscription_data=SubscriptionUpdate(is_pro=False),
             )
+            
+            # Get customer email and send cancellation email
+            customer_email = await stripe_service.get_customer_email(customer_id)
+            if customer_email:
+                await mail_service.send_email(
+                    recipient=customer_email,
+                    subject="Your Macro Meals Pro Subscription",
+                    template_name="subscription_cancelled.html",
+                    context={
+                        "subscription_type": "Macro Meals Pro",
+                        "cancellation_date": datetime.now().strftime("%B %d, %Y")
+                    }
+                )
+            
             return {
                 "status": "success",
                 "message": "Subscription cancelled successfully",
             }
 
-        # update subscription start and end dates
+        # update subscription start and end dates - no email for renewals as requested
         elif event["type"] == "invoice.paid":
             session = event["data"]["object"]
             customer = session["customer"]

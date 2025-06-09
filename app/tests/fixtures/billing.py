@@ -117,3 +117,32 @@ def mock_stripe_handle_checkout_completed(mocker):
 def generate_stripe_signature_for_test():
     """Fixture to generate stripe signature"""
     return "t=123456789,v1=fake_signature"
+
+
+@pytest.fixture
+def mock_stripe_get_customer_email(monkeypatch):
+    """
+    Mock the stripe_service.get_customer_email method to return a test email.
+    """
+    mock = AsyncMock(return_value=UserTestConstants.MOCK_USER_EMAIL.value)
+    monkeypatch.setattr(
+        "app.services.stripe_service.stripe_service.get_customer_email", mock
+    )
+    return mock
+
+
+@pytest.fixture
+def mock_mail_send_email(monkeypatch):
+    """
+    Mock the mail_service.send_email method.
+    """
+    mock = AsyncMock(return_value={
+        "status": True,
+        "message": "Email Successfully Sent.",
+        "message_id": "mock-email-id-123",
+        "response": {"MessageId": "mock-email-id-123"}
+    })
+    monkeypatch.setattr(
+        "app.services.mail_service.mail_service.send_email", mock
+    )
+    return mock

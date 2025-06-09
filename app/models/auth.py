@@ -85,3 +85,49 @@ class SignupRequest(BaseModel):
         if len(value) < 6:
             raise ValueError("Password must be at least 6 characters long")
         return value
+    
+
+class ResetPasswordRequest(BaseModel):
+    """
+    ResetPasswordRequest represents the request model for resetting a user's password.
+    
+    This model is used when a user completes the password reset flow after verifying 
+    their identity with an OTP. It contains the user's email, new password, and the 
+    session token obtained during OTP verification.
+    
+    Attributes:
+        email (EmailStr): The email address of the user requesting password reset.
+        new_password (str): The new password that will replace the user's current password.
+        session_token (str): The verification token received after successful OTP validation.
+    """
+    email: Annotated[EmailStr, Field(..., description="User's email address for password reset")]
+    new_password: Annotated[str, Field(..., description="The new password to set for the user account")]
+    session_token: Annotated[str, Field(..., description="Session token for password reset verification")]
+
+
+class VerifyOtpResponse(BaseModel):
+    """
+    VerifyOtpResponse represents the response model for verifying an OTP.
+
+    Attributes:
+        message (str): A message indicating the result of the OTP verification.
+        session_token (str): A token representing the session associated with the OTP verification.
+    """
+    message: Annotated[str, Field(..., description="indicates the result of the OTP verification")]
+    session_token: Annotated[str, Field(..., description="otp verification session")]
+
+
+class VerifyOtpRequest(BaseModel):
+    """
+    VerifyOtpRequest represents the request model for verifying a one-time password.
+    
+    This model is used when a user submits an OTP code they received via email
+    during the password reset flow to verify their identity.
+    
+    Attributes:
+        email (EmailStr): The email address associated with the OTP.
+        otp (str): The one-time password code to verify.
+    """
+    email: Annotated[EmailStr, Field(..., description="User's email address for verification")]
+    otp: Annotated[str, Field(..., description="One-time password code to verify")]
+

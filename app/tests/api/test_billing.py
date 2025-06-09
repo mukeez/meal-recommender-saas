@@ -233,11 +233,13 @@ class TestBillingEndpoint:
         generate_stripe_signature_for_test,
         mock_stripe_verify_webhook_signature,
         mock_stripe_create_subscription,
+        mock_stripe_get_customer_email,  # Add this fixture
+        mock_mail_send_email,  # Add this fixture
     ):
         """
         Test case to verify that the webhook handler correctly processes a
         'setup_intent.succeeded' event by creating a new Stripe subscription
-        for the associated customer.
+        for the associated customer and sending a welcome email.
         """
 
         test_payload_dict = {
@@ -294,17 +296,33 @@ class TestBillingEndpoint:
         # assert stripe_service.create_subscription called
         mock_stripe_create_subscription.assert_called_once()
 
+        # assert get_customer_email was called with the correct customer_id
+        mock_stripe_get_customer_email.assert_called_once_with(
+            UserTestConstants.MOCK_CUSTOMER_ID.value
+        )
+
+        # assert send_email was called with the correct parameters
+        mock_mail_send_email.assert_called_once_with(
+            recipient=UserTestConstants.MOCK_USER_EMAIL.value,
+            subject="Welcome to Macro Meals Pro!",
+            template_name="subscription_created.html",
+            context={
+                "subscription_type": "Macro Meals Pro",
+                "trial_days": 3,
+            },
+        )
+
     async def test_webhook_checkout_session_completed(
         self,
         authenticated_client,
         generate_stripe_signature_for_test,
         mock_stripe_verify_webhook_signature,
         mock_stripe_handle_checkout_completed,
+        mock_mail_send_email,  # Add this fixture
     ):
         """
         Test case to verify that the webhook handler correctly processes a
-        'checkout.session.completed' event, typically by fulfilling an order
-        or activating a subscription based on the session details.
+        'checkout.session.completed' event, including sending a welcome email.
         """
         test_payload_dict = {
             "id": "evt_test_webhook_async",
@@ -318,6 +336,9 @@ class TestBillingEndpoint:
                     "customer": UserTestConstants.MOCK_CUSTOMER_ID.value,
                     "subscription": "sub_test_async_789",
                     "metadata": {"user_id": UserTestConstants.MOCK_USER_ID.value},
+                    "customer_details": {
+                        "email": UserTestConstants.MOCK_USER_EMAIL.value
+                    },
                 }
             },
             "api_version": "2024-06-20",
@@ -327,7 +348,6 @@ class TestBillingEndpoint:
         test_signature = generate_stripe_signature_for_test
         test_payload_bytes = json.dumps(test_payload_dict).encode("utf-8")
 
-        # mock_webhook_construct_event.return_value = test_payload_dict
         mock_stripe_verify_webhook_signature.return_value = test_payload_dict
 
         mock_stripe_handle_checkout_completed.return_value = (
@@ -354,6 +374,17 @@ class TestBillingEndpoint:
 
         # assert stripe_service.verify_handle_checkout_completed called
         mock_stripe_handle_checkout_completed.assert_called_once()
+
+        # assert send_email was called with the correct parameters
+        mock_mail_send_email.assert_called_once_with(
+            recipient=UserTestConstants.MOCK_USER_EMAIL.value,
+            subject="Welcome to Macro Meals Pro!",
+            template_name="subscription_created.html",
+            context={
+                "subscription_type": "Macro Meals Pro",
+                "trial_days": 3,
+            },
+        )
 
     async def test_webhook_invoice_paid(
         self,
@@ -434,11 +465,13 @@ class TestBillingEndpoint:
         generate_stripe_signature_for_test,
         mock_stripe_verify_webhook_signature,
         mock_stripe_update_user_subscription,
+        mock_stripe_get_customer_email,  # Add this fixture
+        mock_mail_send_email,  # Add this fixture
     ):
         """
         Test case to verify that the webhook handler correctly processes a
         'customer.subscription.deleted' event by marking the user's subscription
-        as inactive or canceled in the system.
+        as inactive and sending a cancellation email.
         """
         from app.models.billing import SubscriptionUpdate
 
@@ -490,3 +523,19 @@ class TestBillingEndpoint:
 
         # assert stripe_service.update_stripe_user_subscription called
         mock_stripe_update_user_subscription.assert_called_once()
+
+        # assert get_customer_email was called with the correct customer_id
+        mock_stripe_get_customer_email.assert_called_once_with(
+            UserTestConstants.MOCK_CUSTOMER_ID.value
+        )
+
+        # assert send_email was called with the correct parameters for cancellation
+        mock_mail_send_email.assert_called_once()
+        # Use a deeper assertion to check context
+        args, kwargs = mock_mail_send_email.call_args
+        assert kwargs["recipient"] == UserTestConstants.MOCK_USER_EMAIL.value
+        assert kwargs["subject"] == "Your Macro Meals Pro Subscription"
+        assert kwargs["template_name"] == "subscription_cancelled.html"
+        assert "subscription_type" in kwargs["context"]
+        assert kwargs["context"]["subscription_type"] == "Macro Meals Pro"
+        assert "cancellation_date" in kwargs["context"]
