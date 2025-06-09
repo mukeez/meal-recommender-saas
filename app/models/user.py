@@ -23,6 +23,7 @@ class UserProfile(BaseModel):
         is_active: Whether the user account is active
         is_pro: Whether the user has a subscription
         fcm_token: Firebase Cloud Messaging token for push notifications (optional)
+        meal_reminder_preferences_set: Whether the user has meal reminder preferences set (optional)
         created_at: Profile creation timestamp
         updated_at: Profile last update timestamp
     """
@@ -40,6 +41,7 @@ class UserProfile(BaseModel):
             None, description="Firebase Cloud Messaging token for push notifications"
         ),
     ]
+    meal_reminder_preferences_set: Annotated[bool, Field(False, description="Whether the user has meal reminder preferences set")]
     created_at: Annotated[datetime, Field(False, description="Whether the user has a subscription"), BeforeValidator(parse_datetime)]
     updated_at: Annotated[datetime, Field(False, description="Whether the user has a subscription"), BeforeValidator(parse_datetime)]
 
@@ -85,6 +87,7 @@ class UpdateUserProfileRequest(BaseModel):
     first_name: Annotated[Optional[str], Field(None, description="new first name")]
     last_name: Annotated[Optional[str], Field(None, description="new last name")]
     avatar_url: Annotated[Optional[str], Field(None, description="new avatar image")]
+    meal_reminder_preferences_set: Annotated[bool, Field(False, description="Whether the user has meal reminder preferences set")]
 
 
 class UpdateUserPreferencesRequest(BaseModel):
