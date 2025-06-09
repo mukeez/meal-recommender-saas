@@ -1,27 +1,68 @@
-<html lang="en">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
-    .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
-    .header { background-color: #4caf50; color: white; padding: 20px; text-align: center; }
-    .content { padding: 20px; color: #333333; }
-    .button { display: inline-block; padding: 10px 20px; margin: 20px 0; background-color: #4caf50; color: #ffffff; text-decoration: none; border-radius: 4px; }
-    .footer { background-color: #f4f4f4; color: #777777; font-size: 12px; text-align: center; padding: 10px; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Macro Meals</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333333;
+            margin: 0;
+            padding: 0;
+        }
+        .wrapper {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background-color: #4CAF50;
+            padding: 20px;
+            text-align: center;
+            color: white;
+        }
+        .content {
+            padding: 20px;
+            background-color: #ffffff;
+        }
+        .footer {
+            text-align: center;
+            padding: 15px;
+            font-size: 12px;
+            color: #666666;
+            background-color: #f8f8f8;
+        }
+        .otp-container {
+            margin: 25px 0;
+            text-align: center;
+            padding: 15px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+        }
+        .otp-code {
+            font-size: 32px;
+            letter-spacing: 5px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+    </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>{{ project_name }}</h1>
+    <div class="wrapper">
+        <div class="header">
+            <h1>Macro Meals</h1>
+        </div>
+        
+        <div class="content">
+            {% block content %}{% endblock %}
+        </div>
+        
+        <div class="footer">
+            <p>&copy; {{ current_year }} Meal Recommender. All rights reserved.</p>
+            <p>This email was sent automatically. Please do not reply to this message.</p>
+        </div>
     </div>
-    <div class="content">
-      {% block body %}{% endblock %}
-    </div>
-    <div class="footer">
-      <p>&copy; {{ year }} {{ project_name }}. All rights reserved.</p>
-    </div>
-  </div>
 </body>
 </html>

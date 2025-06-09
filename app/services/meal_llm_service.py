@@ -1,29 +1,63 @@
 """AI service for generating meal suggestions.
 
-This module provides functions to interact with the OpenAI API
+This module provides functions to interact with the MealLLMService
 to generate meal suggestions based on user requirements.
 """
-
+import logging
 import json
-from typing import Dict, Any, List
+from typing import Optional, List, Dict, Any
 import openai
-from openai import OpenAI
 
 from app.core.config import settings
-from app.models.meal import MealSuggestion, MealSuggestionRequest
+from app.models.meal import MealSuggestion, MealSuggestionRequest, MealSuggestionResponse
 from app.services.base_llm_service import BaseLLMService, LLMServiceError
+import traceback
+import random
 
-
+logger = logging.getLogger(__name__)
 class MealLLMService(BaseLLMService):
-    """Service for interacting with OpenAI API."""
+    """AI service for generating meal suggestions based on user requirements."""
 
-    def __init__(self):
-        """Initialize the OpenAI client."""
+    def __init__(self, request: MealSuggestionRequest, restaurants: Optional[List[Dict[str, Any]]] = []):
+        """Initialize the MealLLMService with request and optional restaurant data.
+        Args:
+            request: The meal suggestion request containing user preferences
+            restaurants: Optional list of restaurant data to use in meal suggestions
+        """
+        self.request = request
+        self.restaurants = restaurants
+
         super().__init__()
 
-    async def get_meal_suggestions(
-        self, request: MealSuggestionRequest
-    ) -> List[MealSuggestion]:
+    async def _send_request(
+        self, system_prompt, prompt, max_tokens=2000, temperature=0.5
+    ):
+        """
+        Send a request to the AI service and return the raw response.
+        Args:
+            system_prompt: The system prompt to set the context for the AI.
+            prompt: The user input to generate a response for.
+            max_tokens: Maximum number of tokens in the response.
+            temperature: Sampling temperature for response variability.
+        Returns:
+            The raw response content from the AI service.
+        """
+        try:
+            response = self.client.responses.parse(
+                    model=settings.MODEL_NAME,
+                    input=[
+                        {
+                            "role": "system",
+                            "content": system_prompt
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    text_format=MealSuggestionResponse)
+            return response.output_parsed
+        except openai.OpenAIError as e:
+            raise LLMServiceError(f"OpenAI API error: {e}")
+
+    async def get_meal_suggestions(self) -> MealSuggestionResponse:
         """Get meal suggestions from OpenAI API.
 
         Args:
@@ -37,9 +71,15 @@ class MealLLMService(BaseLLMService):
                             or processing the response
         """
         try:
-            system_prompt = "You are a nutrition expert and restaurant knowledge specialist. Provide accurate, concise meal suggestions based on the user's macro requirements."
+            system_prompt = """You are a nutrition expert and restaurant knowledge specialist. Provide accurate, concise meal suggestions based on the user's macro requirements. You **must** suggest between 5-8 meal options, ensuring they are from the specified restaurants or locations. """
+
+            if self.restaurants:
+                temperature = 0.5
+            else:
+                temperature = 0.0
+            
             suggestions = await self.generate_response(
-                system_prompt=system_prompt, request=request
+                system_prompt=system_prompt, request=self.request, temperature=temperature, should_parse=False
             )
             return suggestions
         except openai.OpenAIError as e:
@@ -50,87 +90,131 @@ class MealLLMService(BaseLLMService):
             raise LLMServiceError(f"Unexpected error: {str(e)}")
 
     def _build_prompt(self, request: MealSuggestionRequest) -> str:
-        """Build a prompt for the OpenAI API.
-
+        """Build a prompt for the OpenAI API based on available restaurant data.
+        
         Args:
             request: The meal suggestion request
-
+            
         Returns:
             Formatted prompt string
         """
-        return f"""Suggest 5-8 meal options from restaurants in {request.location} that can help me meet these macro requirements:
-- Calories: {request.calories} kcal
-- Protein: {request.protein} g
-- Carbs: {request.carbs} g
-- Fat: {request.fat} g
+        prompt = f"""Suggest between 5 and 8 meal options"""
 
-For each meal suggestion, provide:
-1. Meal name
-2. Brief description
-3. Estimated macros (calories, protein, carbs, fat) — note these can be approximate
-4. Restaurant name and location
+        
+        # Conditional part based on restaurant availability
+        if self.restaurants:
+            prompt += f"""from the following restaurants that can help me meet these macro requirements:
+                    - Calories: {request.calories} kcal
+                    - Protein: {request.protein} g
+                    - Carbs: {request.carbs} g
+                    - Fat: {request.fat} g
+                    <restaurants>
+                        {self._format_restaurants_for_prompt(self.restaurants)}
+                    </restaurants>"""
+        else:
+            prompt += f"""from restaurants in {request.location} that can help me meet these macro requirements:
+                    - Calories: {request.calories} kcal
+                    - Protein: {request.protein} g
+                    - Carbs: {request.carbs} g
+                    - Fat: {request.fat} g"""
+        
+        # Common part for all prompts
+        prompt += f"""
+                    For each meal suggestion, provide:
+                    1. Meal name
+                    2. Brief description
+                    3. Estimated macros (calories, protein, carbs, fat) — note these can be approximate
+                    4. Restaurant name and location
 
-Format your response as a JSON object with a "meals" property containing an array of meal objects. Each meal object should include:
-- name (string)
-- description (string)
-- macros (object) with numeric values for "calories", "protein", "carbs", "fat"
-- restaurant (object) with "name" and "location" properties
+                    Format your response as a JSON object with a "meals" property containing an array of meal objects. Each meal object should include:
+                    - name (string)
+                    - description (string)
+                    - macros (object) with numeric values for "calories", "protein", "carbs", "fat"
+                    - restaurant (object) with "name" and "location" properties"""
+        
+        if self.restaurants:
+            prompt += """
+                    Only suggest meals from the provided restaurants."""
+        else:
+            prompt += f"""
+                    Only suggest restaurants that exist in {request.location}."""
+        
+        prompt += f"""
+                    Example format (do not use these values, please suggest real meals (between 5 and 8 meals) and check if these name and location exist near {request.location} else do not return in json):
+                    ```json
+                    {{
+                    "meals": [
+                        {{
+                        "name": "Lorem Ipsum Sit Dolor",
+                        "description": "Fresh salad with grilled chicken breast, mixed greens, and light dressing",
+                        "macros": {{
+                            "calories": 450,
+                            "protein": 35,
+                            "carbs": 30,
+                            "fat": 15
+                        }},
+                        "restaurant": {{
+                            "name": "Lorem Ipsum",
+                            "location": "123 Main St, Finchley, N3 3EB"
+                        }}
+                        }}
+                    ]
+                    }}
+                    Respond ONLY with the JSON object, nothing else before or after."""
+    
+        return prompt
 
-Only suggest restaurants that exist in {request.location}.
 
-Example format (do not use these values, please suggest real meals and check if these name and location exist near {request.location} else do not return in json):
-```json
-{{
-  "meals": [
-    {{
-      "name": "Lorem Ipsum Sit Dolor",
-      "description": "Fresh salad with grilled chicken breast, mixed greens, and light dressing",
-      "macros": {{
-        "calories": 450,
-        "protein": 35,
-        "carbs": 30,
-        "fat": 15
-      }},
-      "restaurant": {{
-        "name": "Lorem Ipsum",
-        "location": "123 Main St, Finchley, N3 3EB"
-      }}
-    }}
-  ]
-}}
-Respond ONLY with the JSON object, nothing else before or after."""
 
-    def _parse_response(self, content: str) -> List[MealSuggestion]:
-        """Parse the API response into meal suggestion objects.
-
+    def _format_restaurants_for_prompt(self, restaurants: List[Dict[str, Any]]) -> str:
+        """Format restaurant data for inclusion in the prompt.
         Args:
-            content: Raw response content from OpenAI API
-
+            restaurants: List of restaurant data dictionaries
         Returns:
-            List of parsed meal suggestions
-
-        Raises:
-            AIServiceError: If the response cannot be properly parsed
+            Formatted string with restaurant details
         """
-        try:
-            response_data = json.loads(content)
+        restaurants_text = ""
+        
+        for i, restaurant in enumerate(restaurants, 1):
+            restaurants_text += f"\nRestaurant {i}: {restaurant.get('name', '')}\n"
+            restaurants_text += f"- Address: {restaurant.get('address', '')}\n"
+            
+            if restaurant.get('website'):
+                restaurants_text += f"- Website: {restaurant.get('website', '')}\n"
+            
+            if restaurant.get('menu_url'):
+                restaurants_text += f"- Menu URL: {restaurant.get('menu_url', '')}\n"
+            
+            # Add menu items if available
+            if restaurant.get('menu_items'):
+                try:
+                    # Parse menu items from JSON string if needed
+                    menu_items = restaurant['menu_items']
+                    if isinstance(menu_items, str):
+                        menu_items = json.loads(menu_items)
+                    
+                    if menu_items and len(menu_items) > 0:
+                        restaurants_text += "- Menu Items:\n"
+                        
+                        # Randomly select up to 10 menu items
+                        sample_size = min(10, len(menu_items))
+                        selected_items = random.sample(menu_items, sample_size)
+                        
+                        for item in selected_items:
+                            if isinstance(item, dict):
+                                name = item.get('name', '')
+                                description = item.get('description', '')
+                                
+                                if name:
+                                    restaurants_text += f"  * {name}\n"
+                                    if description:
+                                        restaurants_text += f"    {description}\n"
+                except Exception as e:
+                    logger.error(f"Error processing menu items: {e}")
+            
+            restaurants_text += "\n"
+        
+        return restaurants_text
 
-            if "meals" not in response_data:
-                raise LLMServiceError("Response does not contain 'meals' property")
 
-            suggestions_data = response_data["meals"]
-
-            suggestions = []
-            for item in suggestions_data:
-                suggestion = MealSuggestion(**item)
-                suggestions.append(suggestion)
-
-            return suggestions
-
-        except json.JSONDecodeError:
-            raise LLMServiceError("Failed to parse JSON response")
-        except Exception as e:
-            raise LLMServiceError(f"Failed to parse meal suggestions: {str(e)}")
-
-
-meal_llm_service = MealLLMService()
+meal_llm_service = MealLLMService

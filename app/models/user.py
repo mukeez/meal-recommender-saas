@@ -32,6 +32,7 @@ class UserProfile(BaseModel):
     display_name: Annotated[Optional[str], Field(None, description="User's display name(optional)")]
     first_name : Annotated[Optional[str], Field(None, description="User's first name(optional)")]
     last_name : Annotated[Optional[str], Field(None, description="User's last name(optional)")]
+    age: Annotated[Optional[int], Field(None, description="User's age(optional)")]
     avatar_url : Annotated[Optional[str], Field(None, description="User's avatar(optional)")]
     is_active: Annotated[bool, Field(True, description="Whether the user account is active")]
     is_pro: Annotated[bool, Field(False, description="Whether the user has a subscription"), BeforeValidator(lambda x : bool(x))]
@@ -86,6 +87,7 @@ class UpdateUserProfileRequest(BaseModel):
     email: Annotated[Optional[EmailStr], Field(None, description="new email address")]
     first_name: Annotated[Optional[str], Field(None, description="new first name")]
     last_name: Annotated[Optional[str], Field(None, description="new last name")]
+    age: Annotated[Optional[int], Field(None, description="new age")]
     avatar_url: Annotated[Optional[str], Field(None, description="new avatar image")]
     meal_reminder_preferences_set: Annotated[bool, Field(False, description="Whether the user has meal reminder preferences set")]
 

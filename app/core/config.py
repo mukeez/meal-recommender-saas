@@ -59,7 +59,18 @@ class Settings:
             raise ValueError("FIREBASE_SERVICE_ACCOUNT_FILE environment variable is not set")
         self.FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID")
         if not self.FIREBASE_PROJECT_ID:
-            raise ValueError("FIREBASE_PROJECT_ID environment variable is not set")
+            raise ValueError("FIREBASE_PROJECT_ID environment variable is not set")        # Slack Settings
+        self.SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
+        self.SLACK_ALERT_CHANNEL = "#macromeals-alerts"
+
+        # Redis Settings
+        self.REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+        self.REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+
+        # Email Settings
+        self.EMAIL_SENDER = os.environ.get("EMAIL_SENDER", "support@macromealsapp.com")
+        self.EMAIL_SENDER_NAME = os.environ.get("EMAIL_SENDER_NAME", "MacroMeals")
+
 
 
 

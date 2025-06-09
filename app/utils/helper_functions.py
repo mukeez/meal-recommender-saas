@@ -1,5 +1,7 @@
 from datetime import datetime
 from typing import Any
+import json
+
 
 
 def remove_null_values(d: dict) -> dict:
@@ -25,3 +27,14 @@ def parse_datetime(dt_str: Any) -> datetime | Any:
         return datetime.fromisoformat(dt_str)
     except ValueError:
         return datetime.now()
+
+
+def deduplicate_dict_list(data):
+    seen = set()
+    deduplicated = []
+    for d in data:
+        key = json.dumps(d, sort_keys=True)
+        if key not in seen:
+            seen.add(key)
+            deduplicated.append(d.copy())
+    return deduplicated

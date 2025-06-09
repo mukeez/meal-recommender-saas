@@ -77,6 +77,7 @@ async def update_user_profile(
         None, description="new user first name (optional)"
     ),
     last_name: Optional[str] = Form(None, description="new user last name (optional)"),
+    age: Optional[int] = Form(None, description="new user age (optional)"),
     avatar: Optional[UploadFile] = File(None, description="new avatar image(optional)"),
     meal_reminder_preferences_set: Optional[bool] = Form(
         False, description="Whether the user has meal reminder preferences set"
@@ -92,6 +93,7 @@ async def update_user_profile(
         display_name: new user email(optional)
         first_name: new user first name(optional)
         last_name: new user last name(optional)
+        age: new user age(optional)
         avatar: new avatar image(optional)
         meal_reminder_preferences_set: Whether the user has meal reminder preferences set
 
@@ -116,6 +118,7 @@ async def update_user_profile(
                 last_name=last_name,
                 avatar_url=avatar_url,
                 meal_reminder_preferences_set=meal_reminder_preferences_set,
+                age=age,
             )
         else:
             user_data = UpdateUserProfileRequest(
@@ -123,6 +126,7 @@ async def update_user_profile(
                 first_name=first_name,
                 last_name=last_name,
                 meal_reminder_preferences_set=meal_reminder_preferences_set,
+                age=age,
             )
         profile = await user_service.update_user_profile(
             token=token, user_id=user_id, user_data=user_data
