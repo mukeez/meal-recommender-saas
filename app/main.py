@@ -22,6 +22,7 @@ from app.api.endpoints import (
     location,
     billing,
     products,
+    notifications,
 )
 from app.core.config import settings
 from app.tasks.macromeals_tasks import macromeals_tasks
@@ -39,6 +40,46 @@ scheduler = BackgroundScheduler()
 
 # scheduled for midnight each day
 scheduler.add_job(macromeals_tasks.downgrade_users, CronTrigger(hour="0"))
+
+# scheduled for 8:00 AM each day
+scheduler.add_job(
+    macromeals_tasks.schedule_start_of_day_meal_reminders, CronTrigger(hour="8")
+)
+
+# scheduled for 8:10 AM daily
+scheduler.add_job(
+    macromeals_tasks.schedule_custom_meal_reminders_breakfast,
+    CronTrigger(hour="8", minute="10"),
+)
+
+# scheduled for 8:20 AM daily
+scheduler.add_job(
+    macromeals_tasks.send_trial_expiry_notification_24_hours_prior,
+    CronTrigger(hour="8", minute="20"),
+)
+
+# scheduled for 12:00 PM daily
+scheduler.add_job(
+    macromeals_tasks.schedule_custom_meal_reminders_dinner,
+    CronTrigger(hour="12"),
+)
+
+# scheduled for 5:00 PM each day
+scheduler.add_job(
+    macromeals_tasks.schedule_end_of_day_meal_reminders, CronTrigger(hour="17")
+)
+
+# scheduled for 7:00 PM daily
+scheduler.add_job(
+    macromeals_tasks.schedule_custom_meal_reminders_dinner,
+    CronTrigger(hour="19"),
+)
+
+# scheduled for 8:00 PM daily
+scheduler.add_job(
+    macromeals_tasks.trigger_macro_goal_completion_notification,
+    CronTrigger(hour="20"),
+)
 
 
 @asynccontextmanager
@@ -145,6 +186,12 @@ app.include_router(
 
 app.include_router(
     products.router, prefix=f"{settings.API_V1_STR}/products", tags=["products"]
+)
+
+app.include_router(
+    notifications.router,
+    prefix=f"{settings.API_V1_STR}/notifications",
+    tags=["notifications"],
 )
 
 

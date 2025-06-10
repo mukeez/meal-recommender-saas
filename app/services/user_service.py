@@ -33,6 +33,7 @@ class UserProfileData(BaseModel):
     user_id: str
     email: str
     display_name: Optional[str] = None
+    fcm_token: Optional[str] = None
     created_at: datetime = datetime.now()
 
 
@@ -66,6 +67,7 @@ class UserProfileService:
                 "created_at": profile_data.created_at.isoformat(),
                 "updated_at": profile_data.created_at.isoformat(),
                 "is_active": True,
+                "fcm_token": profile_data.fcm_token,
             }
 
             async with httpx.AsyncClient() as client:
@@ -482,6 +484,62 @@ class UserProfileService:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error uploading user auth details",
+            )
+
+    async def update_fcm_token(self, user_id: str, fcm_token: str) -> None:
+        """Update FCM token for the user.
+
+        Args:
+            user_id: Supabase user ID
+            fcm_token: FCM token to be updated
+
+        Raises:
+            HTTPException: If there is an error updating the FCM token
+        """
+        logger.info(f"Updating FCM token for user: {user_id}")
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.patch(
+                    f"{self.base_url}/rest/v1/user_profiles",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                        "Prefer": "return=representation",
+                    },
+                    params={"id": f"eq.{user_id}"},
+                    json={"fcm_token": fcm_token},
+                )
+
+                if response.status_code not in (200, 201, 204):
+                    error_detail = "Failed to update FCM token"
+                    try:
+                        error_data = response.json()
+                        if "message" in error_data:
+                            error_detail = error_data["message"]
+                    except Exception:
+                        pass
+
+                    logger.error(f"Updating FCM token failed: {error_detail}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to update FCM token",
+                    )
+
+                logger.info(f"FCM token updated successfully for user: {user_id}")
+
+        except httpx.RequestError as e:
+            logger.error(f"Request error updating FCM token: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database",
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error updating FCM token {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to update FCM token",
             )
 
     async def update_password(self, email: str, password: str) -> None:

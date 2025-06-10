@@ -79,6 +79,9 @@ async def update_user_profile(
     last_name: Optional[str] = Form(None, description="new user last name (optional)"),
     age: Optional[int] = Form(None, description="new user age (optional)"),
     avatar: Optional[UploadFile] = File(None, description="new avatar image(optional)"),
+    meal_reminder_preferences_set: Optional[bool] = Form(
+        False, description="Whether the user has meal reminder preferences set"
+    ),
     user=Depends(auth_guard),
 ):
     """Update the current user's profile.
@@ -92,6 +95,7 @@ async def update_user_profile(
         last_name: new user last name(optional)
         age: new user age(optional)
         avatar: new avatar image(optional)
+        meal_reminder_preferences_set: Whether the user has meal reminder preferences set
 
     Returns:
         The user profile information
@@ -113,6 +117,7 @@ async def update_user_profile(
                 first_name=first_name,
                 last_name=last_name,
                 avatar_url=avatar_url,
+                meal_reminder_preferences_set=meal_reminder_preferences_set,
                 age=age,
             )
         else:
@@ -120,6 +125,7 @@ async def update_user_profile(
                 display_name=display_name,
                 first_name=first_name,
                 last_name=last_name,
+                meal_reminder_preferences_set=meal_reminder_preferences_set,
                 age=age,
             )
         profile = await user_service.update_user_profile(
@@ -131,6 +137,38 @@ async def update_user_profile(
     except Exception as e:
         logger.error(f"Failed to update user profile with error: {e}")
         raise HTTPException(status_code=500, detail="Failed to update user profile")
+
+
+@router.patch(
+    "/me/fcm-token",
+    summary="Update FCM token",
+    description="Update the FCM token for push notifications.",
+)
+async def update_fcm_token(
+    body: dict,
+    user=Depends(auth_guard),
+):
+    """Update the FCM token for the current user.
+
+    This is a protected endpoint that requires authentication.
+
+    Args:
+        body: Dict containing the new FCM token (expects {"fcm_token": ...})
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        A success message indicating the token was updated
+    """
+    try:
+        fcm_token = body.get("fcm_token")
+        user_id = user.get("sub")
+        await user_service.update_fcm_token(user_id=user_id, fcm_token=fcm_token)
+        return {"message": "FCM token updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update FCM token with error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update FCM token")
 
 
 @router.get(
