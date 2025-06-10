@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, date, time, timezone
+from datetime import datetime, date, time, timedelta, timezone
 from supabase import create_client
 from app.api.endpoints.meals import get_daily_progress
 from app.core.config import settings
@@ -322,6 +322,57 @@ class MacroMealsTasks:
         except Exception as e:
             logger.error(f"Failed to trigger macro goal completion notification: {e}")
         pass
+
+    def send_trial_expiry_notification_24_hours_prior(self) -> None:
+        """Send trial expiry notification 24 hours before the trial ends."""
+        try:
+            logger.info("preparing to send trial expiry notifications")
+            users = (
+                self.supabase_client.table("user_profiles")
+                .select("id, fcm_token, first_name, trial_end_date")
+                .eq("is_pro", False)
+                .execute()
+            )
+            user_list = users.data if hasattr(users, "data") else users
+            for user in user_list:
+                user_id = user.get("id")
+                token = user.get("fcm_token")
+                first_name = user.get("first_name", None)
+                trial_end_date = user.get("trial_end_date")
+                if not trial_end_date:
+                    continue
+
+                trial_end_date = datetime.fromisoformat(trial_end_date).date()
+                if trial_end_date - date.today() == timedelta(days=1):
+                    if token:
+                        title = (
+                            f"{first_name}, your Macro Meals trial ends in 24 hours!"
+                            if first_name
+                            else "Your Macro Meals trial ends in 24 hours!"
+                        )
+                        body = "Don’t lose your tracking streak — upgrade now."
+                        asyncio.run(
+                            notification_service.send_push_notification(
+                                fcm_token=token,
+                                title=title,
+                                body=body,
+                            )
+                        )
+                        self.supabase_client.table("notifications").insert(
+                            {
+                                "user_id": user_id,
+                                "type": "reminder",
+                                "subtype": "trial_expiry",
+                                "title": title,
+                                "body": body,
+                                "status": "unread",
+                            }
+                        ).execute()
+                        logger.info(
+                            f"sent trial expiry notification to user: {user_id}"
+                        )
+        except Exception as e:
+            logger.error(f"Failed to send trial expiry notifications: {e}")
 
 
 macromeals_tasks = MacroMealsTasks()
