@@ -151,6 +151,28 @@ async def stripe_webhook(
                 
             logger.info(f"Checkout completed for user: {user_id}")
             return {"status": "success", "message": "Checkout completed successfully"}
+        
+        elif event["type"] == "customer.subscription.created":
+            from supabase import create_client
+
+            session = event["data"]["object"]
+            customer_id = session["customer"]
+            session_trial_end_date = session["trial_end"]
+            trial_end_date = datetime.fromtimestamp(session_trial_end_date).date()
+
+            client = create_client(
+                settings.SUPABASE_SERVICE_ROLE_KEY, settings.SUPABASE_URL
+            )
+            client.table("user_profiles").update({"trial_end_date": trial_end_date}).eq(
+                "stripe_customer_id", customer_id
+            ).execute()
+            logger.info(
+                f"Subscription created for user: {customer_id} with trial end date: {trial_end_date}"
+            )
+            return {
+                "status": "success",
+                "message": "Subscription created successfully",
+            }
 
         elif event["type"] == "customer.subscription.deleted":
             session = event["data"]["object"]
