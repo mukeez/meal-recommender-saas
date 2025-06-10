@@ -41,7 +41,7 @@ scheduler = BackgroundScheduler()
 # scheduled for midnight each day
 scheduler.add_job(macromeals_tasks.downgrade_users, CronTrigger(hour="0"))
 
-# scheduled for 8:00am each day
+# scheduled for 8:00 AM each day
 scheduler.add_job(
     macromeals_tasks.schedule_start_of_day_meal_reminders, CronTrigger(hour="8")
 )
@@ -52,13 +52,19 @@ scheduler.add_job(
     CronTrigger(hour="8", minute="10"),
 )
 
+# scheduled for 8:20 AM daily
+scheduler.add_job(
+    macromeals_tasks.send_trial_expiry_notification_24_hours_prior,
+    CronTrigger(hour="8", minute="20"),
+)
+
 # scheduled for 12:00 PM daily
 scheduler.add_job(
     macromeals_tasks.schedule_custom_meal_reminders_dinner,
     CronTrigger(hour="12"),
 )
 
-# scheduled for 5:00pm each day
+# scheduled for 5:00 PM each day
 scheduler.add_job(
     macromeals_tasks.schedule_end_of_day_meal_reminders, CronTrigger(hour="17")
 )
