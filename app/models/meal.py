@@ -4,7 +4,7 @@ This module contains Pydantic models that define the structure of request and
 response data for the meal recommendation API.
 """
 
-from datetime import datetime
+from datetime import datetime, date
 from enum import Enum
 from typing import List, Optional, Dict
 from typing_extensions import Annotated
@@ -54,6 +54,14 @@ class MealSuggestionRequest(BaseModel):
     protein: Annotated[float, Field(..., description="Target protein in grams")]
     carbs: Annotated[float, Field(..., description="Target carbohydrates in grams")]
     fat: Annotated[float, Field(..., description="Target fat in grams")]
+    dietary_restrictions: Optional[List[str]] = Field(
+        None, 
+        description="List of dietary restrictions (e.g., vegan, gluten-free, etc.)"
+    )
+    dietary_preference: Optional[str] = Field(
+        None, 
+        description="vegan, keto, etc. If not provided"
+    )
 
 
     @field_validator("calories", "protein", "carbs", "fat")
@@ -193,3 +201,24 @@ class DailyProgressResponse(BaseModel):
     logged_macros: MacroNutrients
     target_macros: MacroNutrients
     progress_percentage: Dict[str, float]
+
+
+class DailyMacroSummary(BaseModel):
+    """Summary of daily macro intake for progress tracking."""
+    date: date
+    calories: float = 0
+    protein: float = 0
+    carbs: float = 0
+    fat: float = 0
+
+
+class ProgressSummary(BaseModel):
+    """Summary of progress for a time period."""
+    daily_macros: List[DailyMacroSummary]
+    average_macros: MacroNutrients
+    target_macros: MacroNutrients
+    comparison_percentage: Dict[str, float]
+    start_date: date
+    end_date: date
+    days_with_logs: int
+    total_days: int
