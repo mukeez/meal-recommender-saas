@@ -107,16 +107,28 @@ class MealLLMService(BaseLLMService):
                     - Calories: {request.calories} kcal
                     - Protein: {request.protein} g
                     - Carbs: {request.carbs} g
-                    - Fat: {request.fat} g
-                    <restaurants>
-                        {self._format_restaurants_for_prompt(self.restaurants)}
-                    </restaurants>"""
+                    - Fat: {request.fat} g"""
         else:
             prompt += f"""from restaurants in {request.location} that can help me meet these macro requirements:
                     - Calories: {request.calories} kcal
                     - Protein: {request.protein} g
                     - Carbs: {request.carbs} g
                     - Fat: {request.fat} g"""
+        
+        # Add dietary preference if provided
+        if request.dietary_preference:
+            prompt += f"\n- Dietary Preference: {request.dietary_preference}"
+
+        # Add dietary restrictions if provided
+        if request.dietary_restrictions and len(request.dietary_restrictions) > 0:
+            restrictions_str = ", ".join(request.dietary_restrictions)
+            prompt += f"\n - Dietary Restrictions: {restrictions_str}"
+
+        if self.restaurants:
+            prompt += f"""
+                    <restaurants>
+                        {self._format_restaurants_for_prompt(self.restaurants)}
+                    </restaurants>"""
         
         # Common part for all prompts
         prompt += f"""
@@ -175,7 +187,16 @@ class MealLLMService(BaseLLMService):
         """
         restaurants_text = ""
         
-        for i, restaurant in enumerate(restaurants, 1):
+        # Determine the number of restaurants to select (at most 5)
+        num_to_select = min(len(restaurants), 5)
+        
+        # Randomly select restaurants if there are more than 0
+        if num_to_select > 0:
+            selected_restaurants = random.sample(restaurants, num_to_select)
+        else:
+            selected_restaurants = []
+
+        for i, restaurant in enumerate(selected_restaurants, 1):
             restaurants_text += f"\nRestaurant {i}: {restaurant.get('name', '')}\n"
             restaurants_text += f"- Address: {restaurant.get('address', '')}\n"
             
@@ -196,8 +217,8 @@ class MealLLMService(BaseLLMService):
                     if menu_items and len(menu_items) > 0:
                         restaurants_text += "- Menu Items:\n"
                         
-                        # Randomly select up to 10 menu items
-                        sample_size = min(10, len(menu_items))
+                        # Randomly select up to 5 menu items
+                        sample_size = min(5, len(menu_items))
                         selected_items = random.sample(menu_items, sample_size)
                         
                         for item in selected_items:
