@@ -1,0 +1,31 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: services-ingress
+  namespace: macromeals-api-ns
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "300m"
+    nginx.org/client-max-body-size: "300m"
+    nginx.ingress.kubernetes.io/proxy-next-upstream-timeout: "3600"
+    nginx.org/rewrites: "serviceName=macromeals-api-service rewrite=/;serviceName=macromeals-api-service rewrite=/"
+    service.beta.kubernetes.io/aws-load-balancer-connection-idle-timeout: "3600"
+spec:
+  tls:
+    - hosts:
+        - api.macromealsapp.com
+      secretName: macromeals-api-tls
+  ingressClassName: nginx
+  rules:
+    - host: api.macromealsapp.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: macromeals-api-service
+                port:
+                 number: 80
