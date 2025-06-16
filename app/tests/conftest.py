@@ -18,6 +18,7 @@ from app.tests.fixtures.notification import (
     mock_notification_send_push_notification,
 )
 from app.tests.fixtures.meals import *
+from app.tests.fixtures.macros import mock_save_user_preferences, mock_macros_update_user_profile
 from app.tests.constants.user import UserTestConstants
 import asyncio
 

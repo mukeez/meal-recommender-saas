@@ -292,7 +292,7 @@ class TestAuthEndpoint:
             f"{settings.API_V1_STR}/auth/reset-password",
             json={
                 "email": UserTestConstants.MOCK_USER_EMAIL.value,
-                "new_password": OTPTestConstants.MOCK_NEW_PASSWORD.value,
+                "password": OTPTestConstants.MOCK_NEW_PASSWORD.value,
                 "session_token": OTPTestConstants.MOCK_SESSION_TOKEN.value,
             },
         )
@@ -323,7 +323,7 @@ class TestAuthEndpoint:
             f"{settings.API_V1_STR}/auth/reset-password",
             json={
                 "email": UserTestConstants.MOCK_USER_EMAIL.value,
-                "new_password": OTPTestConstants.MOCK_NEW_PASSWORD.value,
+                "password": OTPTestConstants.MOCK_NEW_PASSWORD.value,
                 "session_token": OTPTestConstants.MOCK_INVALID_SESSION_TOKEN.value,
             },
         )
@@ -349,7 +349,7 @@ class TestAuthEndpoint:
             f"{settings.API_V1_STR}/auth/reset-password",
             json={
                 "email": UserTestConstants.MOCK_USER_EMAIL.value,
-                "new_password": OTPTestConstants.MOCK_NEW_PASSWORD.value,
+                "password": OTPTestConstants.MOCK_NEW_PASSWORD.value,
                 "session_token": OTPTestConstants.MOCK_SESSION_TOKEN.value,
             },
         )

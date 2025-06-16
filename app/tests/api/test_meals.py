@@ -1,11 +1,13 @@
 import pytest
 from fastapi import HTTPException, status
 from app.core.config import settings
+from app.tests.constants.user import UserTestConstants
 from app.tests.constants.location import MOCK_LOCATION_DATA
 from app.tests.constants.macros import MOCK_MACRO_DATA
 from app.tests.constants.meals import MOCK_RESTAURANT_DATA
 import httpx
 from unittest.mock import patch
+from datetime import date
 
 
 @pytest.mark.asyncio
@@ -265,3 +267,155 @@ class TestMealsEndpoint:
         assert response.status_code == 500
         assert "Error calculating daily progress" in response.json()["detail"]
         mock_meal_get_progress.assert_called_once()
+
+    async def test_get_progress_summary_success(
+        self, authenticated_client, mock_meal_get_progress_summary
+    ):
+        """Integration test for successful progress summary retrieval."""
+
+        # Mock progress summary response
+        expected_values = {
+            "daily_macros": [
+                {
+                    "date": "2025-06-01",
+                    "calories": 1800,
+                    "protein": 120,
+                    "carbs": 180,
+                    "fat": 60
+                },
+                {
+                    "date": "2025-06-02",
+                    "calories": 2100,
+                    "protein": 140,
+                    "carbs": 200,
+                    "fat": 70
+                }
+            ],
+            "average_macros": {
+                "calories": 1950.0,
+                "protein": 130.0,
+                "carbs": 190.0,
+                "fat": 65.0
+            },
+            "target_macros": {
+                "calories": 2000,
+                "protein": 150,
+                "carbs": 200,
+                "fat": 70
+            },
+            "comparison_percentage": {
+                "calories": 97.5,
+                "protein": 86.7,
+                "carbs": 95.0,
+                "fat": 92.9
+            },
+            "start_date": "2025-06-01",
+            "end_date": "2025-06-02",
+            "days_with_logs": 2,
+            "total_days": 2
+        }
+
+        mock_meal_get_progress_summary.return_value = expected_values
+
+        # Test with explicit start_date and end_date
+        response = authenticated_client.get(
+            f"{settings.API_V1_STR}/meals/progress?start_date=2025-06-01&end_date=2025-06-02"
+        )
+
+        assert response.status_code == 200
+        assert response.json() == expected_values
+        
+        # Verify the mock was called with correct parameters
+        mock_meal_get_progress_summary.assert_called_with(
+            UserTestConstants.MOCK_USER_ID.value, 
+            pytest.approx(date(2025, 6, 1)), 
+            pytest.approx(date(2025, 6, 2))
+        )
+        
+        # Reset the mock for the next call
+        mock_meal_get_progress_summary.reset_mock()
+        mock_meal_get_progress_summary.return_value = expected_values
+        
+        # Test with period parameter
+        response = authenticated_client.get(
+            f"{settings.API_V1_STR}/meals/progress?period=1W"
+        )
+        
+        assert response.status_code == 200
+        assert response.json() == expected_values
+        
+        assert mock_meal_get_progress_summary.called
+        
+        # Testing default parameters (no query params)
+        mock_meal_get_progress_summary.reset_mock()
+        mock_meal_get_progress_summary.return_value = expected_values
+        
+        response = authenticated_client.get(
+            f"{settings.API_V1_STR}/meals/progress"
+        )
+        
+        assert response.status_code == 200
+        assert response.json() == expected_values
+        assert mock_meal_get_progress_summary.called
+
+   
+    async def test_get_progress_summary_failed(
+        self, authenticated_client, mock_meal_get_progress_summary
+    ):
+        """Integration test for failed progress summary retrieval."""
+
+        mock_meal_get_progress_summary.side_effect = Exception("Database error")
+
+        response = authenticated_client.get(
+            f"{settings.API_V1_STR}/meals/progress?period=1M"
+        )
+
+        assert response.status_code == 500
+        assert "Error retrieving progress data" in response.json()["detail"]
+        assert mock_meal_get_progress_summary.called
+
+    async def test_get_progress_summary_empty_state(
+        self, authenticated_client, mock_meal_get_progress_summary, mock_meal_get_first_date
+    ):
+        """Test progress summary with no meal data."""
+        
+        # Set up mocks to simulate empty state
+        mock_meal_get_first_date.return_value = None
+        
+        # Create empty response data
+        empty_response = {
+            "daily_macros": [],  # This would actually contain date entries with zero values
+            "average_macros": {
+                "calories": 0,
+                "protein": 0,
+                "carbs": 0,
+                "fat": 0
+            },
+            "target_macros": {
+                "calories": 2000,
+                "protein": 150,
+                "carbs": 200,
+                "fat": 70
+            },
+            "comparison_percentage": {
+                "calories": 0,
+                "protein": 0,
+                "carbs": 0,
+                "fat": 0
+            },
+            "start_date": "2025-06-01",
+            "end_date": "2025-06-07",
+            "days_with_logs": 0,
+            "total_days": 7
+        }
+        
+        mock_meal_get_progress_summary.return_value = empty_response
+        
+        response = authenticated_client.get(
+            f"{settings.API_V1_STR}/meals/progress?start_date=2025-06-01&end_date=2025-06-07"
+        )
+        
+        assert response.status_code == 200
+        assert response.json()["days_with_logs"] == 0
+        assert response.json()["average_macros"]["calories"] == 0
+        assert response.json()["comparison_percentage"]["protein"] == 0
