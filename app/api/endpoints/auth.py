@@ -80,7 +80,6 @@ async def login(payload: LoginRequest) -> LoginResponse:
         fcm_token = payload.fcm_token
         if fcm_token:
             await user_service.update_user_profile(
-                token=response.json().get("access_token"),
                 user_id=response.json().get("user", {}).get("id"),
                 user_data=UpdateUserProfileRequest(fcm_token=fcm_token),
             )
@@ -364,7 +363,7 @@ async def reset_password(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid session token.")
 
     # Update the user's password
-    await user_service.update_password(email=request.email, password=request.new_password)
+    await user_service.update_password(email=request.email, password=request.password)
 
     # Invalidate the OTP/session token
     await user_service.invalidate_otp(request.email)
