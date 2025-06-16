@@ -101,7 +101,7 @@ class ResetPasswordRequest(BaseModel):
         session_token (str): The verification token received after successful OTP validation.
     """
     email: Annotated[EmailStr, Field(..., description="User's email address for password reset")]
-    new_password: Annotated[str, Field(..., description="The new password to set for the user account")]
+    password: Annotated[str, Field(..., description="The new password to set for the user account")]
     session_token: Annotated[str, Field(..., description="Session token for password reset verification")]
 
 
