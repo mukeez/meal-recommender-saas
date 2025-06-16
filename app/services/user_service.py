@@ -12,8 +12,9 @@ from fastapi import HTTPException, status
 from pydantic import BaseModel
 
 from app.core.config import settings
-from app.models.user import UpdateUserProfileRequest, UserProfile
+from app.models.user import UpdateUserProfileRequest, UserProfile, UnitPreference
 from app.utils.helper_functions import remove_null_values
+from app.utils.constants import CM_TO_INCHES, INCHES_TO_CM
 
 import time
 
@@ -252,49 +253,37 @@ class UserProfileService:
                 detail=f"Error retrieving user preferences",
             )
 
-    async def get_user_profile(self, user_id: str) -> str | None:
-        """Retrieve user profile.
+    async def get_user_profile(self, user_id: str) -> UserProfile:
+        """Retrieve user profile with unit preferences.
 
         Args:
             user_id: Supabase user ID
 
         Returns:
-            User profile
+            User profile with unit preference information
 
         Raises:
-            HTTPException: If there is an error retrieving the preferences
+            HTTPException: If there is an error retrieving the profile
         """
         logger.info(f"Retrieving profile for user: {user_id}")
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.base_url}/rest/v1/user_profiles",
-                    headers={
-                        "apikey": self.api_key,
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    params={"id": f"eq.{user_id}"},
-                )
-
-                if response.status_code not in (200, 201, 204):
-                    error_detail = "Failed to retrieve user profile"
-                    try:
-                        error_data = response.json()
-                        if "message" in error_data:
-                            error_detail = error_data["message"]
-                    except Exception:
-                        pass
-
-                    logger.error(f"Profile retrieval failed: {error_detail}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to retrieve user profile",
-                    )
-
-                profile_data = response.json()[0]
-                return UserProfile(**profile_data)
+            # Get the basic profile
+            profile_data = await self._get_basic_profile(user_id)
+            
+            # Get user preferences to include unit preference
+            user_preferences = await self.get_user_preferences(user_id)
+            
+            # Check if calorie_target exists and update has_macros if needed
+            if user_preferences and user_preferences.get("calorie_target") and not profile_data.get("has_macros"):
+                profile_data = await self._update_has_macros(user_id, profile_data)
+            
+            # convert metric values to imperial units
+            if profile_data.get("unit_preference") == UnitPreference.IMPERIAL:
+                if profile_data["height"]:
+                    profile_data["height"] = round(profile_data["height"] * CM_TO_INCHES, 2)
+            
+            return UserProfile(**profile_data)
 
         except httpx.RequestError as e:
             logger.error(f"Request error retrieving profile: {str(e)}")
@@ -310,7 +299,7 @@ class UserProfileService:
             )
 
     async def update_user_profile(
-        self, token: str, user_id: str, user_data: UpdateUserProfileRequest
+        self, user_id: str, user_data: UpdateUserProfileRequest
     ) -> UserProfile:
         """Update user profile.
 
@@ -328,6 +317,13 @@ class UserProfileService:
 
         try:
             user_profile = remove_null_values(user_data.model_dump())
+
+            # convert height to cm if unit preference is imperial
+            if "height" in user_profile.keys():
+                if user_profile.get("unit_preference") == UnitPreference.IMPERIAL:
+                    # Convert height from inches to cm
+                    user_profile["height"] = round(user_profile["height"] * INCHES_TO_CM, 2)
+
             async with httpx.AsyncClient() as client:
                 response = await client.patch(
                     f"{self.base_url}/rest/v1/user_profiles",
@@ -341,11 +337,6 @@ class UserProfileService:
                     json=user_profile,
                 )
 
-                if "email" in user_profile.keys():
-                    await self.update_user_auth_email(
-                        token=token, user_id=user_id, email=user_profile["email"]
-                    )
-                    time.sleep(5)
 
                 if response.status_code not in (200, 201, 204):
                     error_detail = "Failed to update user profile"
@@ -696,33 +687,74 @@ class UserProfileService:
             }
 
             async with httpx.AsyncClient() as client:
-                response = await client.post(
+                # First check if a token already exists for this email
+                check_response = await client.get(
                     f"{self.base_url}/rest/v1/session_tokens",
                     headers={
                         "apikey": self.api_key,
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
-                        "Prefer": "return=representation",
                     },
-                    json=session_data,
+                    params={"email": f"eq.{email}"}
                 )
-
-                if response.status_code not in (201, 200):
-                    error_detail = "Failed to store session token"
-                    try:
-                        error_data = response.json()
-                        if "message" in error_data:
-                            error_detail = error_data["message"]
-                    except Exception:
-                        pass
-
-                    logger.error(f"Session token storage failed for {email}: {error_detail}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to store session token",
+                
+                if check_response.status_code == 200 and check_response.json():
+                    # Token exists, update it
+                    update_response = await client.patch(
+                        f"{self.base_url}/rest/v1/session_tokens",
+                        headers={
+                            "apikey": self.api_key,
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                            "Prefer": "return=representation",
+                        },
+                        params={"email": f"eq.{email}"},
+                        json=session_data
                     )
+                    
+                    if update_response.status_code not in (200, 204):
+                        error_detail = "Failed to update session token"
+                        try:
+                            error_data = update_response.json()
+                            if "message" in error_data:
+                                error_detail = error_data["message"]
+                        except Exception:
+                            pass
 
-                logger.info(f"Session token stored successfully for user: {email}")
+                        logger.error(f"Session token update failed for {email}: {error_detail}")
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Failed to update session token",
+                        )
+                else:
+                    # No token exists, create a new one
+                    create_response = await client.post(
+                        f"{self.base_url}/rest/v1/session_tokens",
+                        headers={
+                            "apikey": self.api_key,
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                            "Prefer": "return=representation",
+                        },
+                        json=session_data,
+                    )
+                    
+                    if create_response.status_code not in (201, 200):
+                        error_detail = "Failed to store session token"
+                        try:
+                            error_data = create_response.json()
+                            if "message" in error_data:
+                                error_detail = error_data["message"]
+                        except Exception:
+                            pass
+
+                        logger.error(f"Session token storage failed for {email}: {error_detail}")
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Failed to store session token",
+                        )
+
+            logger.info(f"Session token stored successfully for user: {email}")
 
         except httpx.RequestError as e:
             logger.error(f"Request error storing session token: {str(e)}")
@@ -734,7 +766,7 @@ class UserProfileService:
             logger.error(f"Unexpected error storing session token: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error storing session token",
+                detail=f"Failed to store session token",
             )
 
     async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
@@ -975,6 +1007,112 @@ class UserProfileService:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error invalidating OTP",
+            )
+
+    async def _get_basic_profile(self, user_id: str) -> Dict[str, Any]:
+        """Private method to retrieve basic user profile data.
+
+        Args:
+            user_id: Supabase user ID
+
+        Returns:
+            Basic user profile data
+
+        Raises:
+            HTTPException: If there is an error retrieving the profile
+        """
+        logger.info(f"Retrieving basic profile for user: {user_id}")
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.base_url}/rest/v1/user_profiles",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params={"id": f"eq.{user_id}"},
+                )
+
+                if response.status_code not in (200, 201, 204):
+                    error_detail = "Failed to retrieve user profile"
+                    try:
+                        error_data = response.json()
+                        if "message" in error_data:
+                            error_detail = error_data["message"]
+                    except Exception:
+                        pass
+
+                    logger.error(f"Profile retrieval failed: {error_detail}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to retrieve user profile",
+                    )
+
+                return response.json()[0]
+
+        except httpx.RequestError as e:
+            logger.error(f"Request error retrieving profile: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database: {str(e)}",
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error retrieving profile: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error retrieving user profile: {str(e)}",
+            )
+
+    async def _update_has_macros(self, user_id: str, profile_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Private method to update the has_macros field in the user profile.
+
+        Args:
+            user_id: Supabase user ID
+            profile_data: Current profile data
+
+        Returns:
+            Updated profile data
+
+        Raises:
+            HTTPException: If there is an error updating the profile
+        """
+        logger.info(f"Updating has_macros for user: {user_id}")
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.patch(
+                    f"{self.base_url}/rest/v1/user_profiles",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                        "Prefer": "return=representation",
+                    },
+                    params={"id": f"eq.{user_id}"},
+                    json={"has_macros": True},
+                )
+
+                if response.status_code in (200, 201, 204):
+                    updated_profile = response.json()[0]
+                    logger.info(f"Updated has_macros to True for user: {user_id}")
+                    return updated_profile
+                else:
+                    logger.warning(f"Failed to update has_macros for user: {user_id}")
+                    return profile_data
+
+        except httpx.RequestError as e:
+            logger.error(f"Request error updating has_macros: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database: {str(e)}",
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error updating has_macros: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error updating user profile",
             )
 
 user_service = UserProfileService()
