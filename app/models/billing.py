@@ -25,8 +25,9 @@ class SubscriptionUpdate(BaseModel):
     stripe_subscription_id : Annotated[Optional[str], Field(None, description="stripe subscription id")]
     subscription_start : Annotated[Optional[str], Field(None, description="start date for stripe subscription")]
     subscription_end : Annotated[Optional[str], Field(None, description="end date fot stripe subscription")]
+    trial_end_date : Annotated[Optional[str], Field(None, description="end date for stripe trial period")]
 
-    @field_validator("subscription_start", "subscription_end", mode="before")
+    @field_validator("subscription_start", "subscription_end", "trial_end_date", mode="before")
     @classmethod
     def convert_to_iso(cls, v):
         if isinstance(v, datetime):
