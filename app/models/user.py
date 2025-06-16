@@ -4,11 +4,26 @@
 This module contains Pydantic models for user profiles and preferences.
 """
 from typing import List, Optional
-from datetime import datetime
-from pydantic import BaseModel, Field, EmailStr, ConfigDict, BeforeValidator
+from pydantic import BaseModel, Field, EmailStr, ConfigDict, BeforeValidator, field_validator, model_validator # Added model_validator
 from typing_extensions import Annotated
-from app.utils.helper_functions import parse_datetime
+from app.utils.helper_functions import parse_datetime, parse_date
+from enum import Enum
+from datetime import datetime, date
 
+
+
+class UnitPreference(str, Enum):
+    """Unit preference enumeration for user profiles."""
+    METRIC = "metric"
+    IMPERIAL = "imperial"
+
+
+
+class Sex(str, Enum):
+    """Sex enumeration for BMR calculation."""
+
+    MALE = "male"
+    FEMALE = "female"
 
 class UserProfile(BaseModel):
     """User profile model.
@@ -19,11 +34,17 @@ class UserProfile(BaseModel):
         display_name: User's display name (optional)
         first_name: User's first name (optional)
         last_name: User's last name (optional)
-        avatar: User's avatar (optional)
+        age: User's age (optional)
+        dob: User's date of birth (optional)
+        sex: User's biological sex (male/female)
+        height: User's height. Input is expected in cm. The value of this attribute will be in cm if 'unit_preference' is 'metric', or in inches if 'imperial'.
+        avatar_url: User's avatar (optional)
         is_active: Whether the user account is active
         is_pro: Whether the user has a subscription
         fcm_token: Firebase Cloud Messaging token for push notifications (optional)
         meal_reminder_preferences_set: Whether the user has meal reminder preferences set (optional)
+        has_macros: Whether the user has macro targets set
+        unit_preference: Preferred unit system for measurements (metric/imperial)
         created_at: Profile creation timestamp
         updated_at: Profile last update timestamp
     """
@@ -33,6 +54,9 @@ class UserProfile(BaseModel):
     first_name : Annotated[Optional[str], Field(None, description="User's first name(optional)")]
     last_name : Annotated[Optional[str], Field(None, description="User's last name(optional)")]
     age: Annotated[Optional[int], Field(None, description="User's age(optional)")]
+    dob: Annotated[Optional[date], Field(None, description="User's date of birth (optional)"), BeforeValidator(parse_date)]
+    sex: Annotated[Optional[Sex], Field(None, description="User's biological sex (male/female)")]
+    height: Annotated[Optional[float], Field(None, description="User's height. Input is expected in cm. The value of this attribute will be in cm if 'unit_preference' is 'metric', or in inches if 'imperial'.")]
     avatar_url : Annotated[Optional[str], Field(None, description="User's avatar(optional)")]
     is_active: Annotated[bool, Field(True, description="Whether the user account is active")]
     is_pro: Annotated[bool, Field(False, description="Whether the user has a subscription"), BeforeValidator(lambda x : bool(x))]
@@ -43,10 +67,15 @@ class UserProfile(BaseModel):
         ),
     ]
     meal_reminder_preferences_set: Annotated[bool, Field(False, description="Whether the user has meal reminder preferences set")]
-    created_at: Annotated[datetime, Field(False, description="Whether the user has a subscription"), BeforeValidator(parse_datetime)]
-    updated_at: Annotated[datetime, Field(False, description="Whether the user has a subscription"), BeforeValidator(parse_datetime)]
+    has_macros: Annotated[bool, Field(False, description="Whether the user has macro targets set")]
+    unit_preference: Annotated[UnitPreference, Field(UnitPreference.METRIC, description="Preferred unit system for measurements (metric/imperial)")]
+
+    created_at: Annotated[datetime, Field(..., description="Profile creation timestamp"), BeforeValidator(parse_datetime)]
+    updated_at: Annotated[datetime, Field(..., description="Profile last update timestamp"), BeforeValidator(parse_datetime)]
 
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+    
     
 
 class UserPreferences(BaseModel):
@@ -61,6 +90,7 @@ class UserPreferences(BaseModel):
         protein_target: Daily protein target in grams
         carbs_target: Daily carbohydrate target in grams
         fat_target: Daily fat target in grams
+        unit_preference: Preferred unit system for measurements (metric/imperial)
         created_at: Preferences creation timestamp
         updated_at: Preferences last update timestamp
     """
@@ -81,15 +111,46 @@ class UpdateUserProfileRequest(BaseModel):
 
     Attributes:
         display_name: New display name (optional)
-        email: New email address (optional)
+        first_name: New first name (optional)
+        last_name: New last name (optional)
+        age: New age (optional)
+        dob: New date of birth (optional, format: YYYY-MM-DD)
+        sex: New biological sex(male/female)
+        height: New height in cm/ft (optional). If provided, 'unit_preference' must also be provided.
+        avatar_url: New avatar image URL (optional)
+        meal_reminder_preferences_set: Whether the user has meal reminder preferences set
+        unit_preference: Preferred unit system for measurements (metric/imperial). Required if 'height' is provided.
     """
     display_name: Annotated[Optional[str], Field(None, description="new display name")]
-    email: Annotated[Optional[EmailStr], Field(None, description="new email address")]
     first_name: Annotated[Optional[str], Field(None, description="new first name")]
     last_name: Annotated[Optional[str], Field(None, description="new last name")]
     age: Annotated[Optional[int], Field(None, description="new age")]
+    dob: Annotated[Optional[str], Field(None, description="new date of birth")]
+    sex: Annotated[Optional[Sex], Field(None, description="new biological sex (male/female)")]
+    height: Annotated[Optional[float], Field(None, description="new height. If provided, 'unit_preference' must also be specified. Assumed to be in cm if metric, inches if imperial.")] # Changed to float for consistency
     avatar_url: Annotated[Optional[str], Field(None, description="new avatar image")]
-    meal_reminder_preferences_set: Annotated[bool, Field(False, description="Whether the user has meal reminder preferences set")]
+    meal_reminder_preferences_set: Annotated[Optional[bool], Field(None, description="Whether the user has meal reminder preferences set")] # Made optional for updates
+    unit_preference: Annotated[Optional[UnitPreference], Field(None, description="Preferred unit system for measurements (metric/imperial)")] # Made optional, but conditionally required
+
+    @field_validator('dob')
+    @classmethod
+    def validate_dob(cls, v):
+        """Validate that dob is a valid date string in ISO format (YYYY-MM-DD)."""
+        if v is None:
+            return v
+            
+        try:
+            # Try to parse the string as a date
+            date.fromisoformat(v)
+            return v
+        except ValueError:
+            raise ValueError("Date of birth must be a valid date string in ISO format (YYYY-MM-DD)")
+
+    @model_validator(mode='after')
+    def check_height_and_unit_preference(self) -> 'UpdateUserProfileRequest':
+        if self.height is not None and self.unit_preference is None:
+            raise ValueError("If 'height' is provided, 'unit_preference' must also be specified.")
+        return self
 
 
 class UpdateUserPreferencesRequest(BaseModel):
@@ -103,6 +164,7 @@ class UpdateUserPreferencesRequest(BaseModel):
         protein_target: Daily protein target in grams
         carbs_target: Daily carbohydrate target in grams
         fat_target: Daily fat target in grams
+        unit_preference: Preferred unit system for measurements (metric/imperial)
     """
     dietary_restrictions: Optional[List[str]] = None
     favorite_cuisines: Optional[List[str]] = None
@@ -111,3 +173,4 @@ class UpdateUserPreferencesRequest(BaseModel):
     protein_target: Optional[float] = None
     carbs_target: Optional[float] = None
     fat_target: Optional[float] = None
+
