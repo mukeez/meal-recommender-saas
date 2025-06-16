@@ -38,6 +38,7 @@ COPY ./app /code/app
 COPY ./requirements.txt /code/requirements.txt
 COPY ./pytest.ini /code/pytest.ini
 COPY ./app/log_config.json /code/log_config.json
+COPY ./macro-meals-mobile-d3f2c02bc942.json /code/macro-meals-mobile-d3f2c02bc942.json
 
 # Install Python dependencies
 RUN --mount=type=cache,target=/root/.cache \
