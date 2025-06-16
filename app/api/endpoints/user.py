@@ -101,7 +101,6 @@ async def update_user_profile(
         The user profile information
     """
     try:
-        token = request.headers.get("Authorization").split(" ")[1]
         user_id = user.get("sub")
         if avatar:
             if not avatar.content_type.startswith("image/"):
@@ -129,7 +128,7 @@ async def update_user_profile(
                 age=age,
             )
         profile = await user_service.update_user_profile(
-            token=token, user_id=user_id, user_data=user_data
+            user_id=user_id, user_data=user_data
         )
         return profile
     except HTTPException:
@@ -234,7 +233,7 @@ async def get_user_preferences(user=Depends(auth_guard)):
     response_model=UserPreferences,
     status_code=status.HTTP_200_OK,
     summary="Update user preferences",
-    description="Update the current user's dietary preferences and macro targets.",
+    description="Update the current user's dietary preferences, macro targets",
 )
 async def update_user_preferences(
     preferences_update: UpdateUserPreferencesRequest, user=Depends(auth_guard)
@@ -243,7 +242,8 @@ async def update_user_preferences(
     Update the current user's preferences.
 
     Args:
-        preferences_update: Partial update to user preferences
+        preferences_update: Partial update to user preferences including dietary preferences,
+                           macro targets, and unit preferences (kg/lbs)
         user: Authenticated user from auth_guard
 
     Returns:
@@ -260,6 +260,7 @@ async def update_user_preferences(
 
         update_data["updated_at"] = datetime.now().isoformat()
 
+       
         async with httpx.AsyncClient() as client:
             response = await client.patch(
                 f"{settings.SUPABASE_URL}/rest/v1/user_preferences",
