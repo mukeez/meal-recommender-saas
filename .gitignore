@@ -174,3 +174,4 @@ cython_debug/
 .pypirc
 simulate.ipynb
 macro-meals-mobile-d3f2c02bc942.json
+openapi.yaml
