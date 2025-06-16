@@ -2,9 +2,12 @@
 
 This module contains the FastAPI routes for logging meals and tracking daily progress.
 """
+
 import logging
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from typing import List
+from datetime import date, timedelta
+from typing import Optional
 
 from app.api.auth_guard import auth_guard
 from app.models.meal import (
@@ -13,6 +16,7 @@ from app.models.meal import (
     MealSuggestionRequest,
     MealSuggestionResponse,
     DailyProgressResponse,
+    ProgressSummary,
 )
 from app.services.meal_service import meal_service
 from app.services.meal_llm_service import meal_llm_service
@@ -23,6 +27,7 @@ import traceback
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
+
 
 @router.post(
     "/suggest-meals",
@@ -53,10 +58,18 @@ async def suggest_meals(
         # Extract user ID from the authenticated user
         user_id = user.get("sub")
 
-        # get restaurants for the user's location
-        restaurants = await restaurant_service.find_restaurants_for_location(location=meal_request.location, latitude=meal_request.latitude, longitude=meal_request.longitude)
+    
 
-        meal_suggestions = await meal_llm_service(request=meal_request, restaurants=restaurants).get_meal_suggestions()
+        # get restaurants for the user's location
+        restaurants = await restaurant_service.find_restaurants_for_location(
+            location=meal_request.location,
+            latitude=meal_request.latitude,
+            longitude=meal_request.longitude,
+        )
+
+        meal_suggestions = await meal_llm_service(
+            request=meal_request, restaurants=restaurants
+        ).get_meal_suggestions()
         return meal_suggestions
 
     except Exception as e:
@@ -161,4 +174,87 @@ async def get_daily_progress(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error calculating daily progress: {str(e)}",
+        )
+
+
+@router.get(
+    "/progress",
+    response_model=ProgressSummary,
+    status_code=status.HTTP_200_OK,
+    summary="Get progress data for a date range",
+    description="Retrieve macro intake progress data for a specified date range.",
+)
+async def get_progress(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    period: Optional[str] = None,
+    user=Depends(auth_guard),
+) -> ProgressSummary:
+    """Retrieve macro intake progress data for a specified date range.
+
+    Args:
+        start_date: Start date for the progress data (optional if period is provided)
+        end_date: End date for the progress data (optional, defaults to today)
+        period: Predefined period (1W, 1M, 3M, 6M, 1Y, All) - overrides start_date
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        Progress summary with daily breakdowns, averages, and comparison to goals
+
+    Raises:
+        HTTPException: If there is an error retrieving the progress data
+    """
+    try:
+        user_id = user.get("sub")
+
+        # Set end_date to today if not provided
+        if not end_date:
+            end_date = date.today()
+
+        # Handle period parameter (overrides start_date)
+        if period:
+            today = date.today()
+            if period == "1W":
+                start_date = today - timedelta(days=7)
+            elif period == "1M":
+                start_date = today - timedelta(days=30)
+            elif period == "3M":
+                start_date = today - timedelta(days=90)
+            elif period == "6M":
+                start_date = today - timedelta(days=180)
+            elif period == "1Y":
+                start_date = today - timedelta(days=365)
+            elif period == "All":
+
+                start_date = await meal_service.get_first_meal_date(user_id)
+                if not start_date:
+                    start_date = today - timedelta(days=30)
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid period parameter: {period}",
+                )
+
+        if not start_date:
+            start_date = end_date - timedelta(days=30)
+
+        # Ensure start_date is before or equal to end_date
+        if start_date > end_date:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Start date must be before or equal to end date",
+            )
+
+        progress_summary = await meal_service.get_progress_summary(
+            user_id, start_date, end_date
+        )
+        return progress_summary
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving progress data: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving progress data: {str(e)}",
         )

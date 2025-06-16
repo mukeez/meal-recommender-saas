@@ -2,10 +2,10 @@
 
 This module provides functions to log meals and track daily nutrition progress.
 """
-
-from typing import Dict, Any, List
 import logging
-from datetime import datetime, date, time
+from typing import Dict, Any, List, Optional
+from collections import defaultdict
+from datetime import datetime, date, time, timedelta
 
 import httpx
 from fastapi import HTTPException, status
@@ -17,6 +17,8 @@ from app.models.meal import (
     LoggedMeal,
     MacroNutrients,
     DailyProgressResponse,
+    DailyMacroSummary,
+    ProgressSummary,
 )
 from app.services.user_service import user_service
 
@@ -355,6 +357,184 @@ class MealService:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error calculating daily progress: {str(e)}",
+            )
+
+    async def get_first_meal_date(self, user_id: str) -> Optional[date]:
+        """Get the date of the first meal logged by the user.
+
+        Args:
+            user_id: ID of the user
+
+        Returns:
+            Date of the first logged meal, or None if no meals exist
+        """
+        logger.info(f"Fetching first meal date for user: {user_id}")
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.base_url}/rest/v1/meal_logs",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params={
+                        "user_id": f"eq.{user_id}",
+                        "order": "created_at.asc",
+                        "limit": 1,
+                    },
+                )
+
+                if response.status_code != 200:
+                    logger.warning(f"Failed to fetch first meal date: {response.text}")
+                    return None
+
+                meals_data = response.json()
+                if not meals_data:
+                    return None
+
+                first_meal = meals_data[0]
+                first_date = self._parse_datetime(first_meal["created_at"]).date()
+                return first_date
+
+        except Exception as e:
+            logger.error(f"Error fetching first meal date: {str(e)}")
+            return None
+
+    async def get_progress_summary(
+        self, user_id: str, start_date: date, end_date: date
+    ) -> ProgressSummary:
+        """Generate a progress summary for the specified date range.
+
+        Args:
+            user_id: ID of the user
+            start_date: Start date for the summary
+            end_date: End date for the summary
+
+        Returns:
+            ProgressSummary object with daily breakdowns, averages, and comparison to goals
+        """
+        logger.info(
+            f"Generating progress summary for user {user_id} from {start_date} to {end_date}"
+        )
+
+        try:
+            # Get the user's preference data for target macros
+            preferences = await user_service.get_user_preferences(user_id)
+
+            # Set target macros from user preferences
+            target_macros = MacroNutrients(
+                calories=preferences.get("calorie_target", 2000),
+                protein=preferences.get("protein_target", 150),
+                carbs=preferences.get("carbs_target", 200),
+                fat=preferences.get("fat_target", 70),
+            )
+
+            # Fetch meals within the date range
+            meals = await self.get_meals_by_date_range(user_id, start_date, end_date)
+
+            # Group meals by date
+            daily_meals = defaultdict(list)
+            for meal in meals:
+                meal_date = meal.meal_time.date()
+                daily_meals[meal_date].append(meal)
+
+            # Create a list of all dates in the range
+            all_dates = []
+            current_date = start_date
+            while current_date <= end_date:
+                all_dates.append(current_date)
+                current_date += timedelta(days=1)
+
+            # Calculate daily macros for each date
+            daily_macros = []
+            total_calories = 0
+            total_protein = 0
+            total_carbs = 0
+            total_fat = 0
+
+            for day in all_dates:
+                day_meals = daily_meals.get(day, [])
+
+                daily_calories = sum(meal.calories for meal in day_meals)
+                daily_protein = sum(meal.protein for meal in day_meals)
+                daily_carbs = sum(meal.carbs for meal in day_meals)
+                daily_fat = sum(meal.fat for meal in day_meals)
+
+                daily_macros.append(
+                    DailyMacroSummary(
+                        date=day,
+                        calories=daily_calories,
+                        protein=daily_protein,
+                        carbs=daily_carbs,
+                        fat=daily_fat,
+                    )
+                )
+
+                total_calories += daily_calories
+                total_protein += daily_protein
+                total_carbs += daily_carbs
+                total_fat += daily_fat
+
+            # Calculate averages
+            days_with_logs = len([d for d in daily_macros if d.calories > 0])
+            total_days = len(all_dates)
+
+            # Avoid division by zero
+            avg_divisor = max(days_with_logs, 1)
+
+            average_macros = MacroNutrients(
+                calories=round(total_calories / avg_divisor, 1),
+                protein=round(total_protein / avg_divisor, 1),
+                carbs=round(total_carbs / avg_divisor, 1),
+                fat=round(total_fat / avg_divisor, 1),
+            )
+
+            # Calculate comparison percentages
+            comparison_percentage = {
+                "calories": round(
+                    (average_macros.calories / target_macros.calories * 100)
+                    if target_macros.calories
+                    else 0,
+                    1,
+                ),
+                "protein": round(
+                    (average_macros.protein / target_macros.protein * 100)
+                    if target_macros.protein
+                    else 0,
+                    1,
+                ),
+                "carbs": round(
+                    (average_macros.carbs / target_macros.carbs * 100)
+                    if target_macros.carbs
+                    else 0,
+                    1,
+                ),
+                "fat": round(
+                    (average_macros.fat / target_macros.fat * 100)
+                    if target_macros.fat
+                    else 0,
+                    1,
+                ),
+            }
+
+            return ProgressSummary(
+                daily_macros=daily_macros,
+                average_macros=average_macros,
+                target_macros=target_macros,
+                comparison_percentage=comparison_percentage,
+                start_date=start_date,
+                end_date=end_date,
+                days_with_logs=days_with_logs,
+                total_days=total_days,
+            )
+
+        except Exception as e:
+            logger.error(f"Error generating progress summary: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error generating progress summary",
             )
 
     def _parse_datetime(self, dt_str: str) -> datetime:
