@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from typing import Any
 import json
 
@@ -38,3 +38,15 @@ def deduplicate_dict_list(data):
             seen.add(key)
             deduplicated.append(d.copy())
     return deduplicated
+
+def parse_date(value):
+    """Parse date string to date object."""
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        # Parse ISO format date string (YYYY-MM-DD)
+        return date.fromisoformat(value)
+    except (ValueError, TypeError):
+        raise ValueError(f"Invalid date format: {value}")

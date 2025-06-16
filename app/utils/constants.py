@@ -1,3 +1,22 @@
+# Constants for unit conversions
+LBS_TO_KG = 0.453592
+INCHES_TO_CM = 2.54
+CM_TO_INCHES = 1 / INCHES_TO_CM
+
+# Constants for macro calculations
+PROTEIN_PER_KG = 1.8
+FAT_PER_KG = 1.0
+PROTEIN_CALS_PER_GRAM = 4
+FAT_CALS_PER_GRAM = 9
+CARB_CALS_PER_GRAM = 4
+MIN_CARBS_GRAMS = 50
+
+
+# Constants for goal calculations
+CALORIES_PER_LB = 3500
+CALORIES_PER_KG = 7700
+
+
 USER_AGENTS = [
     # MACINSTOSH - Safari
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36 Edg/134.0.3124.85",
