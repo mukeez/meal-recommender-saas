@@ -1,6 +1,5 @@
 import logging
 from fastapi import APIRouter, Depends, Request, HTTPException, status, Header, Query
-from typing import Optional
 from datetime import datetime
 
 from app.api.auth_guard import auth_guard
@@ -153,19 +152,18 @@ async def stripe_webhook(
             return {"status": "success", "message": "Checkout completed successfully"}
         
         elif event["type"] == "customer.subscription.created":
-            from supabase import create_client
-
+            
             session = event["data"]["object"]
             customer_id = session["customer"]
             session_trial_end_date = session["trial_end"]
             trial_end_date = datetime.fromtimestamp(session_trial_end_date).date()
 
-            client = create_client(
-                settings.SUPABASE_SERVICE_ROLE_KEY, settings.SUPABASE_URL
+            await stripe_service.update_stripe_user_subscription(
+                customer=customer_id,
+                subscription_data=SubscriptionUpdate(
+                    trial_end_date=trial_end_date.isoformat()
+                ),
             )
-            client.table("user_profiles").update({"trial_end_date": trial_end_date}).eq(
-                "stripe_customer_id", customer_id
-            ).execute()
             logger.info(
                 f"Subscription created for user: {customer_id} with trial end date: {trial_end_date}"
             )
@@ -182,7 +180,7 @@ async def stripe_webhook(
                 subscription_data=SubscriptionUpdate(is_pro=False),
             )
             
-            # Get customer email and send cancellation email
+            # send cancellation email
             customer_email = await stripe_service.get_customer_email(customer_id)
             if customer_email:
                 await mail_service.send_email(
@@ -200,7 +198,7 @@ async def stripe_webhook(
                 "message": "Subscription cancelled successfully",
             }
 
-        # update subscription start and end dates - no email for renewals as requested
+        # update subscription start and end dates
         elif event["type"] == "invoice.paid":
             session = event["data"]["object"]
             customer = session["customer"]
