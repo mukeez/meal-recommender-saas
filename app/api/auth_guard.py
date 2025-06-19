@@ -1,5 +1,5 @@
 from fastapi import Request, HTTPException
-from jose import jwt
+from jose import jwt, JWTError
 import logging
 
 from app.core.config import settings
@@ -15,7 +15,7 @@ def verify_jwt(token: str):
         decoded = jwt.decode(token, settings.SUPABASE_JWT_SECRET, algorithms=["HS256"],options={"verify_aud": False}
                              )
         return decoded
-    except jwt.JWTError as e:
+    except JWTError as e:
         logger.warning(f"JWT validation failed: {str(e)}")
         raise HTTPException(status_code=401, detail="Invalid token")
     except Exception as e:
