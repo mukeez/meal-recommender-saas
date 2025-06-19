@@ -103,10 +103,10 @@ async def update_user_profile(
     try:
         user_id = user.get("sub")
         if avatar:
-            if not avatar.content_type.startswith("image/"):
+            if not avatar.content_type or not avatar.content_type.startswith("image/"):
                 raise HTTPException(status_code=400, detail="Only image files allowed.")
             file_content = await avatar.read()
-            content_type = avatar.content_type
+            content_type = avatar.content_type or "image/jpeg"
             avatar_url = await user_service.upload_user_avatar(
                 user_id=user_id, file_content=file_content, content_type=content_type
             )
@@ -118,6 +118,10 @@ async def update_user_profile(
                 avatar_url=avatar_url,
                 meal_reminder_preferences_set=meal_reminder_preferences_set,
                 age=age,
+                dob=None,
+                sex=None,
+                height=None,
+                unit_preference=None,
             )
         else:
             user_data = UpdateUserProfileRequest(
@@ -126,6 +130,11 @@ async def update_user_profile(
                 last_name=last_name,
                 meal_reminder_preferences_set=meal_reminder_preferences_set,
                 age=age,
+                dob=None,
+                sex=None,
+                height=None,
+                avatar_url=None,
+                unit_preference=None,
             )
         profile = await user_service.update_user_profile(
             user_id=user_id, user_data=user_data
@@ -160,6 +169,8 @@ async def update_fcm_token(
     """
     try:
         fcm_token = body.get("fcm_token")
+        if not fcm_token:
+            raise HTTPException(status_code=400, detail="FCM token is required")
         user_id = user.get("sub")
         await user_service.update_fcm_token(user_id=user_id, fcm_token=fcm_token)
         return {"message": "FCM token updated successfully"}
@@ -189,6 +200,12 @@ async def get_user_preferences(user=Depends(auth_guard)):
     """
     try:
         user_id = user.get("sub")
+
+        if not settings.SUPABASE_SERVICE_ROLE_KEY:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Service configuration error"
+            )
 
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -260,7 +277,12 @@ async def update_user_preferences(
 
         update_data["updated_at"] = datetime.now().isoformat()
 
-       
+        if not settings.SUPABASE_SERVICE_ROLE_KEY:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Service configuration error"
+            )
+
         async with httpx.AsyncClient() as client:
             response = await client.patch(
                 f"{settings.SUPABASE_URL}/rest/v1/user_preferences",
