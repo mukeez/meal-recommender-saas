@@ -158,6 +158,30 @@ class LogMealRequest(BaseModel):
     )
 
 
+class UpdateMealRequest(BaseModel):
+    """Request model for updating a logged meal.
+
+    Attributes:
+        name: Name of the meal (optional)
+        description: Description of the meal (optional)
+        protein: Protein amount in grams (optional)
+        carbs: Carbohydrate amount in grams (optional)
+        fat: Fat amount in grams (optional)
+        calories: Total calories (optional)
+        meal_time: Timestamp of when the meal was consumed (optional)
+        meal_type: Type of meal (optional)
+    """
+
+    name: Optional[str] = Field(None, description="Name of the meal")
+    description: Optional[str] = Field(None, description="Description of the meal")
+    protein: Optional[float] = Field(None, description="Protein amount in grams", gt=0)
+    carbs: Optional[float] = Field(None, description="Carbohydrate amount in grams", gt=0)
+    fat: Optional[float] = Field(None, description="Fat amount in grams", gt=0)
+    calories: Optional[float] = Field(None, description="Total calories", gt=0)
+    meal_time: Optional[datetime] = Field(None, description="Timestamp of meal consumption")
+    meal_type: Optional[MealType] = Field(None, description="Type of meal (breakfast, lunch, dinner, other)")
+
+
 class LoggedMeal(BaseModel):
     """Logged meal model with additional tracking information.
 

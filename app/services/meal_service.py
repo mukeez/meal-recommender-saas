@@ -19,6 +19,7 @@ from app.models.meal import (
     DailyProgressResponse,
     DailyMacroSummary,
     ProgressSummary,
+    UpdateMealRequest,
 )
 from app.services.user_service import user_service
 
@@ -535,6 +536,212 @@ class MealService:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error generating progress summary",
+            )
+
+    async def update_meal(self, user_id: str, meal_id: str, meal_data: "UpdateMealRequest") -> LoggedMeal:
+        """Update a logged meal for a user.
+
+        Args:
+            user_id: ID of the user updating the meal
+            meal_id: ID of the meal to update
+            meal_data: Updated meal details
+
+        Returns:
+            The updated meal with additional metadata
+        """
+        logger.info(f"Updating meal {meal_id} for user: {user_id}")
+
+        try:
+            # First, verify the meal belongs to the user
+            async with httpx.AsyncClient() as client:
+                # Check if meal exists and belongs to user
+                response = await client.get(
+                    f"{self.base_url}/rest/v1/meal_logs",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params={
+                        "id": f"eq.{meal_id}",
+                        "user_id": f"eq.{user_id}",
+                    },
+                )
+
+                if response.status_code != 200:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to verify meal ownership",
+                    )
+
+                meals_data = response.json()
+                if not meals_data:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Meal not found or does not belong to user",
+                    )
+
+            # Prepare update data (only include non-None values)
+            update_data = {}
+            for field, value in meal_data.model_dump(exclude_unset=True).items():
+                if value is not None:
+                    if field == "meal_time" and isinstance(value, datetime):
+                        update_data[field] = value.isoformat()
+                    else:
+                        update_data[field] = value
+
+            if not update_data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No valid fields to update",
+                )
+
+            # Update the meal
+            async with httpx.AsyncClient() as client:
+                response = await client.patch(
+                    f"{self.base_url}/rest/v1/meal_logs",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                        "Prefer": "return=representation",
+                    },
+                    params={"id": f"eq.{meal_id}"},
+                    json=update_data,
+                )
+
+                if response.status_code not in (200, 201):
+                    error_detail = "Failed to update meal"
+                    try:
+                        error_data = response.json()
+                        if "message" in error_data:
+                            error_detail = error_data["message"]
+                    except Exception:
+                        pass
+
+                    logger.error(f"Meal update failed: {error_detail}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to update meal: {error_detail}",
+                    )
+
+                updated_meal_data = response.json()[0]
+                updated_meal = LoggedMeal(
+                    id=updated_meal_data["id"],
+                    user_id=updated_meal_data["user_id"],
+                    name=updated_meal_data["name"],
+                    description=updated_meal_data["description"],
+                    protein=updated_meal_data["protein"],
+                    carbs=updated_meal_data["carbs"],
+                    fat=updated_meal_data["fat"],
+                    calories=updated_meal_data["calories"],
+                    meal_time=self._parse_datetime(updated_meal_data["meal_time"]),
+                    created_at=self._parse_datetime(updated_meal_data["created_at"]),
+                    notes=updated_meal_data.get("notes"),
+                    meal_type=updated_meal_data.get("meal_type"),
+                )
+
+                logger.info(f"Meal {meal_id} updated successfully for user: {user_id}")
+                return updated_meal
+
+        except HTTPException:
+            raise
+        except httpx.RequestError as e:
+            logger.error(f"Request error updating meal: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database: {str(e)}",
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error updating meal: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error updating meal: {str(e)}",
+            )
+
+    async def delete_meal(self, user_id: str, meal_id: str) -> bool:
+        """Delete a logged meal for a user.
+
+        Args:
+            user_id: ID of the user deleting the meal
+            meal_id: ID of the meal to delete
+
+        Returns:
+            True if the meal was successfully deleted
+        """
+        logger.info(f"Deleting meal {meal_id} for user: {user_id}")
+
+        try:
+            async with httpx.AsyncClient() as client:
+                # First, verify the meal belongs to the user
+                response = await client.get(
+                    f"{self.base_url}/rest/v1/meal_logs",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params={
+                        "id": f"eq.{meal_id}",
+                        "user_id": f"eq.{user_id}",
+                    },
+                )
+
+                if response.status_code != 200:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to verify meal ownership",
+                    )
+
+                meals_data = response.json()
+                if not meals_data:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Meal not found or does not belong to user",
+                    )
+
+                # Delete the meal
+                response = await client.delete(
+                    f"{self.base_url}/rest/v1/meal_logs",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params={"id": f"eq.{meal_id}"},
+                )
+
+                if response.status_code not in (200, 201, 204):
+                    error_detail = "Failed to delete meal"
+                    try:
+                        error_data = response.json()
+                        if "message" in error_data:
+                            error_detail = error_data["message"]
+                    except Exception:
+                        pass
+
+                    logger.error(f"Meal deletion failed: {error_detail}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to delete meal: {error_detail}",
+                    )
+
+                logger.info(f"Meal {meal_id} deleted successfully for user: {user_id}")
+                return True
+
+        except HTTPException:
+            raise
+        except httpx.RequestError as e:
+            logger.error(f"Request error deleting meal: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database: {str(e)}",
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error deleting meal: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error deleting meal: {str(e)}",
             )
 
     def _parse_datetime(self, dt_str: str) -> datetime:

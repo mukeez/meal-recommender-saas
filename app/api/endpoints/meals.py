@@ -17,6 +17,7 @@ from app.models.meal import (
     MealSuggestionResponse,
     DailyProgressResponse,
     ProgressSummary,
+    UpdateMealRequest,
 )
 from app.services.meal_service import meal_service
 from app.services.meal_llm_service import meal_llm_service
@@ -257,4 +258,79 @@ async def get_progress(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving progress data: {str(e)}",
+        )
+
+
+@router.put(
+    "/{meal_id}",
+    response_model=LoggedMeal,
+    status_code=status.HTTP_200_OK,
+    summary="Update a meal",
+    description="Update an existing logged meal for the current user.",
+)
+async def update_meal(
+    meal_id: str,
+    meal_data: UpdateMealRequest,
+    user=Depends(auth_guard),
+) -> LoggedMeal:
+    """Update an existing logged meal for the current user.
+
+    Args:
+        meal_id: ID of the meal to update
+        meal_data: Updated meal details
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        The updated meal with additional metadata
+
+    Raises:
+        HTTPException: If there is an error updating the meal
+    """
+    try:
+        user_id = user.get("sub")
+
+        updated_meal = await meal_service.update_meal(user_id, meal_id, meal_data)
+        return updated_meal
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating meal: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating meal: {str(e)}",
+        )
+
+
+@router.delete(
+    "/{meal_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a meal",
+    description="Delete an existing logged meal for the current user.",
+)
+async def delete_meal(
+    meal_id: str,
+    user=Depends(auth_guard),
+):
+    """Delete an existing logged meal for the current user.
+
+    Args:
+        meal_id: ID of the meal to delete
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Raises:
+        HTTPException: If there is an error deleting the meal
+    """
+    try:
+        user_id = user.get("sub")
+
+        await meal_service.delete_meal(user_id, meal_id)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting meal: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting meal: {str(e)}",
         )
