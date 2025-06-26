@@ -182,6 +182,28 @@ class UpdateMealRequest(BaseModel):
     meal_type: Optional[MealType] = Field(None, description="Type of meal (breakfast, lunch, dinner, other)")
 
 
+class UpdateMealResponse(BaseModel):
+    """Response model for meal update operations.
+
+    Attributes:
+        message: Success message
+        meal: The updated meal data
+    """
+    message: str = Field(..., description="Success message")
+    meal: LoggedMeal = Field(..., description="The updated meal data")
+
+
+class DeleteMealResponse(BaseModel):
+    """Response model for meal deletion operations.
+
+    Attributes:
+        message: Success message
+        meal_id: ID of the deleted meal
+    """
+    message: str = Field(..., description="Success message")
+    meal_id: str = Field(..., description="ID of the deleted meal")
+
+
 class LoggedMeal(BaseModel):
     """Logged meal model with additional tracking information.
 

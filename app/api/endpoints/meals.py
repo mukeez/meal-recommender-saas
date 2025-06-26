@@ -18,6 +18,8 @@ from app.models.meal import (
     DailyProgressResponse,
     ProgressSummary,
     UpdateMealRequest,
+    UpdateMealResponse,
+    DeleteMealResponse,
 )
 from app.services.meal_service import meal_service
 from app.services.meal_llm_service import meal_llm_service
@@ -263,7 +265,7 @@ async def get_progress(
 
 @router.put(
     "/{meal_id}",
-    response_model=LoggedMeal,
+    response_model=UpdateMealResponse,
     status_code=status.HTTP_200_OK,
     summary="Update a meal",
     description="Update an existing logged meal for the current user.",
@@ -272,7 +274,7 @@ async def update_meal(
     meal_id: str,
     meal_data: UpdateMealRequest,
     user=Depends(auth_guard),
-) -> LoggedMeal:
+) -> UpdateMealResponse:
     """Update an existing logged meal for the current user.
 
     Args:
@@ -281,7 +283,7 @@ async def update_meal(
         user: The authenticated user (injected by the auth_guard dependency)
 
     Returns:
-        The updated meal with additional metadata
+        UpdateMealResponse with success message and updated meal data
 
     Raises:
         HTTPException: If there is an error updating the meal
@@ -290,7 +292,10 @@ async def update_meal(
         user_id = user.get("sub")
 
         updated_meal = await meal_service.update_meal(user_id, meal_id, meal_data)
-        return updated_meal
+        return UpdateMealResponse(
+            message="Meal updated successfully",
+            meal=updated_meal
+        )
 
     except HTTPException:
         raise
@@ -304,19 +309,23 @@ async def update_meal(
 
 @router.delete(
     "/{meal_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=DeleteMealResponse,
+    status_code=status.HTTP_200_OK,
     summary="Delete a meal",
     description="Delete an existing logged meal for the current user.",
 )
 async def delete_meal(
     meal_id: str,
     user=Depends(auth_guard),
-):
+) -> DeleteMealResponse:
     """Delete an existing logged meal for the current user.
 
     Args:
         meal_id: ID of the meal to delete
         user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        DeleteMealResponse with success message and deleted meal ID
 
     Raises:
         HTTPException: If there is an error deleting the meal
@@ -324,7 +333,11 @@ async def delete_meal(
     try:
         user_id = user.get("sub")
 
-        await meal_service.delete_meal(user_id, meal_id)
+        deleted_meal_id = await meal_service.delete_meal(user_id, meal_id)
+        return DeleteMealResponse(
+            message="Meal deleted successfully",
+            meal_id=deleted_meal_id
+        )
 
     except HTTPException:
         raise

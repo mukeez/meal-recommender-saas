@@ -20,6 +20,8 @@ from app.models.meal import (
     DailyMacroSummary,
     ProgressSummary,
     UpdateMealRequest,
+    UpdateMealResponse,
+    DeleteMealResponse,
 )
 from app.services.user_service import user_service
 
@@ -659,7 +661,7 @@ class MealService:
                 detail=f"Error updating meal: {str(e)}",
             )
 
-    async def delete_meal(self, user_id: str, meal_id: str) -> bool:
+    async def delete_meal(self, user_id: str, meal_id: str) -> str:
         """Delete a logged meal for a user.
 
         Args:
@@ -667,7 +669,7 @@ class MealService:
             meal_id: ID of the meal to delete
 
         Returns:
-            True if the meal was successfully deleted
+            The ID of the deleted meal
         """
         logger.info(f"Deleting meal {meal_id} for user: {user_id}")
 
@@ -727,7 +729,7 @@ class MealService:
                     )
 
                 logger.info(f"Meal {meal_id} deleted successfully for user: {user_id}")
-                return True
+                return meal_id
 
         except HTTPException:
             raise
