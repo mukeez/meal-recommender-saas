@@ -28,6 +28,8 @@ class Settings:
         self.SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
         self.SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
         self.SUPABASE_BUCKET_NAME = os.getenv("SUPABASE_BUCKET_NAME", "avatars")
+        self.AVATAR_BUCKET_NAME = os.getenv("AVATAR_BUCKET_NAME", "avatars")
+        self.MEAL_PHOTO_BUCKET_NAME = os.getenv("MEAL_PHOTO_BUCKET_NAME", "meals")
 
 
         # AI API Settings
@@ -45,7 +47,8 @@ class Settings:
         # Stripe API Settings
         self.STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
         self.STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
-        self.STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
+        self.STRIPE_MONTHLY_PRICE_ID = os.getenv("STRIPE_MONTHLY_PRICE_ID")
+        self.STRIPE_YEARLY_PRICE_ID = os.getenv("STRIPE_YEARLY_PRICE_ID")
         self.STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
 
         # AWS SETTINGS
@@ -64,7 +67,7 @@ class Settings:
         self.SLACK_ALERT_CHANNEL = "#macromeals-alerts"
 
         # Redis Settings
-        self.REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+        self.REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
         self.REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
         # Email Settings
