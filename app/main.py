@@ -26,6 +26,7 @@ from app.api.endpoints import (
 )
 from app.core.config import settings
 from app.tasks.macromeals_tasks import macromeals_tasks
+from app.utils.cloudwatch_middleware import CloudWatchLoggingMiddleware
 import logging
 import json
 
@@ -137,6 +138,14 @@ async def custom_swagger_ui_html():
 
 
 app.openapi = custom_openapi
+
+# Add CloudWatch logging middleware first (runs last, captures final response)
+app.add_middleware(
+    CloudWatchLoggingMiddleware,
+    log_group_name="meal-recommender-api",
+    batch_size=10,
+    batch_timeout=30
+)
 
 app.add_middleware(
     CORSMiddleware,

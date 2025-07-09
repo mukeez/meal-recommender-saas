@@ -45,13 +45,15 @@ async def upload_file_to_bucket(
         public_url = f"{settings.SUPABASE_URL}/storage/v1/object/public/{bucket_name}/{file_path}"
 
         async with httpx.AsyncClient() as client:
+            headers = {}
+            if settings.SUPABASE_SERVICE_ROLE_KEY:
+                headers["apikey"] = settings.SUPABASE_SERVICE_ROLE_KEY
+                headers["Authorization"] = f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}"
+            headers["Content-Type"] = content_type
+
             response = await client.put(
                 storage_url,
-                headers={
-                    "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
-                    "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
-                    "Content-Type": content_type,
-                },
+                headers=headers,
                 content=file_content,
             )
 

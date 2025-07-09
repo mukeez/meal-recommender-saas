@@ -36,14 +36,13 @@ class MacroMealsTasks:
         """Schedule start of day meal reminders for users with meal_reminder_preferences_set as False."""
         try:
             logger.info("preparing to schedule start of day meal reminders")
-            users = (
+            response = (
                 self.supabase_client.table("user_profiles")
                 .select("id, fcm_token, first_name")
                 .eq("meal_reminder_preferences_set", False)
                 .execute()
             )
-            user_list = users.data if hasattr(users, "data") else users
-            for user in user_list:
+            for user in response.data:
                 user_id = user.get("id")
                 token = user.get("fcm_token")
                 first_name = user.get("first_name", None)
@@ -83,14 +82,13 @@ class MacroMealsTasks:
         """Schedule end of day meal reminders for users with meal_reminder_preferences_set key as False."""
         try:
             logger.info("preparing to schedule end of day meal reminders")
-            users = (
+            response = (
                 self.supabase_client.table("user_profiles")
                 .select("id, fcm_token, first_name")
                 .eq("meal_reminder_preferences_set", False)
                 .execute()
             )
-            user_list = users.data if hasattr(users, "data") else users
-            for user in user_list:
+            for user in response.data:
                 user_id = user.get("id")
                 token = user.get("fcm_token")
                 first_name = user.get("first_name", None)
@@ -130,14 +128,13 @@ class MacroMealsTasks:
         """Schedule custom meal reminders for breakfast."""
         try:
             logger.info("scheduling custom meal reminders for breakfast")
-            users = (
+            response = (
                 self.supabase_client.table("user_profiles")
                 .select("id, fcm_token, first_name")
                 .eq("meal_reminder_preferences_set", True)
                 .execute()
             )
-            user_list = users.data if hasattr(users, "data") else users
-            for user in user_list:
+            for user in response.data:
                 user_id = user.get("id")
                 token = user.get("fcm_token")
                 first_name = user.get("first_name", None)
@@ -172,14 +169,13 @@ class MacroMealsTasks:
         """Schedule custom meal reminders for lunch."""
         try:
             logger.info("scheduling custom meal reminders for lunch")
-            users = (
+            response = (
                 self.supabase_client.table("user_profiles")
                 .select("id, fcm_token, first_name")
                 .eq("meal_reminder_preferences_set", True)
                 .execute()
             )
-            user_list = users.data if hasattr(users, "data") else users
-            for user in user_list:
+            for user in response.data:
                 user_id = user.get("id")
                 token = user.get("fcm_token")
                 first_name = user.get("first_name", None)
@@ -210,14 +206,13 @@ class MacroMealsTasks:
         """Schedule custom meal reminders for dinner."""
         try:
             logger.info("scheduling custom meal reminders for dinner")
-            users = (
+            response = (
                 self.supabase_client.table("user_profiles")
                 .select("id, fcm_token, first_name")
                 .eq("meal_reminder_preferences_set", True)
                 .execute()
             )
-            user_list = users.data if hasattr(users, "data") else users
-            for user in user_list:
+            for user in response.data:
                 user_id = user.get("id")
                 token = user.get("fcm_token")
                 first_name = user.get("first_name", None)
@@ -253,19 +248,14 @@ class MacroMealsTasks:
             today = date.today()
             start_of_day = datetime.combine(today, time.min, tzinfo=timezone.utc)
             end_of_day = datetime.combine(today, time.max, tzinfo=timezone.utc)
-            users_who_completed_their_macro_goals_today = (
+            response = (
                 self.supabase_client.table("meal_logs")
                 .select("user_id, user_profiles(fcm_token, first_name)", count="exact")
                 .gte("created_at", start_of_day.isoformat())
                 .lte("created_at", end_of_day.isoformat())
                 .execute()
             )
-            user_list = (
-                users_who_completed_their_macro_goals_today.data
-                if hasattr(users_who_completed_their_macro_goals_today, "data")
-                else users_who_completed_their_macro_goals_today
-            )
-            for user in user_list:
+            for user in response.data:
                 user_id = user.get("user_id")
                 try:
                     daily_progress = asyncio.run(meal_service.get_daily_progress(user_id))
@@ -327,14 +317,13 @@ class MacroMealsTasks:
         """Send trial expiry notification 24 hours before the trial ends."""
         try:
             logger.info("preparing to send trial expiry notifications")
-            users = (
+            response = (
                 self.supabase_client.table("user_profiles")
                 .select("id, fcm_token, first_name, trial_end_date")
                 .eq("is_pro", False)
                 .execute()
             )
-            user_list = users.data if hasattr(users, "data") else users
-            for user in user_list:
+            for user in response.data:
                 user_id = user.get("id")
                 token = user.get("fcm_token")
                 first_name = user.get("first_name", None)

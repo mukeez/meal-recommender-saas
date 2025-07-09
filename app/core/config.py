@@ -22,6 +22,7 @@ class Settings:
         self.API_V1_STR = "/api/v1"
         self.PROJECT_NAME = "Meal Recommender API"
         self.DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+        self.ENVIRONMENT = os.getenv("ENV", "development")
 
         # Supabase Settings
         self.SUPABASE_URL = os.getenv("SUPABASE_URL")
