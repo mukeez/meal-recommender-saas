@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Failed - MacroMeals</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .alert {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+            color: #856404;
+        }
+        .button {
+            display: inline-block;
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">MacroMeals</div>
+        </div>
+        
+        <h2>Payment Failed</h2>
+        
+        <div class="alert">
+            <strong>Action Required:</strong> We were unable to process your payment for your MacroMeals subscription.
+        </div>
+        
+        <p>Hello,</p>
+        
+        <p>We attempted to charge your payment method for your MacroMeals subscription, but the payment failed.</p>
+        
+        <p><strong>Amount Due:</strong> {{ amount_due }}</p>
+        
+        <p>Don't worry - we'll automatically retry the payment in a few days. In the meantime, your subscription remains active.</p>
+        
+        {% if invoice_url %}
+        <p>You can also update your payment method or pay the invoice manually:</p>
+        <a href="{{ invoice_url }}" class="button">Update Payment Method</a>
+        {% endif %}
+        
+        <p>If you have any questions or need assistance, please don't hesitate to contact our support team.</p>
+        
+        <p>Best regards,<br>
+        The MacroMeals Team</p>
+        
+        <div class="footer">
+            <p>This email was sent to {{ customer_email }}</p>
+            <p>MacroMeals - Your Personal Nutrition Tracker</p>
+        </div>
+    </div>
+</body>
+</html> 
