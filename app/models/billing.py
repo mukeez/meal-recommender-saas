@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 from typing_extensions import Annotated
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
@@ -7,6 +7,8 @@ from app.core.config import settings
 class CheckoutSessionRequest(BaseModel):
     email: EmailStr = Field(..., description="User's email address")
     user_id: str = Field(..., description="User ID for subscription metadata")
+    plan: Literal["monthly", "yearly"] = Field(..., description="Plan to subscribe to")
+    
 
 
 class CheckoutSessionResponse(BaseModel):
@@ -26,6 +28,7 @@ class SubscriptionUpdate(BaseModel):
     subscription_start : Annotated[Optional[str], Field(None, description="start date for stripe subscription")]
     subscription_end : Annotated[Optional[str], Field(None, description="end date fot stripe subscription")]
     trial_end_date : Annotated[Optional[str], Field(None, description="end date for stripe trial period")]
+    plan : Annotated[Optional[Literal["monthly", "yearly"]], Field(None, description="plan to subscribe to")]
 
     @field_validator("subscription_start", "subscription_end", "trial_end_date", mode="before")
     @classmethod
