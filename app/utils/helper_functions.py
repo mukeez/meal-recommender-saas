@@ -20,12 +20,13 @@ def parse_datetime(dt_str: Any) -> datetime | Any:
     if not dt_str:
         return datetime.now()
 
-    if "Z" in dt_str:
-        dt_str = dt_str.replace("Z", "+00:00")
+    if isinstance(dt_str, str):
+        if "Z" in dt_str:
+            dt_str = dt_str.replace("Z", "+00:00")
 
     try:
         return datetime.fromisoformat(dt_str)
-    except ValueError:
+    except:
         return datetime.now()
 
 
