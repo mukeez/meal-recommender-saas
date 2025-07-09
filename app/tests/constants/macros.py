@@ -1,5 +1,6 @@
 from enum import Enum
-from app.models.macro_tracking import Sex, ActivityLevel, GoalType, UnitPreference
+from app.models.macro_tracking import Sex, ActivityLevel, GoalType
+from app.models.user import HeightUnitPreference, WeightUnitPreference
 
 
 class MacrosTestConstants(Enum):
@@ -11,7 +12,8 @@ class MacrosTestConstants(Enum):
     ACTIVITY_LEVEL = ActivityLevel.MODERATE.value
     GOAL_TYPE = GoalType.MAINTAIN.value
     PROGRESS_RATE = 0.0  # No weight change
-    UNIT_PREFERENCE = UnitPreference.METRIC.value
+    HEIGHT_UNIT_PREFERENCE = HeightUnitPreference.METRIC.value
+    WEIGHT_UNIT_PREFERENCE = WeightUnitPreference.METRIC.value
 
 
 # Mock data for macro calculator response

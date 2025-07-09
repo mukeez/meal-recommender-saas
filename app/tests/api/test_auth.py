@@ -6,6 +6,7 @@ from app.tests.constants.user import UserTestConstants
 from app.tests.constants.otp import OTPTestConstants, get_valid_otp_entry, get_expired_otp_entry, get_session_token_entry
 from app.main import app
 import httpx
+from unittest.mock import patch, Mock
 
 
 @pytest.mark.asyncio
@@ -279,35 +280,29 @@ class TestAuthEndpoint:
         mock_user_service.store_session_token.assert_not_called()
 
     async def test_reset_password_success(
-        self, authenticated_client, mock_user_service
+        self, client, mock_user_service_get_session_token, mock_user_service_update_password, mock_user_service_invalidate_session_token, mock_user_service_invalidate_otp
     ):
         """Test successful password reset."""
-
-        # Configure mock to return valid session token
-        session_entry = get_session_token_entry(UserTestConstants.MOCK_USER_EMAIL.value)
-        mock_user_service.get_session_token.return_value = session_entry
-
-        # Make request
-        response = authenticated_client.post(
-            f"{settings.API_V1_STR}/auth/reset-password",
-            json={
-                "email": UserTestConstants.MOCK_USER_EMAIL.value,
-                "password": OTPTestConstants.MOCK_NEW_PASSWORD.value,
-                "session_token": OTPTestConstants.MOCK_SESSION_TOKEN.value,
-            },
-        )
-
+        # Mock session token validation
+        mock_user_service_get_session_token.return_value = {"token": "valid_session_token"}
+        
+        request_data = {
+            "email": "test@example.com",
+            "otp": "123456",
+            "password": "newpassword123",
+            "session_token": "valid_session_token"
+        }
+        
+        response = client.post(f"{settings.API_V1_STR}/auth/reset-password", json=request_data)
+        
         assert response.status_code == 200
-        assert response.json() == {"message": "Password reset successful."}
-
-        # Verify password was updated and tokens were invalidated
-        mock_user_service.update_password.assert_called_once()
-        mock_user_service.invalidate_otp.assert_called_once_with(
-            UserTestConstants.MOCK_USER_EMAIL.value
-        )
-        mock_user_service.invalidate_session_token.assert_called_once_with(
-            UserTestConstants.MOCK_USER_EMAIL.value
-        )
+        assert response.json()["message"] == "Password reset successfully."
+        
+        # Verify service methods were called
+        mock_user_service_get_session_token.assert_called_once_with("test@example.com")
+        mock_user_service_update_password.assert_called_once_with("test@example.com", "newpassword123")
+        mock_user_service_invalidate_session_token.assert_called_once_with("test@example.com")
+        mock_user_service_invalidate_otp.assert_called_once_with("test@example.com")
 
     async def test_reset_password_invalid_token(
         self, authenticated_client, mock_user_service
@@ -408,3 +403,48 @@ class TestAuthEndpoint:
         finally:
             # clean up dependency overrides after the test
             app.dependency_overrides = {}
+
+    async def test_refresh_token_success(self, client):
+        """Test successful token refresh."""
+        # Mock successful Supabase response
+        mock_response_data = {
+            "access_token": "new_access_token",
+            "refresh_token": "new_refresh_token", 
+            "expires_in": 3600,
+            "expires_at": 1234567890,
+            "user": {
+                "id": "user123",
+                "email": "test@example.com"
+            }
+        }
+        
+        with patch('httpx.AsyncClient.post') as mock_post:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = mock_response_data
+            mock_post.return_value = mock_response
+            
+            request_data = {"refresh_token": "valid_refresh_token"}
+            response = client.post(f"{settings.API_V1_STR}/auth/refresh", json=request_data)
+            
+            assert response.status_code == 200
+            response_data = response.json()
+            assert response_data["access_token"] == "new_access_token"
+            assert response_data["refresh_token"] == "new_refresh_token"
+            assert response_data["expires_in"] == 3600
+            assert response_data["user"]["id"] == "user123"
+            assert response_data["user"]["email"] == "test@example.com"
+
+    async def test_refresh_token_invalid(self, client):
+        """Test refresh token with invalid token."""
+        with patch('httpx.AsyncClient.post') as mock_post:
+            mock_response = Mock()
+            mock_response.status_code = 401
+            mock_response.json.return_value = {"error": "invalid_grant", "message": "Invalid refresh token"}
+            mock_post.return_value = mock_response
+            
+            request_data = {"refresh_token": "invalid_refresh_token"}
+            response = client.post(f"{settings.API_V1_STR}/auth/refresh", json=request_data)
+            
+            assert response.status_code == 401
+            assert "Invalid or expired refresh token" in response.json()["detail"]

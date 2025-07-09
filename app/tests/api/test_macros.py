@@ -1,6 +1,7 @@
 import pytest
 from app.core.config import settings
-from app.models.macro_tracking import ActivityLevel, GoalType, UnitPreference, Sex
+from app.models.macro_tracking import ActivityLevel, GoalType, Sex
+from app.models.user import HeightUnitPreference, WeightUnitPreference
 from app.tests.constants.macros import MacrosTestConstants
 
 
@@ -18,11 +19,12 @@ class TestMacrosEndpoint:
             "activity_level": MacrosTestConstants.ACTIVITY_LEVEL.value,
             "goal_type": GoalType.MAINTAIN.value,
             "progress_rate": MacrosTestConstants.PROGRESS_RATE.value,
-            "unit_preference": MacrosTestConstants.UNIT_PREFERENCE.value,
+            "height_unit_preference": MacrosTestConstants.HEIGHT_UNIT_PREFERENCE.value,
+            "weight_unit_preference": MacrosTestConstants.WEIGHT_UNIT_PREFERENCE.value,
         }
 
         response = authenticated_client.post(
-            f"{settings.API_V1_STR}/macros/calculate-macros", json=macros_data
+            f"{settings.API_V1_STR}/macros/macros-setup", json=macros_data
         )
         assert response.status_code == 200
         
@@ -54,11 +56,12 @@ class TestMacrosEndpoint:
             "goal_type": GoalType.LOSE.value,
             "progress_rate": 1.0,  # 1 kg per week weight loss
             "target_weight": MacrosTestConstants.WEIGHT.value - 10,  # 10kg less
-            "unit_preference": MacrosTestConstants.UNIT_PREFERENCE.value,
+            "height_unit_preference": MacrosTestConstants.HEIGHT_UNIT_PREFERENCE.value,
+            "weight_unit_preference": MacrosTestConstants.WEIGHT_UNIT_PREFERENCE.value,
         }
 
         response = authenticated_client.post(
-            f"{settings.API_V1_STR}/macros/calculate-macros", json=macros_data
+            f"{settings.API_V1_STR}/macros/macros-setup", json=macros_data
         )
 
 
@@ -95,11 +98,12 @@ class TestMacrosEndpoint:
             "activity_level": MacrosTestConstants.ACTIVITY_LEVEL.value,
             "goal_type": MacrosTestConstants.GOAL_TYPE.value,
             "progress_rate": MacrosTestConstants.PROGRESS_RATE.value,
-            "unit_preference": UnitPreference.IMPERIAL.value,
+            "height_unit_preference": HeightUnitPreference.IMPERIAL.value,
+            "weight_unit_preference": WeightUnitPreference.IMPERIAL.value,
         }
 
         response = authenticated_client.post(
-            f"{settings.API_V1_STR}/macros/calculate-macros", json=macros_data
+            f"{settings.API_V1_STR}/macros/macros-setup", json=macros_data
         )
         assert response.status_code == 200
         
@@ -122,11 +126,12 @@ class TestMacrosEndpoint:
             "activity_level": ActivityLevel.SEDENTARY.value,  # Lower TDEE
             "goal_type": GoalType.LOSE.value,
             "progress_rate": 3.0,  # Very aggressive weight loss
-            "unit_preference": MacrosTestConstants.UNIT_PREFERENCE.value,
+            "height_unit_preference": MacrosTestConstants.HEIGHT_UNIT_PREFERENCE.value,
+            "weight_unit_preference": MacrosTestConstants.WEIGHT_UNIT_PREFERENCE.value,
         }
 
         response = authenticated_client.post(
-            f"{settings.API_V1_STR}/macros/calculate-macros", json=macros_data
+            f"{settings.API_V1_STR}/macros/macros-setup", json=macros_data
         )
 
         assert response.status_code == 200
@@ -158,14 +163,15 @@ class TestMacrosEndpoint:
             "activity_level": MacrosTestConstants.ACTIVITY_LEVEL.value,
             "goal_type": MacrosTestConstants.GOAL_TYPE.value,
             "progress_rate": MacrosTestConstants.PROGRESS_RATE.value,
-            "unit_preference": MacrosTestConstants.UNIT_PREFERENCE.value,
+            "height_unit_preference": MacrosTestConstants.HEIGHT_UNIT_PREFERENCE.value,
+            "weight_unit_preference": MacrosTestConstants.WEIGHT_UNIT_PREFERENCE.value,
         }
         
         # Update with invalid value
         macros_data.update(invalid_data)
 
         response = authenticated_client.post(
-            f"{settings.API_V1_STR}/macros/calculate-macros", json=macros_data
+            f"{settings.API_V1_STR}/macros/macros-setup", json=macros_data
         )
 
         # Should return validation error
@@ -198,18 +204,16 @@ class TestMacrosEndpoint:
         assert data["carbs"] > 0
         
         # Verify that the energy equation balances
-        # (4 * protein) + (4 * carbs) + (9 * fat) should be close to total calories
-        calculated_calories = (4 * data["protein"]) + (4 * data["carbs"]) + (9 * data["fat"])
-        assert abs(calculated_calories - data["calories"]) <= 10  # Allow small rounding differences
-    
-    async def test_adjust_distribution_all_macros(self, authenticated_client, mock_save_user_preferences):
-        """Test adjustment with all macros specified."""
+        calculated_calories = (data["protein"] * 4) + (data["carbs"] * 4) + (data["fat"] * 9)
+        assert abs(calculated_calories - data["calories"]) < 5  # Allow small rounding differences
+        
+    async def test_adjust_distribution_protein_only(self, authenticated_client, mock_save_user_preferences):
+        """Test adjustment with only protein specified."""
 
         request_data = {
-            "calories": 2000,
-            "protein": 150,
-            "carbs": 150,
-            "fat": 60,
+            "protein": 120,
+            "carbs": None,
+            "fat": None,
         }
 
         response = authenticated_client.post(
@@ -217,30 +221,133 @@ class TestMacrosEndpoint:
             json=request_data
         )
 
-        print(f"here is the response:{response.json()}")
         assert response.status_code == 200
         
-        # Verify save_user_preferences was called
-        mock_save_user_preferences.assert_called_once()
-        
-        
-    
-    async def test_adjust_distribution_no_macros(self, authenticated_client):
-        """Test adjustment with no macros specified (should use default ratio)."""
+        data = response.json()
+        assert data["protein"] == 120
+        assert data["carbs"] > 0
+        assert data["fat"] > 0
+
+    async def test_adjust_distribution_all_macros(self, authenticated_client, mock_save_user_preferences):
+        """Test adjustment with all macros specified (should calculate calories)."""
 
         request_data = {
-            "calories": 2000,
+            "protein": 100,
+            "carbs": 200,
+            "fat": 50,
+        }
+
+        response = authenticated_client.post(
+            f"{settings.API_V1_STR}/macros/adjust-macros", 
+            json=request_data
+        )
+
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["protein"] == 100
+        assert data["carbs"] == 200
+        assert data["fat"] == 50
+        
+        # Calculate expected calories: (100*4) + (200*4) + (50*9) = 1650
+        expected_calories = (100 * 4) + (200 * 4) + (50 * 9)
+        assert data["calories"] == expected_calories
+
+    async def test_adjust_distribution_no_macros(self, authenticated_client):
+        """Test adjustment with no macros specified (should fail)."""
+
+        request_data = {
             "protein": None,
             "carbs": None,
             "fat": None,
         }
 
-        # This should return a validation error since at least one macro is required
         response = authenticated_client.post(
             f"{settings.API_V1_STR}/macros/adjust-macros", 
             json=request_data
         )
 
-        assert response.status_code == 422
+        # Should return an error since no macros are specified
+        assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+class TestCalculateMacrosEndpoint:
+    """Test cases for the new calculate-macros endpoint for meal calculations."""
+
+    async def test_calculate_macros_success(self, authenticated_client):
+        """Test successful macro calculation with amount change."""
+        
+        request_data = {
+            "base_calories": 300.0,
+            "base_protein": 25.0,
+            "base_carbs": 30.0,
+            "base_fat": 10.0,
+            "base_amount": 1.0,
+            "new_amount": 2.0
+        }
+
+        response = authenticated_client.post(
+            f"{settings.API_V1_STR}/macros/calculate-macros", 
+            json=request_data
+        )
+
+        assert response.status_code == 200
+        
+        data = response.json()
+        
+        # Verify that macros are doubled (2x multiplier)
+        assert data["calories"] == 600.0
+        assert data["protein"] == 50.0
+        assert data["carbs"] == 60.0
+        assert data["fat"] == 20.0
+
+    async def test_calculate_macros_fractional_amount(self, authenticated_client):
+        """Test macro calculation with fractional amount."""
+        
+        request_data = {
+            "base_calories": 400.0,
+            "base_protein": 30.0,
+            "base_carbs": 40.0,
+            "base_fat": 15.0,
+            "base_amount": 2.0,
+            "new_amount": 1.5
+        }
+
+        response = authenticated_client.post(
+            f"{settings.API_V1_STR}/macros/calculate-macros", 
+            json=request_data
+        )
+
+        assert response.status_code == 200
+        
+        data = response.json()
+        
+        # Verify that macros are calculated with 0.75 multiplier (1.5/2.0)
+        assert data["calories"] == 300.0  # 400 * 0.75
+        assert data["protein"] == 22.5   # 30 * 0.75
+        assert data["carbs"] == 30.0     # 40 * 0.75
+        assert data["fat"] == 11.25      # 15 * 0.75
+
+    async def test_calculate_macros_zero_new_amount(self, authenticated_client):
+        """Test validation error when new amount is zero."""
+        
+        request_data = {
+            "base_calories": 300.0,
+            "base_protein": 25.0,
+            "base_carbs": 30.0,
+            "base_fat": 10.0,
+            "base_amount": 1.0,
+            "new_amount": 0.0
+        }
+
+        response = authenticated_client.post(
+            f"{settings.API_V1_STR}/macros/calculate-macros", 
+            json=request_data
+        )
+
+        assert response.status_code == 400
+        data = response.json()
+        assert "New amount must be greater than 0" in data["detail"]
 
 

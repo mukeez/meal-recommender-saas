@@ -308,7 +308,7 @@ class TestBillingEndpoint:
             template_name="subscription_created.html",
             context={
                 "subscription_type": "Macro Meals Pro",
-                "trial_days": 3,
+                "trial_days": 7,
             },
         )
 
@@ -382,7 +382,7 @@ class TestBillingEndpoint:
             template_name="subscription_created.html",
             context={
                 "subscription_type": "Macro Meals Pro",
-                "trial_days": 3,
+                "trial_days": 7,
             },
         )
 
