@@ -6,15 +6,19 @@ This module provides functions to manage user profiles in the database.
 from typing import Dict, Any, Optional
 import logging
 from datetime import datetime, timedelta
+import random
+import hashlib
 
 import httpx
 from fastapi import HTTPException, status
 from pydantic import BaseModel
 
 from app.core.config import settings
-from app.models.user import UpdateUserProfileRequest, UserProfile, UnitPreference
+from app.models.user import UpdateUserProfileRequest, UserProfile, HeightUnitPreference, WeightUnitPreference
 from app.utils.helper_functions import remove_null_values
 from app.utils.constants import CM_TO_INCHES, INCHES_TO_CM
+from app.utils.file_upload import upload_file_to_bucket, generate_avatar_path, validate_image_file
+
 
 import time
 
@@ -44,7 +48,11 @@ class UserProfileService:
     def __init__(self):
         """Initialize the user profile service."""
         self.base_url = settings.SUPABASE_URL
-        self.api_key = settings.SUPABASE_SERVICE_ROLE_KEY
+        
+        if not settings.SUPABASE_SERVICE_ROLE_KEY:
+            raise ValueError("SUPABASE_SERVICE_ROLE_KEY is required")
+            
+        self.api_key: str = settings.SUPABASE_SERVICE_ROLE_KEY
 
     async def create_profile(self, profile_data: UserProfileData) -> Dict[str, Any]:
         """Create a new user profile in the database.
@@ -68,6 +76,7 @@ class UserProfileService:
                 "created_at": profile_data.created_at.isoformat(),
                 "updated_at": profile_data.created_at.isoformat(),
                 "is_active": True,
+                "email_verified": False,
                 "fcm_token": profile_data.fcm_token,
             }
 
@@ -136,10 +145,10 @@ class UserProfileService:
                 "dietary_restrictions": [],
                 "favorite_cuisines": [],
                 "disliked_ingredients": [],
-                "calorie_target": 2000,
-                "protein_target": 150,
-                "carbs_target": 200,
-                "fat_target": 70,
+                "calorie_target": 0,
+                "protein_target": 0,
+                "carbs_target": 0,
+                "fat_target": 0,
                 "created_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat(),
             }
@@ -232,10 +241,10 @@ class UserProfileService:
                 if not preferences_data:
                     return {
                         "user_id": user_id,
-                        "calorie_target": 2000,
-                        "protein_target": 150,
-                        "carbs_target": 200,
-                        "fat_target": 70,
+                        "calorie_target": 0,
+                        "protein_target": 0,
+                        "carbs_target": 0,
+                        "fat_target": 0,
                     }
 
                 return preferences_data[0]
@@ -279,7 +288,7 @@ class UserProfileService:
                 profile_data = await self._update_has_macros(user_id, profile_data)
             
             # convert metric values to imperial units
-            if profile_data.get("unit_preference") == UnitPreference.IMPERIAL:
+            if profile_data.get("height_unit_preference") == HeightUnitPreference.IMPERIAL:
                 if profile_data["height"]:
                     profile_data["height"] = round(profile_data["height"] * CM_TO_INCHES, 2)
             
@@ -320,7 +329,7 @@ class UserProfileService:
 
             # convert height to cm if unit preference is imperial
             if "height" in user_profile.keys():
-                if user_profile.get("unit_preference") == UnitPreference.IMPERIAL:
+                if user_profile.get("height_unit_preference") == HeightUnitPreference.IMPERIAL:
                     # Convert height from inches to cm
                     user_profile["height"] = round(user_profile["height"] * INCHES_TO_CM, 2)
 
@@ -384,53 +393,18 @@ class UserProfileService:
         Raises:
             HTTPException: If there is an error uploading user avatar
         """
+        
         logger.info(f"Upload avatar for user: {user_id}")
-
-        try:
-            filename = f"{user_id}/avatar.png"
-            storage_url = f"{settings.SUPABASE_URL}/storage/v1/object/{settings.SUPABASE_BUCKET_NAME}/{filename}"
-            avatar_url = f"{settings.SUPABASE_URL}/storage/v1/object/public/{settings.SUPABASE_BUCKET_NAME}/{filename}"
-
-            async with httpx.AsyncClient() as client:
-                response = await client.put(
-                    storage_url,
-                    headers={
-                        "apikey": self.api_key,
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": content_type,
-                    },
-                    content=file_content,
-                )
-
-                if response.status_code not in (200, 201, 204):
-                    error_detail = "Failed to upload user avatar"
-                    try:
-                        error_data = response.json()
-                        if "message" in error_data:
-                            error_detail = error_data["message"]
-                    except Exception:
-                        pass
-
-                    logger.error(f"Uploading avatar failed: {str(error_detail)}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to upload user avatar",
-                    )
-
-                return avatar_url
-
-        except httpx.RequestError as e:
-            logger.error(f"Error communicating with database: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Failed to update user profile",
-            )
-        except Exception as e:
-            logger.error(f"Unexpected error uploading user avatar {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to upload user avatar",
-            )
+        
+        # Validate the image file
+        validate_image_file(None, content_type)
+        
+        # Generate the file path
+        file_extension = "png" if content_type == "image/png" else "jpg"
+        file_path = generate_avatar_path(user_id, file_extension)
+        
+        # Upload using the generalized function  
+        return await upload_file_to_bucket(file_content, file_path, content_type, settings.AVATAR_BUCKET_NAME)
 
     async def update_user_auth_email(
         self, token: str, user_id: str, email: str
@@ -441,7 +415,7 @@ class UserProfileService:
                 response = await client.put(
                     f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}",
                     headers={
-                        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                        "apikey": self.api_key,
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
                     },
@@ -533,6 +507,61 @@ class UserProfileService:
                 detail=f"Failed to update FCM token",
             )
 
+    async def mark_trial_as_used(self, user_id: str) -> None:
+        """Mark the user's trial as used.
+
+        Args:
+            user_id: Supabase user ID
+
+        Raises:
+            HTTPException: If there is an error updating the trial status
+        """
+        logger.info(f"Marking trial as used for user: {user_id}")
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.patch(
+                    f"{self.base_url}/rest/v1/user_profiles",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                        "Prefer": "return=representation",
+                    },
+                    params={"id": f"eq.{user_id}"},
+                    json={"has_used_trial": True},
+                )
+
+                if response.status_code not in (200, 201, 204):
+                    error_detail = "Failed to update trial status"
+                    try:
+                        error_data = response.json()
+                        if "message" in error_data:
+                            error_detail = error_data["message"]
+                    except Exception:
+                        pass
+
+                    logger.error(f"Updating trial status failed: {error_detail}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to update trial status",
+                    )
+
+                logger.info(f"Trial status updated successfully for user: {user_id}")
+
+        except httpx.RequestError as e:
+            logger.error(f"Request error updating trial status: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database",
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error updating trial status {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to update trial status",
+            )
+
     async def update_password(self, email: str, password: str) -> None:
         """Update the user's password in the database."""
         logger.info(f"Updating password for user: {email}")
@@ -544,8 +573,8 @@ class UserProfileService:
                 response = await client.put(
                     f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}",
                     headers={
-                        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
-                        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
                     },
 
@@ -1009,6 +1038,171 @@ class UserProfileService:
                 detail=f"Error invalidating OTP",
             )
 
+    async def generate_email_verification_otp(self, user_id: str, email: str) -> str:
+        """
+        Generate and store an OTP for email verification.
+        
+        Args:
+            user_id: The user's ID
+            email: The user's email address
+            
+        Returns:
+            The generated OTP code
+            
+        Raises:
+            HTTPException: If there's an error generating or storing the OTP
+        """
+        logger.info(f"Generating email verification OTP for user: {user_id}")
+        
+        try:
+            # Generate 6-digit OTP
+            otp_code = str(random.randint(100000, 999999))
+            
+            # Hash the OTP for storage
+            hashed_otp = hashlib.sha256(otp_code.encode()).hexdigest()
+            
+            # Set expiration to 15 minutes from now
+            expiration_time = datetime.now() + timedelta(minutes=15)
+            
+            # Store the OTP using existing method
+            await self.store_otp(email, hashed_otp, expiration_time)
+            
+            logger.info(f"Email verification OTP generated successfully for user: {user_id}")
+            return otp_code
+            
+        except Exception as e:
+            logger.error(f"Error generating email verification OTP: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate verification code",
+            )
+
+    async def send_verification_email(self, email: str, otp_code: str, user_name: Optional[str] = None) -> None:
+        """
+        Send an email verification OTP to the user.
+        
+        Args:
+            email: The user's email address
+            otp_code: The OTP code to send
+            user_name: Optional user display name
+            
+        Raises:
+            HTTPException: If there's an error sending the email
+        """
+        from app.services.mail_service import mail_service
+        
+        logger.info(f"Sending verification email to: {email}")
+        
+        try:
+            await mail_service.send_email(
+                recipient=email,
+                subject="Verify Your MacroMeals Account",
+                template_name="email-verification.html",
+                context={
+                    "user_name": user_name,
+                    "otp_code": otp_code,
+                    "expiry_minutes": 15
+                }
+            )
+            
+            logger.info(f"Verification email sent successfully to: {email}")
+            
+        except Exception as e:
+            logger.error(f"Error sending verification email: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to send verification email",
+            )
+
+    async def validate_otp(self, email: str, otp: str) -> bool:
+        """
+        Validate an OTP for a user.
+        
+        Args:
+            email: The user's email address
+            otp: The OTP code to validate
+            
+        Returns:
+            True if OTP is valid, False otherwise
+        """
+        try:
+            otp_entry = await self.get_otp(email)
+            if not otp_entry:
+                return False
+            
+            # Parse the expires_at string to datetime
+            expires_at = datetime.fromisoformat(otp_entry["expires_at"].replace("Z", "+00:00"))
+            
+            # Check if OTP has expired
+            if expires_at < datetime.now(expires_at.tzinfo):
+                return False
+
+            hashed_otp = hashlib.sha256(otp.encode()).hexdigest()
+            return hashed_otp == otp_entry["otp_hash"]
+            
+        except Exception as e:
+            logger.error(f"Error validating OTP: {str(e)}")
+            return False
+
+    async def verify_email_with_otp(self, email: str, otp: str) -> bool:
+        """
+        Verify a user's email address using OTP.
+        
+        Args:
+            email: The user's email address
+            otp: The OTP code provided by the user
+            
+        Returns:
+            True if verification was successful, False otherwise
+            
+        Raises:
+            HTTPException: If there's an error during verification
+        """
+        logger.info(f"Verifying email with OTP for: {email}")
+        
+        try:
+            # Validate OTP using existing method
+            is_valid = await self.validate_otp(email, otp)
+            
+            if not is_valid:
+                logger.warning(f"Invalid OTP for email verification: {email}")
+                return False
+            
+            # Update user as verified
+            async with httpx.AsyncClient() as client:
+                update_response = await client.patch(
+                    f"{self.base_url}/rest/v1/user_profiles",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params={"email": f"eq.{email}"},
+                    json={"email_verified": True}
+                )
+                
+                if update_response.status_code not in (200, 204):
+                    logger.error(f"Failed to update user verification status: {email}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to complete email verification",
+                    )
+            
+            # Invalidate the OTP after successful verification
+            await self.invalidate_otp(email)
+            
+            logger.info(f"Email verified successfully with OTP for: {email}")
+            return True
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error verifying email with OTP: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error verifying email",
+            )
+
     async def _get_basic_profile(self, user_id: str) -> Dict[str, Any]:
         """Private method to retrieve basic user profile data.
 
@@ -1114,5 +1308,7 @@ class UserProfileService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error updating user profile",
             )
+
+
 
 user_service = UserProfileService()
