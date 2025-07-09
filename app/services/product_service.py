@@ -200,7 +200,7 @@ class ProductService:
             )
 
     async def upsert_product(
-        self, product: Union[LoggedProduct, List[LoggedProduct]]
+        self, product: Union[LoggedProduct, List[LoggedProduct], List[Product]]
     ) -> Optional[List[LoggedProduct]]:
         """Upsert a product(s).
 

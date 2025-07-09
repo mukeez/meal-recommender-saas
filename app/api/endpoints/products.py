@@ -109,8 +109,8 @@ async def product_search(
                 product=query, page=1, page_size=page_size
             )
 
-            # upsert products (skip for now due to type issues)
-            # await product_service.upsert_product(products.products)
+            if products and products.products:
+                await product_service.upsert_product(products.products)
 
         # Convert products to ProductWithNutrition (merge nutrition facts)
         products_with_nutrition = []
@@ -197,8 +197,8 @@ async def product_search_meals_format(
                 product=query, page=1, page_size=page_size
             )
 
-            # upsert products (skip for now due to type issues)
-            # await product_service.upsert_product(products.products)
+            if products and products.products:
+                await product_service.upsert_product(products.products)
 
         # Convert products to LoggedMeal format
         logged_meals = []

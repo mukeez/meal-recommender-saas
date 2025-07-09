@@ -2,7 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, date, time, timedelta, timezone
 from supabase import create_client
-from app.api.endpoints.meals import get_daily_progress
+from app.services.meal_service import meal_service
 from app.core.config import settings
 from app.services.notification_service import notification_service
 
@@ -268,7 +268,7 @@ class MacroMealsTasks:
             for user in user_list:
                 user_id = user.get("user_id")
                 try:
-                    daily_progress = asyncio.run(get_daily_progress(user_id))
+                    daily_progress = asyncio.run(meal_service.get_daily_progress(user_id))
                     target_macros = daily_progress.target_macros
                     progress_percentage = daily_progress.progress_percentage
 

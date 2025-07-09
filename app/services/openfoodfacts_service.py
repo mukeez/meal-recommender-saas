@@ -286,12 +286,19 @@ class OpenFoodFactsService(BaseLLMService):
             calories_serving = float(nutriments_dict["energy-kcal_serving"])
             
             # Get serving information
-            if serving_quantity is None or serving_quantity <= 0:
+            if serving_quantity is None:
+                logger.warning("Missing serving_quantity in OpenFoodFacts response")
+                return None
+            
+            try:
+                serving_quantity = float(serving_quantity)
+                if serving_quantity <= 0:
+                    logger.warning("Invalid serving_quantity in OpenFoodFacts response")
+                    return None
+            except (ValueError, TypeError):
                 logger.warning("Invalid or missing serving_quantity in OpenFoodFacts response")
                 return None
                 
-            serving_quantity = float(serving_quantity)
-            
             # Convert serving quantity to grams if needed
             serving_grams = convert_to_standard_grams(serving_quantity, serving_quantity_unit)
             
