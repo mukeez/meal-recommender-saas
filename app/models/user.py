@@ -12,10 +12,16 @@ from datetime import datetime, date
 
 
 
-class UnitPreference(str, Enum):
-    """Unit preference enumeration for user profiles."""
-    METRIC = "metric"
-    IMPERIAL = "imperial"
+class HeightUnitPreference(str, Enum):
+    """Height unit preference enumeration for user profiles."""
+    METRIC = "metric"  # centimeters
+    IMPERIAL = "imperial"  # inches
+
+
+class WeightUnitPreference(str, Enum):
+    """Weight unit preference enumeration for user profiles."""
+    METRIC = "metric"  # kilograms
+    IMPERIAL = "imperial"  # pounds
 
 
 
@@ -41,6 +47,10 @@ class UserProfile(BaseModel):
         avatar_url: User's avatar (optional)
         is_active: Whether the user account is active
         is_pro: Whether the user has a subscription
+        has_used_trial: Whether the user has used their free trial
+        email_verified: Whether the user's email has been verified
+        email_verification_token: Token for email verification
+        email_verification_expires: When the email verification token expires
         fcm_token: Firebase Cloud Messaging token for push notifications (optional)
         meal_reminder_preferences_set: Whether the user has meal reminder preferences set (optional)
         has_macros: Whether the user has macro targets set
@@ -56,10 +66,12 @@ class UserProfile(BaseModel):
     age: Annotated[Optional[int], Field(None, description="User's age(optional)")]
     dob: Annotated[Optional[date], Field(None, description="User's date of birth (optional)"), BeforeValidator(parse_date)]
     sex: Annotated[Optional[Sex], Field(None, description="User's biological sex (male/female)")]
-    height: Annotated[Optional[float], Field(None, description="User's height. Input is expected in cm. The value of this attribute will be in cm if 'unit_preference' is 'metric', or in inches if 'imperial'.")]
+    height: Annotated[Optional[float], Field(None, description="User's height. Stored in cm, but returned in units based on height_unit_preference (cm for metric, inches for imperial).")]
     avatar_url : Annotated[Optional[str], Field(None, description="User's avatar(optional)")]
     is_active: Annotated[bool, Field(True, description="Whether the user account is active")]
     is_pro: Annotated[bool, Field(False, description="Whether the user has a subscription"), BeforeValidator(lambda x : bool(x))]
+    has_used_trial: Annotated[bool, Field(False, description="Whether the user has used their free trial")]
+    email_verified: Annotated[bool, Field(False, description="Whether the user's email has been verified")]
     fcm_token: Annotated[
         Optional[str],
         Field(
@@ -68,7 +80,8 @@ class UserProfile(BaseModel):
     ]
     meal_reminder_preferences_set: Annotated[bool, Field(False, description="Whether the user has meal reminder preferences set")]
     has_macros: Annotated[bool, Field(False, description="Whether the user has macro targets set")]
-    unit_preference: Annotated[UnitPreference, Field(UnitPreference.METRIC, description="Preferred unit system for measurements (metric/imperial)")]
+    height_unit_preference: Annotated[HeightUnitPreference, Field(HeightUnitPreference.METRIC, description="Preferred unit for height measurements (metric: cm, imperial: inches)")]
+    weight_unit_preference: Annotated[WeightUnitPreference, Field(WeightUnitPreference.METRIC, description="Preferred unit for weight measurements (metric: kg, imperial: lbs)")]
 
     created_at: Annotated[datetime, Field(..., description="Profile creation timestamp"), BeforeValidator(parse_datetime)]
     updated_at: Annotated[datetime, Field(..., description="Profile last update timestamp"), BeforeValidator(parse_datetime)]
@@ -98,10 +111,10 @@ class UserPreferences(BaseModel):
     dietary_restrictions: List[str] = Field(default_factory=list)
     favorite_cuisines: List[str] = Field(default_factory=list)
     disliked_ingredients: List[str] = Field(default_factory=list)
-    calorie_target: float = 2000.0
-    protein_target: float = 150.0
-    carbs_target: float = 200.0
-    fat_target: float = 70.0
+    calorie_target: float = 0.0
+    protein_target: float = 0.0
+    carbs_target: float = 0.0
+    fat_target: float = 0.0
     created_at: datetime
     updated_at: datetime
 
@@ -127,10 +140,11 @@ class UpdateUserProfileRequest(BaseModel):
     age: Annotated[Optional[int], Field(None, description="new age")]
     dob: Annotated[Optional[str], Field(None, description="new date of birth")]
     sex: Annotated[Optional[Sex], Field(None, description="new biological sex (male/female)")]
-    height: Annotated[Optional[float], Field(None, description="new height. If provided, 'unit_preference' must also be specified. Assumed to be in cm if metric, inches if imperial.")] # Changed to float for consistency
+    height: Annotated[Optional[float], Field(None, description="new height. If provided, 'height_unit_preference' must also be specified. Assumed to be in cm if metric, inches if imperial.")] # Changed to float for consistency
     avatar_url: Annotated[Optional[str], Field(None, description="new avatar image")]
     meal_reminder_preferences_set: Annotated[Optional[bool], Field(None, description="Whether the user has meal reminder preferences set")] # Made optional for updates
-    unit_preference: Annotated[Optional[UnitPreference], Field(None, description="Preferred unit system for measurements (metric/imperial)")] # Made optional, but conditionally required
+    height_unit_preference: Annotated[Optional[HeightUnitPreference], Field(None, description="Preferred unit for height measurements (metric: cm, imperial: inches)")]
+    weight_unit_preference: Annotated[Optional[WeightUnitPreference], Field(None, description="Preferred unit for weight measurements (metric: kg, imperial: lbs)")] # Made optional, but conditionally required
 
     @field_validator('dob')
     @classmethod
@@ -148,8 +162,8 @@ class UpdateUserProfileRequest(BaseModel):
 
     @model_validator(mode='after')
     def check_height_and_unit_preference(self) -> 'UpdateUserProfileRequest':
-        if self.height is not None and self.unit_preference is None:
-            raise ValueError("If 'height' is provided, 'unit_preference' must also be specified.")
+        if self.height is not None and self.height_unit_preference is None:
+            raise ValueError("If 'height' is provided, 'height_unit_preference' must also be specified.")
         return self
 
 

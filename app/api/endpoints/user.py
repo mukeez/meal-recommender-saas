@@ -24,6 +24,9 @@ from app.models.user import (
     UserPreferences,
     UpdateUserProfileRequest,
     UserProfile,
+    Sex,
+    HeightUnitPreference,
+    WeightUnitPreference,
 )
 from app.services.user_service import user_service
 from typing import Optional
@@ -78,6 +81,11 @@ async def update_user_profile(
     ),
     last_name: Optional[str] = Form(None, description="new user last name (optional)"),
     age: Optional[int] = Form(None, description="new user age (optional)"),
+    dob: Optional[str] = Form(None, description="new date of birth (YYYY-MM-DD) (optional)"),
+    sex: Optional[str] = Form(None, description="new biological sex (male/female) (optional)"),
+    height: Optional[float] = Form(None, description="new height (optional)"),
+    height_unit_preference: Optional[str] = Form(None, description="height unit preference (metric/imperial) (optional)"),
+    weight_unit_preference: Optional[str] = Form(None, description="weight unit preference (metric/imperial) (optional)"),
     avatar: Optional[UploadFile] = File(None, description="new avatar image(optional)"),
     meal_reminder_preferences_set: Optional[bool] = Form(
         False, description="Whether the user has meal reminder preferences set"
@@ -90,11 +98,16 @@ async def update_user_profile(
 
     Args:
         user: The authenticated user (injected by the auth_guard dependency)
-        display_name: new user email(optional)
-        first_name: new user first name(optional)
-        last_name: new user last name(optional)
-        age: new user age(optional)
-        avatar: new avatar image(optional)
+        display_name: new user display name (optional)
+        first_name: new user first name (optional)
+        last_name: new user last name (optional)
+        age: new user age (optional)
+        dob: new date of birth in YYYY-MM-DD format (optional)
+        sex: new biological sex (male/female) (optional)
+        height: new height value (optional)
+        height_unit_preference: height unit preference (metric/imperial) (optional)
+        weight_unit_preference: weight unit preference (metric/imperial) (optional)
+        avatar: new avatar image (optional)
         meal_reminder_preferences_set: Whether the user has meal reminder preferences set
 
     Returns:
@@ -102,6 +115,12 @@ async def update_user_profile(
     """
     try:
         user_id = user.get("sub")
+        
+        # Convert string values to enums where applicable
+        sex_enum = Sex(sex) if sex else None
+        height_unit_enum = HeightUnitPreference(height_unit_preference) if height_unit_preference else None
+        weight_unit_enum = WeightUnitPreference(weight_unit_preference) if weight_unit_preference else None
+        
         if avatar:
             if not avatar.content_type or not avatar.content_type.startswith("image/"):
                 raise HTTPException(status_code=400, detail="Only image files allowed.")
@@ -118,10 +137,11 @@ async def update_user_profile(
                 avatar_url=avatar_url,
                 meal_reminder_preferences_set=meal_reminder_preferences_set,
                 age=age,
-                dob=None,
-                sex=None,
-                height=None,
-                unit_preference=None,
+                dob=dob,
+                sex=sex_enum,
+                height=height,
+                height_unit_preference=height_unit_enum,
+                weight_unit_preference=weight_unit_enum,
             )
         else:
             user_data = UpdateUserProfileRequest(
@@ -130,11 +150,12 @@ async def update_user_profile(
                 last_name=last_name,
                 meal_reminder_preferences_set=meal_reminder_preferences_set,
                 age=age,
-                dob=None,
-                sex=None,
-                height=None,
+                dob=dob,
+                sex=sex_enum,
+                height=height,
                 avatar_url=None,
-                unit_preference=None,
+                height_unit_preference=height_unit_enum,
+                weight_unit_preference=weight_unit_enum,
             )
         profile = await user_service.update_user_profile(
             user_id=user_id, user_data=user_data
@@ -282,7 +303,7 @@ async def update_user_preferences(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Service configuration error"
             )
-
+       
         async with httpx.AsyncClient() as client:
             response = await client.patch(
                 f"{settings.SUPABASE_URL}/rest/v1/user_preferences",
