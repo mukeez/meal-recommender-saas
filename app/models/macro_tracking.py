@@ -7,7 +7,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 from typing import Optional
-from app.models.user import Sex, UnitPreference
+from app.models.user import Sex, HeightUnitPreference, WeightUnitPreference
 from datetime import date
 
 
@@ -99,16 +99,17 @@ class MacroCalculatorRequest(BaseModel):
 
     Attributes:
         age: User's age in years (18-100)
-        weight: User's weight (in kg or lbs depending on unit_preference)
-        height: User's height (in cm or inches depending on unit_preference)
+        weight: User's weight (in kg or lbs depending on weight_unit_preference)
+        height: User's height (in cm or inches depending on height_unit_preference)
         sex: User's biological sex (male/female)
         activity_level: User's activity level
         dob: Optional date of birth in YYYY-MM-DD format
         dietary_preference: Optional dietary preferences (e.g., vegetarian, vegan)
         goal_type: User's fitness goal type (lose, maintain, gain)
-        progress_rate: Target rate of weight change in lbs per week (negative for loss)
+        progress_rate: Target rate of weight change in weight units per week (negative for loss)
         target_weight: Optional target weight (used to calculate time to goal)
-        unit_preference: Measurement system for weight and height
+        height_unit_preference: Unit for height measurements (metric: cm, imperial: inches)
+        weight_unit_preference: Unit for weight measurements (metric: kg, imperial: lbs)
         manual_macros: Optional manual macros to override calculations
     """
     age: int = Field(..., ge=18, le=100, description="Age in years (18-100)")
@@ -123,9 +124,10 @@ class MacroCalculatorRequest(BaseModel):
     dietary_preference: Optional[str] = Field(
         None, description="User's dietary preferences (e.g., vegetarian, vegan)"
     )
-    progress_rate: float = Field(0, description="Target rate of weight change in lbs/week (negative for loss)")
+    progress_rate: float = Field(0, description="Target rate of weight change in weight units/week (negative for loss)")
     target_weight: Optional[float] = Field(None, gt=0, description="Target weight (optional)")
-    unit_preference: UnitPreference = Field(..., description="Unit system for measurements")
+    height_unit_preference: HeightUnitPreference = Field(HeightUnitPreference.METRIC, description="Unit for height measurements (metric: cm, imperial: inches)")
+    weight_unit_preference: WeightUnitPreference = Field(WeightUnitPreference.METRIC, description="Unit for weight measurements (metric: kg, imperial: lbs)")
     manual_macros: Optional[ManualMacros] = Field(
         None, description="Optional manual macro values"
     )

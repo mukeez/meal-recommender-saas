@@ -16,6 +16,7 @@ from app.models.macro_tracking import (
     TimeToGoal,
     GoalType
 )
+from app.models.meal import CalculateMacrosRequest, CalculateMacrosResponse
 from app.models.user import UpdateUserProfileRequest
 from app.services.macros_service import macros_service, MacrosServiceError
 from app.services.user_service import user_service
@@ -26,13 +27,13 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 @router.post(
-    "/calculate-macros",
+    "/macros-setup",
     response_model=MacroCalculatorResponse,
     status_code=status.HTTP_200_OK,
     summary="Calculate daily macronutrient targets",
     description="Calculate daily calorie and macronutrient targets based on personal metrics and weight change goals. Supports both metric and imperial units.",
 )
-async def calculate_macros_endpoint(
+async def macros_setup_endpoint(
     request: MacroCalculatorRequest, user=Depends(auth_guard)
 ) -> MacroCalculatorResponse:
     """Calculate daily macronutrient targets with weight change projections."""
@@ -53,7 +54,8 @@ async def calculate_macros_endpoint(
             weight=request.weight, 
             height=request.height, 
             target_weight=target_weight,
-            unit_preference=request.unit_preference,
+            height_unit_preference=request.height_unit_preference,
+            weight_unit_preference=request.weight_unit_preference,
             progress_rate=request.progress_rate
         )
 
@@ -105,7 +107,8 @@ async def calculate_macros_endpoint(
             "height": height_cm,
             "sex": request.sex,
             "has_macros": True,
-            "unit_preference": request.unit_preference,
+            "height_unit_preference": request.height_unit_preference,
+            "weight_unit_preference": request.weight_unit_preference,
         }
 
 
@@ -177,4 +180,71 @@ async def adjust_macro_distribution(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error adjusting macro distribution: {str(e)}",
+        )
+
+
+@router.post(
+    "/calculate-macros",
+    response_model=CalculateMacrosResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Calculate macros based on amount changes",
+    description="Calculate new macro values when the amount/quantity of a meal is changed. This is a stateless calculation endpoint for real-time macro updates.",
+)
+async def calculate_macros_endpoint(
+    request: CalculateMacrosRequest, user=Depends(auth_guard)
+) -> CalculateMacrosResponse:
+    """Calculate new macro values based on amount changes.
+    
+    This endpoint performs a simple proportional calculation:
+    new_macros = base_macros × (new_amount / base_amount)
+    
+    Args:
+        request: The macro calculation request with base and new amounts
+        user: The authenticated user
+        
+    Returns:
+        Calculated macros rounded to 2 decimal places
+        
+    Raises:
+        HTTPException: If amounts are invalid (zero or negative)
+    """
+    try:
+        # Validate amounts
+        if request.base_amount <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Base amount must be greater than 0"
+            )
+        
+        if request.new_amount <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New amount must be greater than 0"
+            )
+        
+        # Calculate the multiplier
+        multiplier = request.new_amount / request.base_amount
+        
+        # Calculate new macros
+        calculated_calories = round(request.base_calories * multiplier, 2)
+        calculated_protein = round(request.base_protein * multiplier, 2)
+        calculated_carbs = round(request.base_carbs * multiplier, 2)
+        calculated_fat = round(request.base_fat * multiplier, 2)
+        
+        logger.info(f"Calculated macros for amount change: {request.base_amount} -> {request.new_amount} (multiplier: {multiplier})")
+        
+        return CalculateMacrosResponse(
+            calories=calculated_calories,
+            protein=calculated_protein,
+            carbs=calculated_carbs,
+            fat=calculated_fat
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error calculating macros: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error calculating macros",
         )

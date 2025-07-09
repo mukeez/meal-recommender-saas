@@ -7,9 +7,9 @@ from app.models.macro_tracking import (
     Sex,
     ActivityLevel,
     GoalType,
-    UnitPreference,
     MacroCalculatorResponse,
 )
+from app.models.user import HeightUnitPreference, WeightUnitPreference
 from app.services.base_database_service import BaseDatabaseService
 from app.utils.constants import INCHES_TO_CM, LBS_TO_KG, CALORIES_PER_KG, PROTEIN_PER_KG, FAT_PER_KG, PROTEIN_CALS_PER_GRAM, FAT_CALS_PER_GRAM, CARB_CALS_PER_GRAM, MIN_CARBS_GRAMS
 
@@ -55,8 +55,14 @@ class MacrosService:
             raise MacrosServiceError("No database service implementation available")
 
     def convert_to_metric(
-        self, weight: float, height: float,  target_weight: float, unit_preference: UnitPreference, progress_rate: Optional[float] = None
-    ) -> Tuple[float, float, float]:
+        self, 
+        weight: float, 
+        height: float, 
+        target_weight: float, 
+        height_unit_preference: HeightUnitPreference, 
+        weight_unit_preference: WeightUnitPreference, 
+        progress_rate: Optional[float] = None
+    ) -> Tuple[float, float, float, Optional[float]]:
         """
         Convert weight, height, and optionally progress rate to metric units (kg and cm) if needed.
 
@@ -64,22 +70,27 @@ class MacrosService:
             weight: Weight in original units
             height: Height in original units
             target_weight: Target weight in original units
-            unit_preference: Current unit system
+            height_unit_preference: Unit preference for height measurements
+            weight_unit_preference: Unit preference for weight measurements
             progress_rate: Weekly weight change rate in original units (optional)
 
         Returns:
             Tuple of (weight in kg, height in cm, target_weight in kg, progress_rate in kg/week)
         """
-        if unit_preference == UnitPreference.IMPERIAL:
+        # Convert height to cm if imperial
+        height_cm = height * INCHES_TO_CM if height_unit_preference == HeightUnitPreference.IMPERIAL else height
+        
+        # Convert weights to kg if imperial
+        if weight_unit_preference == WeightUnitPreference.IMPERIAL:
             weight_kg = weight * LBS_TO_KG
-            height_cm = height * INCHES_TO_CM
             target_weight_kg = target_weight * LBS_TO_KG
-            progress_rate_kg = progress_rate * LBS_TO_KG
+            progress_rate_kg = progress_rate * LBS_TO_KG if progress_rate is not None else None
+        else:
+            weight_kg = weight
+            target_weight_kg = target_weight
+            progress_rate_kg = progress_rate
 
-            return weight_kg, height_cm, target_weight_kg, progress_rate_kg
-                
-        else:   
-            return weight, height, target_weight, progress_rate
+        return weight_kg, height_cm, target_weight_kg, progress_rate_kg
 
     def calculate_bmr(
         self, sex: Sex, weight_kg: float, height_cm: float, age: int
@@ -199,7 +210,17 @@ class MacrosService:
             calories = protein_cals + fat_cals + carbs_cals
 
         return MacroCalculatorResponse(
-            calories=calories, protein=protein_g, carbs=carbs_g, fat=fat_g
+            calories=calories, 
+            protein=protein_g, 
+            carbs=carbs_g, 
+            fat=fat_g,
+            target_weight=None,
+            goal_type=None,
+            dietary_preference=None,
+            progress_rate=None,
+            deficit_surplus=0,
+            is_safe=True,
+            time_to_goal=None
         )
 
     def calculate_time_to_goal(
@@ -304,6 +325,13 @@ class MacrosService:
                 protein=protein_g,
                 carbs=carbs_g,
                 fat=fat_g,
+                target_weight=None,
+                goal_type=None,
+                dietary_preference=None,
+                progress_rate=None,
+                deficit_surplus=0,
+                is_safe=True,
+                time_to_goal=None
             )
 
         except Exception as e:
