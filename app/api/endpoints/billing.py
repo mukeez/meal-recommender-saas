@@ -149,35 +149,7 @@ async def stripe_webhook(
                 plan=plan
             )
             
-            # Mark trial as used if this is the user's first subscription
-            if user_id:
-                try:
-                    await user_service.mark_trial_as_used(user_id)
-                    logger.info(f"Trial marked as used for user: {user_id}")
-                except Exception as e:
-                    logger.warning(f"Failed to mark trial as used for user {user_id}: {str(e)}")
-            
-            # Get customer email and send welcome email
-            try:
-                customer_email = await stripe_service.get_customer_email(customer_id)
-                if customer_email:
-                    # Check if user has trial to determine email content
-                    has_trial = session["metadata"].get("has_trial", "true").lower() == "true"
-                    trial_days = 7 if has_trial else 0
-                    
-                    await mail_service.send_email(
-                        recipient=customer_email,
-                        subject="Welcome to Macro Meals Pro!",
-                        template_name="subscription_created.html",
-                        context={
-                            "subscription_type": "Macro Meals Pro",
-                            "trial_days": trial_days,
-                        }
-                    )
-            except Exception as e:
-                logger.warning(f"Failed to send welcome email for customer {customer_id}: {str(e)}")
-            
-            logger.info(f"Subscription created for user: {customer_id}")
+            logger.info(f"Subscription creation process initiated for user: {customer_id}")
             return {
                 "status": "success",
                 "message": "Setup intent and subscription creation completed successfully",
@@ -222,23 +194,44 @@ async def stripe_webhook(
             
             session = event["data"]["object"]
             customer_id = session["customer"]
-            session_trial_end_date = session["trial_end"]
-            trial_end_date = datetime.fromtimestamp(session_trial_end_date).date()
+            session_trial_end_date = session.get("trial_end")
+            trial_end_date = datetime.fromtimestamp(session_trial_end_date).date() if session_trial_end_date else None
+            metadata = session.get("metadata", {})
 
+            # Update the user's subscription record in the database
             await stripe_service.update_stripe_user_subscription(
                 customer=customer_id,
                 subscription_data=SubscriptionUpdate(
                     is_pro=None,
-                    stripe_subscription_id=None,
-                    subscription_start=None,
-                    subscription_end=None,
-                    trial_end_date=trial_end_date.isoformat(),
-                    plan=None
+                    stripe_subscription_id=session.get("id"),
+                    subscription_start=datetime.fromtimestamp(session.get("current_period_start")).isoformat() if session.get("current_period_start") else None,
+                    subscription_end=datetime.fromtimestamp(session.get("current_period_end")).isoformat() if session.get("current_period_end") else None,
+                    trial_end_date=trial_end_date.isoformat() if trial_end_date else None,
+                    plan=metadata.get("plan")
                 ),
             )
-            logger.info(
-                f"Subscription created for user: {customer_id} with trial end date: {trial_end_date}"
-            )
+            logger.info(f"Subscription details updated for user: {customer_id}")
+
+            # Send the definitive welcome email from this event.
+            try:
+                customer_email = await stripe_service.get_customer_email(customer_id)
+                if customer_email:
+                    has_trial = metadata.get("has_trial", "true").lower() == "true"
+                    trial_days = 7 if has_trial else 0
+                    
+                    await mail_service.send_email(
+                        recipient=customer_email,
+                        subject="Welcome to Macro Meals Pro!",
+                        template_name="subscription_created.html",
+                        context={
+                            "subscription_type": "Macro Meals Pro",
+                            "trial_days": trial_days,
+                        }
+                    )
+                    logger.info(f"Welcome email sent for new subscription to customer {customer_id}")
+            except Exception as e:
+                logger.warning(f"Failed to send welcome email for customer {customer_id} on subscription creation: {str(e)}")
+
             return {
                 "status": "success",
                 "message": "Subscription created successfully",
