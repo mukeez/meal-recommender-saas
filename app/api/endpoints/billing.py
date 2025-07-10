@@ -212,23 +212,30 @@ async def stripe_webhook(
             )
             logger.info(f"Subscription details updated for user: {customer_id}")
 
-            # Send the definitive welcome email from this event.
+            # only send a welcome email if this is the customer's only active subscription.
             try:
-                customer_email = await stripe_service.get_customer_email(customer_id)
-                if customer_email:
-                    has_trial = metadata.get("has_trial", "true").lower() == "true"
-                    trial_days = 7 if has_trial else 0
-                    
-                    await mail_service.send_email(
-                        recipient=customer_email,
-                        subject="Welcome to Macro Meals Pro!",
-                        template_name="subscription_created.html",
-                        context={
-                            "subscription_type": "Macro Meals Pro",
-                            "trial_days": trial_days,
-                        }
+                active_subscriptions = await stripe_service.get_active_stripe_subscriptions(customer_id)
+                if len(active_subscriptions) > 1:
+                    logger.warning(
+                        f"Customer {customer_id} has {len(active_subscriptions)} active subscriptions. Skipping welcome email for new subscription {session.get('id')} to avoid duplicates."
                     )
-                    logger.info(f"Welcome email sent for new subscription to customer {customer_id}")
+                else:
+                    # Send the definitive welcome email from this event.
+                    customer_email = await stripe_service.get_customer_email(customer_id)
+                    if customer_email:
+                        has_trial = metadata.get("has_trial", "true").lower() == "true"
+                        trial_days = 7 if has_trial else 0
+                        
+                        await mail_service.send_email(
+                            recipient=customer_email,
+                            subject="Welcome to Macro Meals Pro!",
+                            template_name="subscription_created.html",
+                            context={
+                                "subscription_type": "Macro Meals Pro",
+                                "trial_days": trial_days,
+                            }
+                        )
+                        logger.info(f"Welcome email sent for new subscription to customer {customer_id}")
             except Exception as e:
                 logger.warning(f"Failed to send welcome email for customer {customer_id} on subscription creation: {str(e)}")
 
