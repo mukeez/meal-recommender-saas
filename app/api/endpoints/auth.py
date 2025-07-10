@@ -67,15 +67,81 @@ async def login(payload: LoginRequest) -> LoginResponse:
 
         if response.status_code != 200:
             error_detail = "Login failed"
+            error_code = None
+            
             try:
                 error_data = response.json()
-                if "error" in error_data and "message" in error_data:
+                if "error_code" in error_data:
+                    error_code = error_data["error_code"]
+                if "msg" in error_data:
+                    error_detail = error_data["msg"]
+                elif "message" in error_data:
                     error_detail = error_data["message"]
             except Exception:
                 pass
 
-            logger.warning(f"Login failed for user {payload.email}: {error_detail}")
-            raise HTTPException(status_code=response.status_code, detail=error_detail)
+            # Handle specific error cases with user-friendly messages
+            if response.status_code == 400:
+                # Invalid credentials
+                if error_code == "invalid_credentials" or "invalid" in error_detail.lower():
+                    logger.warning(f"Invalid credentials for user {payload.email}")
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid email or password. Please check your credentials and try again."
+                    )
+                elif "email" in error_detail.lower() and ("invalid" in error_detail.lower() or "format" in error_detail.lower()):
+                    logger.warning(f"Invalid email format for login: {payload.email}")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Please provide a valid email address."
+                    )
+                elif "password" in error_detail.lower():
+                    logger.warning(f"Password validation failed for login: {payload.email}")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Password cannot be empty."
+                    )
+                else:
+                    logger.warning(f"Bad request for user {payload.email}: {error_detail}")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid login request. Please check your email and password."
+                    )
+            elif response.status_code == 401:
+                # Unauthorized - typically wrong credentials
+                logger.warning(f"Unauthorized login attempt for user {payload.email}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid email or password. Please check your credentials and try again."
+                )
+            elif response.status_code == 422:
+                # Email not confirmed or account issues
+                if "email" in error_detail.lower() and ("confirm" in error_detail.lower() or "verify" in error_detail.lower()):
+                    logger.warning(f"Unverified email login attempt: {payload.email}")
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Please verify your email address before logging in. Check your inbox for a verification code."
+                    )
+                else:
+                    logger.warning(f"Account issue for user {payload.email}: {error_detail}")
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail="There is an issue with your account. Please contact support if this persists."
+                    )
+            elif response.status_code == 429:
+                # Too many requests
+                logger.warning(f"Rate limited login attempt for user {payload.email}")
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Too many login attempts. Please wait a moment before trying again."
+                )
+            else:
+                # Generic error for other status codes
+                logger.warning(f"Login failed for user {payload.email}: {error_detail}")
+                raise HTTPException(
+                    status_code=response.status_code, 
+                    detail="Login failed. Please try again or contact support if this persists."
+                )
 
         fcm_token = payload.fcm_token
         if fcm_token:
