@@ -24,28 +24,48 @@ class FirebaseNotificationService:
         self.service_file = settings.FIREBASE_SERVICE_ACCOUNT_FILE
 
     def get_access_token(self) -> str:
-        credentials = service_account.Credentials.from_service_account_file(
-            self.service_file, scopes=self.SCOPES
-        )
-        request = google.auth.transport.requests.Request()
-        credentials.refresh(request)
-        return credentials.token
+        try:
+            logger.info(f"Loading service account from: {self.service_file}")
+            credentials = service_account.Credentials.from_service_account_file(
+                self.service_file, scopes=self.SCOPES
+            )
+            request = google.auth.transport.requests.Request()
+            credentials.refresh(request)
+            logger.info("Successfully generated FCM access token")
+            return credentials.token
+        except Exception as e:
+            logger.error(f"Failed to generate FCM access token: {str(e)}")
+            raise
 
     def make_request(
         self, method: str, url: str, payload: Optional[dict] = None
     ) -> dict:
         try:
+            access_token = self.get_access_token()
+            logger.info(f"Making {method} request to: {url}")
+            
             response = requests.request(
                 method=method,
                 url=url,
                 headers={
-                    "Authorization": f"Bearer {self.get_access_token()}",
+                    "Authorization": f"Bearer {access_token}",
                     "Content-Type": "application/json",
                 },
                 json=payload,
             )
+            
+            if response.status_code == 401:
+                logger.error(f"FCM 401 Unauthorized. Response: {response.text}")
+                logger.error(f"Project ID being used: {settings.FIREBASE_PROJECT_ID}")
+            
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"HTTP error: {e.response.status_code} - {e.response.text}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"FCM API error: {e.response.status_code} - {e.response.text}",
+            )
         except requests.exceptions.RequestException as e:
             logger.error(f"Request failed: {str(e)}")
             raise HTTPException(
