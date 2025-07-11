@@ -297,18 +297,18 @@ async def get_progress(
         # Handle period parameter (overrides start_date)
         if period:
             today = date.today()
-            period = period.replace(" ", "").upper()  # Normalize period input
-            if period == "1W":
+            period = period.replace(" ", "").lower()  # Normalize period input
+            if period == "1w":
                 start_date = today - timedelta(days=7)
-            elif period == "1M":
+            elif period == "1m":
                 start_date = today - timedelta(days=30)
-            elif period == "3M":
+            elif period == "3m":
                 start_date = today - timedelta(days=90)
-            elif period == "6M":
+            elif period == "6m":
                 start_date = today - timedelta(days=180)
-            elif period == "1Y":
+            elif period == "1y":
                 start_date = today - timedelta(days=365)
-            elif period == "All":
+            elif period == "all":
 
                 start_date = await meal_service.get_first_meal_date(user_id)
                 if not start_date:
@@ -546,18 +546,18 @@ async def get_meal_history(
 
         if period:
             today = date.today()
-            period = period.replace(" ", "").upper()  # Normalize period input
-            if period == "1W":
+            period = period.replace(" ", "").lower()  # Normalize period input
+            if period == "1w":
                 start_date = today - timedelta(days=7)
-            elif period == "1M":
+            elif period == "1m":
                 start_date = today - timedelta(days=30)
-            elif period == "3M":
+            elif period == "3m":
                 start_date = today - timedelta(days=90)
-            elif period == "6M":
+            elif period == "6m":
                 start_date = today - timedelta(days=180)
-            elif period == "1Y":
+            elif period == "1y":
                 start_date = today - timedelta(days=365)
-            elif period == "All":
+            elif period == "all":
                 start_date = await meal_service.get_first_meal_date(user_id)
                 if not start_date:
                     start_date = today - timedelta(days=30)  # Default if no meals

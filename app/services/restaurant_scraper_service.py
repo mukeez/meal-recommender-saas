@@ -112,12 +112,12 @@ class RestaurantScraper:
             )
             
             # Create a browser context with custom settings
-            viewport_width = random.randint(1050, 1920)
-            viewport_height = random.randint(800, 1080)
+            # viewport_width = random.randint(1050, 1920)
+            # viewport_height = random.randint(800, 1080)
             user_agent = self.get_user_agent()
             
             context = await self.browser.new_context(
-                viewport={'width': viewport_width, 'height': viewport_height},
+                # viewport={'width': viewport_width, 'height': viewport_height},
                 user_agent=user_agent,
                 locale="en-US",
                 timezone_id="America/New_York",
@@ -126,7 +126,7 @@ class RestaurantScraper:
             )
             
             # Apply stealth scripts
-            await self._apply_stealth_scripts(context)
+            # await self._apply_stealth_scripts(context)
             
             # Create a new page
             self.page = await context.new_page()
@@ -163,7 +163,7 @@ class RestaurantScraper:
                         wait_until="domcontentloaded"
                     )
                     # Random wait time after page load
-                    await self._random_delay(2, 5)
+                    await self._random_delay(5, 7)
 
                     # Check for CAPTCHA presence
                     if await self._is_captcha_present():
@@ -200,7 +200,7 @@ class RestaurantScraper:
                     if view_all:
                         # Scroll to element with randomization
                         await self._scroll_to_element_with_randomization(view_all)
-                        await self._random_delay(1, 2)
+                        await self._random_delay(3, 5)
                         
                         # Click the element with human-like timing
                         await self._human_like_click(view_all)
@@ -220,7 +220,7 @@ class RestaurantScraper:
                     logger.info(f"Processing page {page_num + 1}/{pages}")
                     
                     # Random delay between pages
-                    await self._random_delay(2, 8)
+                    await self._random_delay(5, 8)
                     
                     # Find all restaurant elements
                     restaurant_elements = await self.page.query_selector_all('div[jsname="MZArnb"]')
@@ -245,7 +245,7 @@ class RestaurantScraper:
                                 
                                 # Click to view details with human-like behavior
                                 await self._human_like_click(name_element)
-                                await self._random_delay(2, 4)
+                                await self._random_delay(3, 5)
                                 
                                 # Check for popups after clicking on restaurant
                                 if await self._handle_popups():
@@ -466,23 +466,24 @@ class RestaurantScraper:
             # Menu url
             try:
                 # Find span with class GkdNbc
-                spans = await self.page.locator("span.GKdNbc")
+                spans = self.page.locator("span.GKdNbc")
                 menu_url = restaurant["website"] if restaurant["website"] else ""
 
-                for i in range(spans.count()):
-                    text = spans.nth(i).inner_text().strip()
-                    if "Menu" in text:
+                span_count = await spans.count()
+                for i in range(span_count):
+                    text = await spans.nth(i).inner_text()
+                    if "Menu" in text.strip():
                         # Found the target span, get the next sibling span with no class and extract <a href>
                         target_link = spans.nth(i).locator("xpath=following-sibling::span[not(@class)][1]/a")
-                        if target_link.count() > 0:
-                            menu_url = target_link.first.get_attribute("href")
-                            logger.info("Menu URL:", menu_url)
+                        if await target_link.count() > 0:
+                            menu_url = await target_link.first.get_attribute("href")
+                            logger.info(f"Menu URL: {menu_url}")
                         break  # Stop after the first match
 
                 restaurant["menu_url"] = menu_url
             except Exception as e:
                 logger.debug(f"Error extracting menu URL: {e}")
-                menu_url = restaurant["website"] if restaurant["website"] else ""
+                restaurant["menu_url"] = restaurant["website"] if restaurant["website"] else ""
                 
                     
             # Opening hours
