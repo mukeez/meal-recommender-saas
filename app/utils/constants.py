@@ -1,7 +1,10 @@
 # Constants for unit conversions
 LBS_TO_KG = 0.453592
+KG_TO_LBS = 1 / LBS_TO_KG  # ~2.20462
 INCHES_TO_CM = 2.54
 CM_TO_INCHES = 1 / INCHES_TO_CM
+FEET_TO_CM = 30.48  # 12 inches * 2.54 cm/inch
+CM_TO_FEET = 1 / FEET_TO_CM  # ~0.0328084
 GRAMS_PER_OUNCE = 28.3495
 
 # Serving units

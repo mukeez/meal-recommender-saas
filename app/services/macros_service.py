@@ -11,7 +11,7 @@ from app.models.macro_tracking import (
 )
 from app.models.user import HeightUnitPreference, WeightUnitPreference
 from app.services.base_database_service import BaseDatabaseService
-from app.utils.constants import INCHES_TO_CM, LBS_TO_KG, CALORIES_PER_KG, PROTEIN_PER_KG, FAT_PER_KG, PROTEIN_CALS_PER_GRAM, FAT_CALS_PER_GRAM, CARB_CALS_PER_GRAM, MIN_CARBS_GRAMS
+from app.utils.constants import FEET_TO_CM, LBS_TO_KG, CALORIES_PER_KG, PROTEIN_PER_KG, FAT_PER_KG, PROTEIN_CALS_PER_GRAM, FAT_CALS_PER_GRAM, CARB_CALS_PER_GRAM, MIN_CARBS_GRAMS
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +77,8 @@ class MacrosService:
         Returns:
             Tuple of (weight in kg, height in cm, target_weight in kg, progress_rate in kg/week)
         """
-        # Convert height to cm if imperial
-        height_cm = height * INCHES_TO_CM if height_unit_preference == HeightUnitPreference.IMPERIAL else height
+        # Convert height to cm if imperial (treating imperial height as feet)
+        height_cm = height * FEET_TO_CM if height_unit_preference == HeightUnitPreference.IMPERIAL else height
         
         # Convert weights to kg if imperial
         if weight_unit_preference == WeightUnitPreference.IMPERIAL:

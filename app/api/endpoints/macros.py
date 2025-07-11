@@ -59,7 +59,10 @@ async def macros_setup_endpoint(
             progress_rate=request.progress_rate
         )
 
-        progress_rate_kg = -progress_rate_kg if request.goal_type == GoalType.LOSE else progress_rate_kg
+        if progress_rate_kg is not None:
+            progress_rate_kg = -progress_rate_kg if request.goal_type == GoalType.LOSE else progress_rate_kg
+        else:
+            progress_rate_kg = 0.0
 
         # Calculate BMR and TDEE
         bmr = macros_service.calculate_bmr(
@@ -105,6 +108,7 @@ async def macros_setup_endpoint(
         user_data = {
             "age": request.age,
             "height": height_cm,
+            "weight": weight_kg,
             "sex": request.sex,
             "has_macros": True,
             "height_unit_preference": request.height_unit_preference,

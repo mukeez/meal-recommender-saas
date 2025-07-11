@@ -175,10 +175,10 @@ class LogMealRequest(BaseModel):
 
     name: str = Field(..., description="Name of the meal")
     description: Optional[str] = Field(None, description="Description of the meal")
-    protein: float = Field(..., description="Protein amount in grams per serving", gt=0)
-    carbs: float = Field(..., description="Carbohydrate amount in grams per serving", gt=0)
-    fat: float = Field(..., description="Fat amount in grams per serving", gt=0)
-    calories: float = Field(..., description="Total calories per serving", gt=0)
+    protein: float = Field(..., description="Protein amount in grams per serving", ge=0)
+    carbs: float = Field(..., description="Carbohydrate amount in grams per serving", ge=0)
+    fat: float = Field(..., description="Fat amount in grams per serving", ge=0)
+    calories: float = Field(..., description="Total calories per serving", ge=0)
     meal_time: Annotated[Optional[datetime],Field(
         default_factory=datetime.now, description="Timestamp of meal consumption")]
     meal_type: Optional[MealType] = Field(
@@ -217,10 +217,10 @@ class UpdateMealRequest(BaseModel):
 
     name: Optional[str] = Field(None, description="Name of the meal")
     description: Optional[str] = Field(None, description="Description of the meal")
-    protein: Optional[float] = Field(None, description="Protein amount in grams per serving", gt=0)
-    carbs: Optional[float] = Field(None, description="Carbohydrate amount in grams per serving", gt=0)
-    fat: Optional[float] = Field(None, description="Fat amount in grams per serving", gt=0)
-    calories: Optional[float] = Field(None, description="Total calories per serving", gt=0)
+    protein: Optional[float] = Field(None, description="Protein amount in grams per serving", ge=0)
+    carbs: Optional[float] = Field(None, description="Carbohydrate amount in grams per serving", ge=0)
+    fat: Optional[float] = Field(None, description="Fat amount in grams per serving", ge=0)
+    calories: Optional[float] = Field(None, description="Total calories per serving", ge=0)
     meal_time: Optional[datetime] = Field(None, description="Timestamp of meal consumption")
     meal_type: Optional[MealType] = Field(None, description="Type of meal (breakfast, lunch, dinner, other)")
     logging_mode: Optional[LoggingMode] = Field(None, description="How the meal was logged (manual, barcode, scanned)")
@@ -426,12 +426,12 @@ class CalculateMacrosRequest(BaseModel):
         base_amount: Original amount/quantity
         new_amount: New amount/quantity to calculate macros for
     """
-    base_calories: float = Field(..., description="Base calories for the meal", gt=0)
-    base_protein: float = Field(..., description="Base protein for the meal (grams)", gt=0)
-    base_carbs: float = Field(..., description="Base carbohydrates for the meal (grams)", gt=0)
-    base_fat: float = Field(..., description="Base fat for the meal (grams)", gt=0)
-    base_amount: float = Field(..., description="Original amount/quantity", gt=0)
-    new_amount: float = Field(..., description="New amount/quantity to calculate macros for", gt=0)
+    base_calories: float = Field(..., description="Base calories for the meal", ge=0)
+    base_protein: float = Field(..., description="Base protein for the meal (grams)", ge=0)
+    base_carbs: float = Field(..., description="Base carbohydrates for the meal (grams)", ge=0)
+    base_fat: float = Field(..., description="Base fat for the meal (grams)", ge=0)
+    base_amount: float = Field(..., description="Original amount/quantity", ge=0)
+    new_amount: float = Field(..., description="New amount/quantity to calculate macros for", ge=0)
 
 
 class CalculateMacrosResponse(BaseModel):

@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.models.user import UpdateUserProfileRequest, UserProfile, HeightUnitPreference, WeightUnitPreference
 from app.utils.helper_functions import remove_null_values
-from app.utils.constants import CM_TO_INCHES, INCHES_TO_CM
+from app.utils.constants import CM_TO_FEET, FEET_TO_CM, KG_TO_LBS, LBS_TO_KG
 from app.utils.file_upload import upload_file_to_bucket, generate_avatar_path, validate_image_file
 
 
@@ -287,10 +287,14 @@ class UserProfileService:
             if user_preferences and user_preferences.get("calorie_target") and not profile_data.get("has_macros"):
                 profile_data = await self._update_has_macros(user_id, profile_data)
             
-            # convert metric values to imperial units
+            # Convert stored metric values to user's preferred units for display
             if profile_data.get("height_unit_preference") == HeightUnitPreference.IMPERIAL:
                 if profile_data["height"]:
-                    profile_data["height"] = round(profile_data["height"] * CM_TO_INCHES, 2)
+                    profile_data["height"] = round(profile_data["height"] * CM_TO_FEET, 2)
+            
+            if profile_data.get("weight_unit_preference") == WeightUnitPreference.IMPERIAL:
+                if profile_data["weight"]:
+                    profile_data["weight"] = round(profile_data["weight"] * KG_TO_LBS, 2)
             
             return UserProfile(**profile_data)
 
@@ -327,11 +331,16 @@ class UserProfileService:
         try:
             user_profile = remove_null_values(user_data.model_dump())
 
-            # convert height to cm if unit preference is imperial
+            # Convert user input to metric units for database storage
             if "height" in user_profile.keys():
                 if user_profile.get("height_unit_preference") == HeightUnitPreference.IMPERIAL:
-                    # Convert height from inches to cm
-                    user_profile["height"] = round(user_profile["height"] * INCHES_TO_CM, 2)
+                    # Convert height from feet to cm
+                    user_profile["height"] = round(user_profile["height"] * FEET_TO_CM, 2)
+            
+            if "weight" in user_profile.keys():
+                if user_profile.get("weight_unit_preference") == WeightUnitPreference.IMPERIAL:
+                    # Convert weight from lbs to kg
+                    user_profile["weight"] = round(user_profile["weight"] * LBS_TO_KG, 2)
 
             async with httpx.AsyncClient() as client:
                 response = await client.patch(

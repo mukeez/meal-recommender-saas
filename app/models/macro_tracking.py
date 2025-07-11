@@ -100,7 +100,7 @@ class MacroCalculatorRequest(BaseModel):
     Attributes:
         age: User's age in years (18-100)
         weight: User's weight (in kg or lbs depending on weight_unit_preference)
-        height: User's height (in cm or inches depending on height_unit_preference)
+        height: User's height (in cm or feet depending on height_unit_preference)
         sex: User's biological sex (male/female)
         activity_level: User's activity level
         dob: Optional date of birth in YYYY-MM-DD format
@@ -108,13 +108,13 @@ class MacroCalculatorRequest(BaseModel):
         goal_type: User's fitness goal type (lose, maintain, gain)
         progress_rate: Target rate of weight change in weight units per week (negative for loss)
         target_weight: Optional target weight (used to calculate time to goal)
-        height_unit_preference: Unit for height measurements (metric: cm, imperial: inches)
+        height_unit_preference: Unit for height measurements (metric: cm, imperial: feet)
         weight_unit_preference: Unit for weight measurements (metric: kg, imperial: lbs)
         manual_macros: Optional manual macros to override calculations
     """
     age: int = Field(..., ge=18, le=100, description="Age in years (18-100)")
     weight: float = Field(..., gt=0, description="Weight (in kg or lbs)")
-    height: float = Field(..., gt=0, description="Height (in cm or inches)")
+    height: float = Field(..., gt=0, description="Height (in cm or feet)")
     sex: Sex = Field(..., description="Biological sex (male/female)")
     dob: Optional[str] = Field(
         None,
@@ -126,7 +126,7 @@ class MacroCalculatorRequest(BaseModel):
     )
     progress_rate: float = Field(0, description="Target rate of weight change in weight units/week (negative for loss)")
     target_weight: Optional[float] = Field(None, gt=0, description="Target weight (optional)")
-    height_unit_preference: HeightUnitPreference = Field(HeightUnitPreference.METRIC, description="Unit for height measurements (metric: cm, imperial: inches)")
+    height_unit_preference: HeightUnitPreference = Field(HeightUnitPreference.METRIC, description="Unit for height measurements (metric: cm, imperial: feet)")
     weight_unit_preference: WeightUnitPreference = Field(WeightUnitPreference.METRIC, description="Unit for weight measurements (metric: kg, imperial: lbs)")
     manual_macros: Optional[ManualMacros] = Field(
         None, description="Optional manual macro values"

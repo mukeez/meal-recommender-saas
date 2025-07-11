@@ -84,6 +84,7 @@ async def update_user_profile(
     dob: Optional[str] = Form(None, description="new date of birth (YYYY-MM-DD) (optional)"),
     sex: Optional[str] = Form(None, description="new biological sex (male/female) (optional)"),
     height: Optional[float] = Form(None, description="new height (optional)"),
+    weight: Optional[float] = Form(None, description="new weight (optional)"),
     height_unit_preference: Optional[str] = Form(None, description="height unit preference (metric/imperial) (optional)"),
     weight_unit_preference: Optional[str] = Form(None, description="weight unit preference (metric/imperial) (optional)"),
     avatar: Optional[UploadFile] = File(None, description="new avatar image(optional)"),
@@ -105,6 +106,7 @@ async def update_user_profile(
         dob: new date of birth in YYYY-MM-DD format (optional)
         sex: new biological sex (male/female) (optional)
         height: new height value (optional)
+        weight: new weight value (optional)
         height_unit_preference: height unit preference (metric/imperial) (optional)
         weight_unit_preference: weight unit preference (metric/imperial) (optional)
         avatar: new avatar image (optional)
@@ -140,6 +142,7 @@ async def update_user_profile(
                 dob=dob,
                 sex=sex_enum,
                 height=height,
+                weight=weight,
                 height_unit_preference=height_unit_enum,
                 weight_unit_preference=weight_unit_enum,
             )
@@ -153,6 +156,7 @@ async def update_user_profile(
                 dob=dob,
                 sex=sex_enum,
                 height=height,
+                weight=weight,
                 avatar_url=None,
                 height_unit_preference=height_unit_enum,
                 weight_unit_preference=weight_unit_enum,

@@ -66,7 +66,8 @@ class UserProfile(BaseModel):
     age: Annotated[Optional[int], Field(None, description="User's age(optional)")]
     dob: Annotated[Optional[date], Field(None, description="User's date of birth (optional)"), BeforeValidator(parse_date)]
     sex: Annotated[Optional[Sex], Field(None, description="User's biological sex (male/female)")]
-    height: Annotated[Optional[float], Field(None, description="User's height. Stored in cm, but returned in units based on height_unit_preference (cm for metric, inches for imperial).")]
+    height: Annotated[Optional[float], Field(None, description="User's height. Stored in cm, but returned in units based on height_unit_preference (cm for metric, feet for imperial).")]
+    weight: Annotated[Optional[float], Field(None, description="User's weight. Stored in kg, but returned in units based on weight_unit_preference (kg for metric, lbs for imperial).")]
     avatar_url : Annotated[Optional[str], Field(None, description="User's avatar(optional)")]
     is_active: Annotated[bool, Field(True, description="Whether the user account is active")]
     is_pro: Annotated[bool, Field(False, description="Whether the user has a subscription"), BeforeValidator(lambda x : bool(x))]
@@ -140,7 +141,8 @@ class UpdateUserProfileRequest(BaseModel):
     age: Annotated[Optional[int], Field(None, description="new age")]
     dob: Annotated[Optional[str], Field(None, description="new date of birth")]
     sex: Annotated[Optional[Sex], Field(None, description="new biological sex (male/female)")]
-    height: Annotated[Optional[float], Field(None, description="new height. If provided, 'height_unit_preference' must also be specified. Assumed to be in cm if metric, inches if imperial.")] # Changed to float for consistency
+    height: Annotated[Optional[float], Field(None, description="new height. If provided, 'height_unit_preference' must also be specified. Assumed to be in cm if metric, feet if imperial.")] # Changed to float for consistency
+    weight: Annotated[Optional[float], Field(None, description="new weight. If provided, 'weight_unit_preference' must also be specified. Assumed to be in kg if metric, lbs if imperial.")]
     avatar_url: Annotated[Optional[str], Field(None, description="new avatar image")]
     meal_reminder_preferences_set: Annotated[Optional[bool], Field(None, description="Whether the user has meal reminder preferences set")] # Made optional for updates
     height_unit_preference: Annotated[Optional[HeightUnitPreference], Field(None, description="Preferred unit for height measurements (metric: cm, imperial: inches)")]
@@ -164,6 +166,8 @@ class UpdateUserProfileRequest(BaseModel):
     def check_height_and_unit_preference(self) -> 'UpdateUserProfileRequest':
         if self.height is not None and self.height_unit_preference is None:
             raise ValueError("If 'height' is provided, 'height_unit_preference' must also be specified.")
+        if self.weight is not None and self.weight_unit_preference is None:
+            raise ValueError("If 'weight' is provided, 'weight_unit_preference' must also be specified.")
         return self
 
 

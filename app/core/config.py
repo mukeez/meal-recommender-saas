@@ -38,6 +38,10 @@ class Settings:
         if not self.OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY environment variable is not set")
 
+        self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+        if not self.GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY environment variable is not set")
+
         self.MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4")
 
 

@@ -33,16 +33,17 @@ class MealLLMService(BaseLLMService):
         self, system_prompt, prompt, max_tokens=2000, temperature=0.5
     ):
         """
-        Send a request to the AI service and return the raw response.
+        Send a request to the AI service with Gemini fallback for meal suggestions.
         Args:
             system_prompt: The system prompt to set the context for the AI.
             prompt: The user input to generate a response for.
             max_tokens: Maximum number of tokens in the response.
             temperature: Sampling temperature for response variability.
         Returns:
-            The raw response content from the AI service.
+            The parsed response from the AI service.
         """
         try:
+            logger.info("Sending structured request to OpenAI API...")
             response = self.client.responses.parse(
                     model=settings.MODEL_NAME,
                     input=[
@@ -53,9 +54,48 @@ class MealLLMService(BaseLLMService):
                         {"role": "user", "content": prompt},
                     ],
                     text_format=MealSuggestionResponse)
+            logger.info("Successfully received structured response from OpenAI API")
             return response.output_parsed
-        except openai.OpenAIError as e:
-            raise LLMServiceError(f"OpenAI API error: {e}")
+            
+        except openai.OpenAIError as openai_error:
+            # Check if it's a server error that should trigger fallback
+            should_fallback = False
+            error_str = str(openai_error).lower()
+            
+            if any(keyword in error_str for keyword in [
+                'server error', '500', '502', '503', '504', '429', 
+                'service unavailable', 'internal server error', 
+                'rate limit', 'overloaded'
+            ]):
+                should_fallback = True
+                logger.warning(f"OpenAI server error detected: {openai_error}")
+            
+            if should_fallback and self.gemini_client:
+                logger.info("Attempting Gemini fallback for meal suggestions...")
+                try:
+                    # Use Gemini as fallback and parse the JSON response
+                    gemini_response = await self._send_gemini_request(
+                        system_prompt=system_prompt,
+                        prompt=prompt,
+                        max_tokens=max_tokens,
+                        temperature=temperature
+                    )
+                    
+                    # Parse the Gemini response as JSON and convert to MealSuggestionResponse
+                    import json
+                    gemini_data = json.loads(gemini_response)
+                    parsed_response = MealSuggestionResponse(**gemini_data)
+                    
+                    logger.info("Successfully received and parsed response from Gemini fallback")
+                    return parsed_response
+                    
+                except Exception as gemini_error:
+                    logger.error(f"Gemini fallback also failed: {gemini_error}")
+                    raise LLMServiceError(f"OpenAI API error: {openai_error} (Gemini fallback also failed: {gemini_error})")
+            
+            # If no fallback or non-server error, raise original error
+            logger.error(f"OpenAI API error (no fallback attempted): {openai_error}")
+            raise LLMServiceError(f"OpenAI API error: {openai_error}")
 
     async def get_meal_suggestions(self) -> MealSuggestionResponse:
         """Get meal suggestions from OpenAI API.

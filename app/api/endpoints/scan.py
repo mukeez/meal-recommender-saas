@@ -8,10 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile,
 import httpx
 import logging
 import base64
+import json
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from PIL import Image
 import io
+import google.generativeai as genai
 
 from app.api.auth_guard import auth_guard
 from app.core.config import settings
@@ -230,6 +232,65 @@ async def scan_barcode(
         )
 
 
+async def call_gemini_vision(encoded_image: str, prompt: str) -> dict:
+    """Call Gemini Vision API as fallback for food image analysis.
+    
+    Args:
+        encoded_image: Base64 encoded image
+        prompt: The analysis prompt
+        
+    Returns:
+        Parsed JSON response from Gemini
+        
+    Raises:
+        HTTPException: If Gemini API fails
+    """
+    try:
+        gemini_api_key = settings.GEMINI_API_KEY
+        if not gemini_api_key:
+            logger.warning("Gemini API key not configured, skipping fallback")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="No fallback vision service available"
+            )
+        
+        # Configure Gemini
+        genai.configure(api_key=gemini_api_key)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # Decode base64 image
+        import base64
+        image_bytes = base64.b64decode(encoded_image)
+        
+        # Create image part for Gemini
+        from PIL import Image
+        import io
+        image = Image.open(io.BytesIO(image_bytes))
+        
+        # Generate response
+        response = model.generate_content([prompt, image])
+        
+        # Parse JSON response
+        response_data = json.loads(response.text)
+        
+        logger.info("Successfully received response from Gemini Vision API")
+        return response_data
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Gemini JSON parse error: {str(e)}")
+        logger.error(f"Raw Gemini response: {response.text}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error parsing Gemini API response"
+        )
+    except Exception as e:
+        logger.error(f"Gemini API error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Gemini vision analysis failed"
+        )
+
+
 @router.post(
     "/image",
     response_model=ScanResponse,
@@ -305,25 +366,28 @@ async def scan_image(
         model_name = "gpt-4o-mini"
         logger.info(f"Using vision model: {model_name}")
 
-        prompt = """Analyze this food image and identify all food items.
-For each food item, provide:
-1. Name of the food
-2. Estimated amount (Provide as a numeric value representing the estimated weight in grams, e.g., 100, 250, 30)
-3. Serving unit (Always use "grams" for consistency)
-4. Estimated calories (in kcal for the specified gram amount)
-5. Estimated protein (in grams for the specified gram amount)
-6. Estimated carbs (in grams for the specified gram amount) 
-7. Estimated fat (in grams for the specified gram amount)
+        prompt = """Identify this image as a complete meal or dish. Do not break it down into individual components.
 
-IMPORTANT: All nutritional values should correspond to the gram amount you specify. For example, if you specify amount: 150, then provide calories, protein, carbs, and fat for 150 grams of that food item.
+Provide a single, descriptive name for the entire meal as it appears in the image. If there are multiple components, describe them as one unified dish (e.g., "Jollof rice with grilled chicken and plantains" rather than separate items).
+
+For the complete meal shown, provide:
+1. Descriptive name of the entire meal/dish (be as descriptive as possible)
+2. Estimated total weight of the entire serving shown (as a numeric value in grams)
+3. Serving unit (Always use "grams")  
+4. Total estimated calories for the entire serving shown
+5. Total estimated protein for the entire serving shown
+6. Total estimated carbs for the entire serving shown
+7. Total estimated fat for the entire serving shown
+
+IMPORTANT: Treat this as ONE complete meal. All nutritional values should be for the entire serving visible in the image.
 
 Format your response as a valid JSON object with this structure:
 {
   "items": [
     {
-      "name": "Food Name",
+      "name": "Complete descriptive meal name",
       "amount": number,
-      "serving_unit": "grams",
+      "serving_unit": "grams", 
       "calories": number,
       "protein": number,
       "carbs": number,
@@ -356,7 +420,7 @@ Format your response as a valid JSON object with this structure:
 
         logger.info("Prepared OpenAI API request payload")
 
-        # Call OpenAI API with the image
+        # Call OpenAI API with the image (primary), fallback to Gemini if it fails
         try:
             logger.info("Sending request to OpenAI API...")
             async with httpx.AsyncClient() as client:
@@ -377,35 +441,41 @@ Format your response as a valid JSON object with this structure:
                 if response.status_code != 200:
                     logger.error(f"OpenAI API error: {response.status_code}")
                     logger.error(f"Response content: {response.text}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Error from vision API",
-                    )
+                    raise Exception(f"OpenAI API returned status {response.status_code}")
 
                 data = response.json()
                 logger.info("Successfully parsed JSON response from OpenAI API")
 
-        except httpx.TimeoutException:
-            logger.error("Request to OpenAI API timed out")
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="Vision analysis timed out. Please try again with a simpler image.",
-            )
-        except httpx.RequestError as e:
-            logger.error(f"Error making request to OpenAI API: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Error connecting to vision service",
-            )
-        except Exception as e:
-            logger.error(f"Unexpected error during API call: {str(e)}")
-            import traceback
-
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error during vision API call",
-            )
+        except Exception as openai_error:
+            logger.warning(f"OpenAI Vision failed: {str(openai_error)}")
+            logger.info("Trying Gemini Vision as fallback...")
+            
+            try:
+                # Try Gemini as fallback
+                response_data = await call_gemini_vision(encoded_image, prompt)
+                # Skip to processing since we have the response data directly
+                data = {"choices": [{"message": {"content": json.dumps(response_data)}}]}
+                logger.info("Successfully received response from Gemini fallback")
+                
+            except Exception as gemini_error:
+                logger.error(f"Both OpenAI and Gemini failed. OpenAI: {str(openai_error)}, Gemini: {str(gemini_error)}")
+                
+                # Return appropriate error based on the primary failure
+                if "timed out" in str(openai_error).lower() or "timeout" in str(openai_error).lower():
+                    raise HTTPException(
+                        status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                        detail="Vision analysis timed out. Please try again with a simpler image.",
+                    )
+                elif "connect" in str(openai_error).lower() or "network" in str(openai_error).lower():
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Error connecting to vision service",
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Vision analysis failed",
+                    )
 
         # Extract and parse the AI response
         try:
@@ -414,7 +484,6 @@ Format your response as a valid JSON object with this structure:
             logger.debug(f"AI response content: {ai_response}")
 
             # Parse the JSON response
-            import json
 
             response_data = json.loads(ai_response)
             logger.info("Successfully parsed JSON from AI response")
