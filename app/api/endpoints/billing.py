@@ -6,8 +6,9 @@ from app.api.auth_guard import auth_guard
 from app.models.billing import (
     CheckoutSessionRequest,
     CheckoutSessionResponse,
-    SubscriptionUpdate,
     SubscriptionStatus,
+    SubscriptionDetails,
+    SubscriptionReactivationResponse,
     SetupIntentResponse,
     BillingPortalResponse,
     PublishableKey,
@@ -201,14 +202,8 @@ async def stripe_webhook(
             # Update the user's subscription record in the database
             await stripe_service.update_stripe_user_subscription(
                 customer=customer_id,
-                subscription_data=SubscriptionUpdate(
-                    is_pro=None,
-                    stripe_subscription_id=session.get("id"),
-                    subscription_start=datetime.fromtimestamp(session.get("current_period_start")).isoformat() if session.get("current_period_start") else None,
-                    subscription_end=datetime.fromtimestamp(session.get("current_period_end")).isoformat() if session.get("current_period_end") else None,
-                    trial_end_date=trial_end_date.isoformat() if trial_end_date else None,
-                    plan=metadata.get("plan")
-                ),
+                subscription_data={"stripe_subscription_id": session.get("id"), "is_pro": True, "plan": metadata.get("plan"), "subscription_start": datetime.fromtimestamp(session.get("current_period_start")).isoformat() if session.get("current_period_start") else None, "subscription_end": datetime.fromtimestamp(session.get("current_period_end")).isoformat() if session.get("current_period_end") else None, "trial_end_date": trial_end_date.isoformat() if trial_end_date else None}
+                
             )
             logger.info(f"Subscription details updated for user: {customer_id}")
 
@@ -249,14 +244,8 @@ async def stripe_webhook(
             customer_id = session["customer"]
             await stripe_service.update_stripe_user_subscription(
                 customer=customer_id,
-                subscription_data=SubscriptionUpdate(
-                    is_pro=False,
-                    stripe_subscription_id=None,
-                    subscription_start=None,
-                    subscription_end=None,
-                    trial_end_date=None,
-                    plan=None
-                ),
+                subscription_data={"is_pro": False, "stripe_subscription_id": None, "subscription_start": None, "subscription_end": None, "trial_end_date": None, "plan": None},
+                
             )
             
             # send cancellation email
@@ -274,7 +263,6 @@ async def stripe_webhook(
                     )
             except Exception as e:
                 logger.warning(f"Failed to send cancellation email for customer {customer_id}: {str(e)}")
-                # Don't fail the webhook for email failures
             
             return {
                 "status": "success",
@@ -291,14 +279,12 @@ async def stripe_webhook(
             subscription_end = datetime.fromtimestamp(
                 session["lines"]["data"][0]["period"]["end"]
             ).isoformat()
-            subscription_data = SubscriptionUpdate(
-                subscription_start=subscription_start,
-                subscription_end=subscription_end,
-                is_pro=True,
-                stripe_subscription_id=None,
-                trial_end_date=None,
-                plan=None
-            )
+            subscription_data = {
+                "subscription_start": subscription_start,
+                "subscription_end": subscription_end,
+                "is_pro": True,
+    
+            }
             await stripe_service.update_stripe_user_subscription(
                 customer=customer, subscription_data=subscription_data
             )
@@ -360,14 +346,14 @@ async def stripe_webhook(
             elif subscription_status == "canceled":
                 logger.info(f"Subscription canceled due to failed payments for customer {customer_id}")
                 
-                subscription_data = SubscriptionUpdate(
-                    is_pro=False,
-                    stripe_subscription_id=None,
-                    subscription_start=None,
-                    subscription_end=None,
-                    trial_end_date=None,
-                    plan=None
-                )
+                subscription_data = {
+                    "is_pro": False,
+                    "stripe_subscription_id": None,
+                    "subscription_start": None,
+                    "subscription_end": None,
+                    "trial_end_date": None,
+                    "plan": None
+                }
                 await stripe_service.update_stripe_user_subscription(
                     customer=customer_id, subscription_data=subscription_data
                 )
@@ -497,15 +483,9 @@ async def create_setup_intent(
 
         await stripe_service.update_stripe_user_subscription(
             customer=customer_id,
-            subscription_data=SubscriptionUpdate(
-                is_pro=True,
-                plan=request.plan,
-                stripe_subscription_id=None,
-                subscription_start=None,
-                subscription_end=None,
-                trial_end_date=None
-            )
+            subscription_data={"is_pro": True, "plan": request.plan}
         )
+
 
         # create ephemeral key for client side
         ephemeral_key = await stripe_service.create_ephemeral_key(
@@ -564,72 +544,103 @@ async def create_customer_portal_session(
 
 
 @router.get(
-    "/subscription-status",
+    "/subscription-details",
     status_code=status.HTTP_200_OK,
-    summary="Get real-time subscription status",
-    description="Get current subscription status from Stripe including payment failures",
+    response_model=SubscriptionDetails,
+    summary="Get detailed subscription information",
+    description="Get comprehensive subscription details including plan, billing cycle, next billing date, and pricing information",
 )
-async def get_subscription_status(
+async def get_subscription_details(
     user=Depends(auth_guard)
-) -> Dict[str, Any]:
+) -> SubscriptionDetails:
     """
-    Get real-time subscription status including payment failure information.
+    Get detailed subscription information including plan details and billing information.
     
-    This endpoint checks Stripe directly for the most up-to-date subscription status,
-    including whether the subscription is past due due to payment failures.
+    This endpoint provides comprehensive subscription information including:
+    - Plan type (monthly/yearly)
+    - Subscription amount and currency
+    - Billing interval and next billing date
+    - Current period dates
+    - Trial information if applicable
+    - Cancellation status
     """
     try:
         user_id = user.get("sub")
         
-        # Get real-time status from Stripe
-        subscription_status = await stripe_service.get_subscription_status(user_id)
+        # Get detailed subscription information from Stripe
+        subscription_details = await stripe_service.get_subscription_details(user_id)
         
-        if not subscription_status:
-            return {
-                "has_subscription": False,
-                "is_active": False,
-                "status": "none",
-                "message": "No active subscription found"
-            }
-        
-        # Determine if subscription provides access
-        has_access = subscription_status["active"] and not subscription_status["past_due"]
-        
-        # Create response with detailed status information
-        response = {
-            "has_subscription": True,
-            "is_active": has_access,
-            "status": subscription_status["status"],
-            "subscription_id": subscription_status["subscription_id"],
-            "past_due": subscription_status["past_due"],
-            "cancel_at_period_end": subscription_status["cancel_at_period_end"],
-            "current_period_end": subscription_status["current_period_end"],
-        }
-        
-        # Add appropriate message based on status
-        if subscription_status["past_due"]:
-            response["message"] = "Subscription is past due. Please update your payment method."
-            response["action_required"] = True
-        elif subscription_status["cancel_at_period_end"]:
-            response["message"] = "Subscription will cancel at the end of the billing period."
-            response["action_required"] = False
-        elif subscription_status["active"]:
-            response["message"] = "Subscription is active and in good standing."
-            response["action_required"] = False
-        else:
-            response["message"] = f"Subscription status: {subscription_status['status']}"
-            response["action_required"] = False
-            
-        return response
+        return SubscriptionDetails(**subscription_details)
         
     except StripeServiceError as e:
-        logger.error(f"Stripe service error getting subscription status: {str(e)}")
+        logger.error(f"Stripe service error getting subscription details: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error retrieving subscription status"
+            detail="Error retrieving subscription details"
         )
     except Exception as e:
-        logger.error(f"Unexpected error getting subscription status: {str(e)}")
+        logger.error(f"Unexpected error getting subscription details: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred"
+        )
+
+
+@router.post(
+    "/reactivate-subscription",
+    status_code=status.HTTP_200_OK,
+    response_model=SubscriptionReactivationResponse,
+    summary="Reactivate a subscription",
+    description="Reactivate a subscription that was set to cancel at the end of the billing period",
+)
+async def reactivate_subscription(
+    user=Depends(auth_guard)
+) -> SubscriptionReactivationResponse:
+    """
+    Reactivate a subscription that was set to cancel at period end.
+    
+    This endpoint allows users to reactivate their subscription if:
+    - The subscription exists and is currently active
+    - It was set to cancel at the end of the current billing period
+    - The current billing period has not yet ended
+    
+    The subscription will continue with its normal billing cycle after reactivation.
+    """
+    try:
+        user_id = user.get("sub")
+        
+        # Reactivate the subscription
+        subscription = await stripe_service.reactivate_user_subscription(user_id)
+        
+        return SubscriptionReactivationResponse(
+            success=True,
+            message="Subscription successfully reactivated. Your subscription will continue with its normal billing cycle.",
+            subscription_id=subscription.id,
+            status=subscription.status,
+            cancel_at_period_end=subscription.cancel_at_period_end
+        )
+        
+    except StripeServiceError as e:
+        logger.error(f"Stripe service error reactivating subscription: {str(e)}")
+        
+        # Return specific error messages for common scenarios
+        error_message = str(e)
+        if "No subscription found" in error_message:
+            status_code = status.HTTP_404_NOT_FOUND
+        elif "not set to cancel" in error_message:
+            status_code = status.HTTP_400_BAD_REQUEST
+        elif "cannot be reactivated" in error_message or "period has already ended" in error_message:
+            status_code = status.HTTP_400_BAD_REQUEST
+        else:
+            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+            error_message = "Error reactivating subscription"
+        
+        raise HTTPException(
+            status_code=status_code,
+            detail=error_message
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error reactivating subscription: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred"
