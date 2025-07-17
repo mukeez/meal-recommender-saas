@@ -309,9 +309,6 @@ class MacrosService:
             carbs_g = max(0, carbs_g)
             fat_g = max(0, fat_g)
 
-            # Ensure minimum carbohydrates
-            carbs_g = max(MIN_CARBS_GRAMS, carbs_g)
-
             # Calculate calories for each macro
             protein_cals = protein_g * PROTEIN_CALS_PER_GRAM
             carbs_cals = carbs_g * CARB_CALS_PER_GRAM
