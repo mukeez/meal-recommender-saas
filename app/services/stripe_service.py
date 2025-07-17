@@ -9,11 +9,13 @@ import os
 import stripe
 from typing import Dict, Any, List, Literal, Optional
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+import httpx
 
-from app.models.billing import CheckoutSessionResponse, SubscriptionUpdate
+from app.models.billing import CheckoutSessionResponse
 from app.utils.helper_functions import remove_null_values
 from app.services.base_database_service import BaseDatabaseService
+from app.services.user_service import user_service
 from app.core.config import settings
 
 
@@ -22,11 +24,13 @@ logger = logging.getLogger(__name__)
 
 class StripeServiceError(Exception):
     """Custom exception for Stripe service operations."""
+
     pass
 
 
 class StripeService:
     """Service for managing Stripe billing and subscriptions."""
+
     def __init__(self):
         """Initialize with Stripe API credentials and configuration."""
         stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -42,10 +46,12 @@ class StripeService:
             logger.warning("STRIPE_WEBHOOK_SECRET environment variable is not set")
 
         if not self.monthly_price_id or not self.yearly_price_id:
-            logger.error("STRIPE_MONTHLY_PRICE_ID or STRIPE_YEARLY_PRICE_ID environment variable is not set")
-            raise ValueError("STRIPE_MONTHLY_PRICE_ID or STRIPE_YEARLY_PRICE_ID environment variable is not set")
-        
-
+            logger.error(
+                "STRIPE_MONTHLY_PRICE_ID or STRIPE_YEARLY_PRICE_ID environment variable is not set"
+            )
+            raise ValueError(
+                "STRIPE_MONTHLY_PRICE_ID or STRIPE_YEARLY_PRICE_ID environment variable is not set"
+            )
 
     async def create_checkout_session(
         self, email: str, user_id: str, plan: Literal["monthly", "yearly"] = "monthly"
@@ -62,46 +68,71 @@ class StripeService:
 
         Raises:
             StripeServiceError: On checkout session creation failure
-            HTTPException: If user already has payment details
+            HTTPException: If user already has payment details or active subscription
         """
         try:
             logger.info(f"Creating checkout session for user: {user_id}")
 
-            # get stripe customer id if exists
+            # Check for active subscription
+            has_active_sub = await self.has_active_subscription(user_id)
+            if has_active_sub:
+                logger.warning(
+                    f"User {user_id} attempted to create checkout session with existing active subscription"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="You already have an active subscription. Please manage your existing subscription in your account settings.",
+                )
+
+            # get stripe customer id if exists (for trial check)
             customer = await self.get_stripe_customer(user_id=user_id)
 
+            # Create customer if it doesn't exist
+            if not customer:
+                logger.info(f"Creating new Stripe customer for user: {user_id}")
+                customer = await self.create_stripe_customer(
+                    user_id=user_id, email=email
+                )
+                logger.info(f"Created Stripe customer: {customer}")
+
             # Check if user has already used their trial
-            from app.services.user_service import user_service
             user_profile = await user_service.get_user_profile(user_id)
             has_used_trial = user_profile.has_used_trial
 
             params = {
                 "payment_method_types": ["card"],
                 "mode": "subscription",
-                "metadata": {"user_id": user_id, "has_trial": str(not has_used_trial)},
+                "metadata": {
+                    "user_id": user_id,
+                    "has_trial": str(not has_used_trial),
+                    "plan": plan,
+                },
                 "success_url": f"https://macromealsapp.com/success?session_id={{CHECKOUT_SESSION_ID}}",
                 "cancel_url": "https://macromealsapp.com/cancel",
+                "customer": customer,
             }
-            if customer:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Payment details already exist for this user",
-                )
-            else:
-                params["customer_email"] = email
             if plan == "yearly":
                 params["line_items"] = [{"price": self.yearly_price_id, "quantity": 1}]
             else:
                 params["line_items"] = [{"price": self.monthly_price_id, "quantity": 1}]
-            
-            # Add trial period only if user hasn't used it before
+
+            # Add metadata to subscription
+            subscription_data: dict = {
+                "metadata": {
+                    "user_id": user_id,
+                    "has_trial": str(not has_used_trial),
+                    "plan": plan,
+                }
+            }
+
+            # Add trial period if user hasn't used it before
             if not has_used_trial:
-                params["subscription_data"] = {"trial_period_days": 7}
+                subscription_data["trial_period_days"] = 7
                 logger.info(f"User {user_id} eligible for 7-day trial")
             else:
                 logger.info(f"User {user_id} has already used trial - no trial period")
 
-
+            params["subscription_data"] = subscription_data
 
             checkout_session = stripe.checkout.Session.create(**params)
 
@@ -109,7 +140,7 @@ class StripeService:
 
             if not checkout_session.url:
                 raise StripeServiceError("Checkout session URL is missing")
-            
+
             return CheckoutSessionResponse(
                 checkout_url=checkout_session.url, session_id=checkout_session.id
             )
@@ -181,17 +212,11 @@ class StripeService:
             if not customer:
                 logger.error("customer not found in session")
                 raise StripeServiceError("customer not found in session")
+
             logger.info(f"Processing completed checkout for user: {customer}")
 
             await self.update_stripe_user_subscription(
-                customer, subscription_data=SubscriptionUpdate(
-                    is_pro=True,
-                    stripe_subscription_id=None,
-                    subscription_start=None,
-                    subscription_end=None,
-                    trial_end_date=None,
-                    plan=None
-                )
+                customer, subscription_data={"is_pro": True}
             )
 
             logger.info(f"User {customer} marked as subscribed")
@@ -248,7 +273,7 @@ class StripeService:
             )
 
     async def update_stripe_user_subscription(
-        self, customer: str, subscription_data: SubscriptionUpdate
+        self, customer: str, subscription_data: Dict[str, Any]
     ) -> None:
         """Update user subscription information.
 
@@ -268,12 +293,10 @@ class StripeService:
             if not BaseDatabaseService.subclasses:
                 raise StripeServiceError("No database service implementation available")
 
-            subscription_data_dict = remove_null_values(subscription_data.model_dump())
-
             # update user's stripe details
             BaseDatabaseService.subclasses[0]().update_data(
                 table_name="user_profiles",
-                data=subscription_data_dict,
+                data=subscription_data,
                 cols={"stripe_customer_id": customer},
             )
 
@@ -316,7 +339,6 @@ class StripeService:
             if not subscription_id:
                 raise StripeServiceError("Subscription id not found for customer")
 
-            data: Dict[str, Any] = {"stripe_customer_id": None, "stripe_subscription_id": None}
 
             if cancel_at_period_end:
                 sub = stripe.Subscription.modify(
@@ -325,11 +347,6 @@ class StripeService:
                 )
             else:
                 sub = stripe.Subscription.delete(subscription_id)
-                data["is_pro"] = False
-
-            BaseDatabaseService.subclasses[0]().update_data(
-                table_name="user_profiles", data=data, cols={"id": user_id}
-            )
 
             return sub
         except stripe.StripeError as e:
@@ -340,6 +357,78 @@ class StripeService:
                 f"Failed to cancel subscription for user: {user_id} with error{str(e)}"
             )
             raise StripeServiceError("Unexpected error while cancelling subscription")
+
+    async def reactivate_user_subscription(self, user_id: str) -> stripe.Subscription:
+        """Reactivate user's subscription that was set to cancel at period end.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            Updated Stripe Subscription object
+
+        Raises:
+            StripeServiceError: When subscription not found, not eligible for reactivation, or reactivation fails
+        """
+        try:
+            logger.info(f"Reactivating subscription for user: {user_id}")
+
+            if not BaseDatabaseService.subclasses:
+                raise StripeServiceError("No database service implementation available")
+
+            # Get subscription details first
+            subscription_details = await self.get_subscription_details(user_id)
+
+            if not subscription_details.get("has_subscription"):
+                raise StripeServiceError("No subscription found for user")
+
+            subscription_id = subscription_details.get("subscription_id")
+            if not subscription_id:
+                raise StripeServiceError("Subscription ID not found")
+
+            # Check if subscription is eligible for reactivation
+            if not subscription_details.get("cancel_at_period_end"):
+                raise StripeServiceError(
+                    "Subscription is not set to cancel - no reactivation needed"
+                )
+
+            # Check if subscription is still active (hasn't ended yet)
+            status = subscription_details.get("status")
+            if status not in ["active", "trialing"]:
+                raise StripeServiceError(
+                    f"Subscription cannot be reactivated - current status: {status}"
+                )
+
+            # Check if we're still within the current period
+
+            current_period_end = subscription_details.get("current_period_end")
+            if current_period_end and datetime.now(
+                timezone.utc
+            ) >= current_period_end.replace(tzinfo=timezone.utc):
+                raise StripeServiceError(
+                    "Subscription period has already ended - cannot reactivate"
+                )
+
+            # Reactivate the subscription
+            subscription = stripe.Subscription.modify(
+                subscription_id, cancel_at_period_end=False
+            )
+
+            logger.info(
+                f"Successfully reactivated subscription {subscription_id} for user {user_id}"
+            )
+            return subscription
+
+        except stripe.StripeError as e:
+            logger.error(f"Stripe error: {str(e)}")
+            raise StripeServiceError(f"Error reactivating subscription: {str(e)}")
+        except StripeServiceError:
+            raise
+        except Exception as e:
+            logger.error(
+                f"Failed to reactivate subscription for user: {user_id} with error: {str(e)}"
+            )
+            raise StripeServiceError("Unexpected error while reactivating subscription")
 
     async def get_subscription_with_retry(
         self, customer_id: str, retries: int = 2, delay: float = 2.0
@@ -362,7 +451,9 @@ class StripeService:
                 customer = stripe.Customer.retrieve(
                     customer_id, expand=["subscriptions.data"]
                 )
-                subscriptions = customer.subscriptions.data if customer.subscriptions else []
+                subscriptions = (
+                    customer.subscriptions.data if customer.subscriptions else []
+                )
                 if subscriptions:
                     # get first trial subscription
                     trial_subs = [s for s in subscriptions if s["status"] == "trialing"]
@@ -388,9 +479,11 @@ class StripeService:
                         f"Failed to retrieve subscription after {retries} attempts: {e}"
                     )
                 time.sleep(delay)
-        
+
         # This should never be reached due to the exception handling above
-        raise StripeServiceError(f"Failed to retrieve subscription for customer {customer_id}")
+        raise StripeServiceError(
+            f"Failed to retrieve subscription for customer {customer_id}"
+        )
 
     async def create_stripe_customer(self, user_id: str, email: str) -> str:
         """Create Stripe customer and update user profile.
@@ -489,7 +582,12 @@ class StripeService:
             )
             raise StripeServiceError("Unexpected error occured")
 
-    async def create_setup_intent(self, user_id: str, customer_id: str, plan: Literal["monthly", "yearly"] = "monthly") -> str:
+    async def create_setup_intent(
+        self,
+        user_id: str,
+        customer_id: str,
+        plan: Literal["monthly", "yearly"] = "monthly",
+    ) -> str:
         """Create Stripe setup intent for saving payment methods.
 
         Args:
@@ -522,7 +620,11 @@ class StripeService:
             raise StripeServiceError("Unexpected error while creating setup intent")
 
     async def create_subscription(
-        self, customer_id: str, payment_method_id: str, user_id: str, plan: Literal["monthly", "yearly"] = "monthly"
+        self,
+        customer_id: str,
+        payment_method_id: str,
+        user_id: str,
+        plan: Literal["monthly", "yearly"] = "monthly",
     ) -> str:
         """Create subscription with conditional trial period.
 
@@ -541,59 +643,70 @@ class StripeService:
         try:
             if not BaseDatabaseService.subclasses:
                 raise StripeServiceError("No database service implementation available")
-            
+
             # CRITICAL: Check for existing active subscriptions in Stripe first
-            existing_subscriptions = await self.get_active_stripe_subscriptions(customer_id)
+            existing_subscriptions = await self.get_active_stripe_subscriptions(
+                customer_id
+            )
             if existing_subscriptions:
-                logger.warning(f"Customer {customer_id} already has {len(existing_subscriptions)} active subscription(s)")
+                logger.warning(
+                    f"Customer {customer_id} already has {len(existing_subscriptions)} active subscription(s)"
+                )
                 # Use the first active subscription instead of creating a new one
                 existing_sub = existing_subscriptions[0]
-                
+
                 # Update database with existing subscription
                 BaseDatabaseService.subclasses[0]().update_data(
                     table_name="user_profiles",
                     data={"stripe_subscription_id": existing_sub.id, "is_pro": True},
                     cols={"stripe_customer_id": customer_id},
                 )
-                
-                logger.info(f"Using existing subscription {existing_sub.id} for customer {customer_id}")
+
+                logger.info(
+                    f"Using existing subscription {existing_sub.id} for customer {customer_id}"
+                )
                 return existing_sub.id
-            
+
             # Check if user has already used their trial
             from app.services.user_service import user_service
+
             user_profile = await user_service.get_user_profile(user_id)
             has_used_trial = user_profile.has_used_trial
-            
+
             if plan == "yearly":
                 price_id = settings.STRIPE_YEARLY_PRICE_ID
             else:
                 price_id = settings.STRIPE_MONTHLY_PRICE_ID
-            
+
             if not price_id:
                 raise StripeServiceError("Price ID not configured")
-            
+
             # Build subscription parameters
             subscription_params = {
                 "customer": customer_id,
                 "items": [{"price": price_id}],
                 "default_payment_method": payment_method_id,
-                "metadata": {"user_id": user_id, "has_trial": str(not has_used_trial)}
+                "metadata": {"user_id": user_id, "has_trial": str(not has_used_trial)},
             }
-            
+
             # Add trial period only if user hasn't used it before
             if not has_used_trial:
                 subscription_params["trial_period_days"] = 7
-                logger.info(f"Creating subscription with 7-day trial for user: {user_id}")
+                logger.info(
+                    f"Creating subscription with 7-day trial for user: {user_id}"
+                )
             else:
                 logger.info(f"Creating subscription without trial for user: {user_id}")
-            
+
             # Create the subscription
             subscription = stripe.Subscription.create(**subscription_params)
-            
+
             # Double-check no duplicate was created during the API call
             all_subscriptions = await self.get_active_stripe_subscriptions(customer_id)
             if len(all_subscriptions) > 1:
-                logger.warning(f"Multiple subscriptions detected for customer {customer_id}. Using the newest one.")
+                logger.warning(
+                    f"Multiple subscriptions detected for customer {customer_id}. Using the newest one."
+                )
                 # Cancel all but the newest subscription
                 newest_sub = max(all_subscriptions, key=lambda s: s.created)
                 for sub in all_subscriptions:
@@ -602,19 +715,23 @@ class StripeService:
                         try:
                             stripe.Subscription.cancel(sub.id)
                         except Exception as e:
-                            logger.error(f"Failed to cancel duplicate subscription {sub.id}: {str(e)}")
+                            logger.error(
+                                f"Failed to cancel duplicate subscription {sub.id}: {str(e)}"
+                            )
                 subscription = newest_sub
-            
+
             # update user's subscription
             BaseDatabaseService.subclasses[0]().update_data(
                 table_name="user_profiles",
                 data={"stripe_subscription_id": subscription.id, "is_pro": True},
                 cols={"stripe_customer_id": customer_id},
             )
-            
-            logger.info(f"Successfully created subscription {subscription.id} for customer {customer_id}")
+
+            logger.info(
+                f"Successfully created subscription {subscription.id} for customer {customer_id}"
+            )
             return subscription.id
-            
+
         except stripe.StripeError as e:
             logger.error(f"Stripe error: {str(e)}")
             raise StripeServiceError(f"Error creating stripe subscription: {str(e)}")
@@ -694,42 +811,50 @@ class StripeService:
         """
         try:
             logger.info(f"Checking subscription status for user: {user_id}")
-            
+
             if not BaseDatabaseService.subclasses:
                 raise StripeServiceError("No database service implementation available")
-            
+
             # Get user profile to check subscription status
             response = BaseDatabaseService.subclasses[0]().select_data(
                 table_name="user_profiles", cols={"id": user_id}
             )
-            
+
             if not response:
                 logger.info(f"No profile found for user: {user_id}")
                 return False
-            
+
             # Handle both list and dict responses
             user_data = response[0] if isinstance(response, List) else response
-            
+
             # Check if user is marked as pro and has subscription ID
             is_pro = user_data.get("is_pro", False)
             subscription_id = user_data.get("stripe_subscription_id")
             customer_id = user_data.get("stripe_customer_id")
-            
-            logger.info(f"User {user_id} - is_pro: {is_pro}, subscription_id: {subscription_id}, customer_id: {customer_id}")
-            
+
+            logger.info(
+                f"User {user_id} - is_pro: {is_pro}, subscription_id: {subscription_id}, customer_id: {customer_id}"
+            )
+
             # If database shows user as pro with subscription, verify with Stripe
             if is_pro and subscription_id and customer_id:
                 try:
                     # Double-check with Stripe to ensure subscription is actually active
-                    active_subscriptions = await self.get_active_stripe_subscriptions(customer_id)
-                    
+                    active_subscriptions = await self.get_active_stripe_subscriptions(
+                        customer_id
+                    )
+
                     # Check if the stored subscription ID is among active ones
                     active_sub_ids = [sub.id for sub in active_subscriptions]
                     if subscription_id in active_sub_ids:
-                        logger.info(f"Subscription {subscription_id} confirmed active in Stripe")
+                        logger.info(
+                            f"Subscription {subscription_id} confirmed active in Stripe"
+                        )
                         return True
                     else:
-                        logger.warning(f"Database shows subscription {subscription_id} but it's not active in Stripe")
+                        logger.warning(
+                            f"Database shows subscription {subscription_id} but it's not active in Stripe"
+                        )
                         # Update database to reflect actual state
                         BaseDatabaseService.subclasses[0]().update_data(
                             table_name="user_profiles",
@@ -737,37 +862,50 @@ class StripeService:
                             cols={"id": user_id},
                         )
                         return False
-                        
+
                 except StripeServiceError as e:
-                    logger.warning(f"Could not verify subscription with Stripe: {str(e)}")
+                    logger.warning(
+                        f"Could not verify subscription with Stripe: {str(e)}"
+                    )
                     # Fall back to database status if Stripe is unavailable
                     return bool(is_pro and subscription_id)
-            
+
             # If customer exists but no subscription in database, check Stripe
             elif customer_id:
                 try:
-                    active_subscriptions = await self.get_active_stripe_subscriptions(customer_id)
+                    active_subscriptions = await self.get_active_stripe_subscriptions(
+                        customer_id
+                    )
                     if active_subscriptions:
-                        logger.info(f"Found {len(active_subscriptions)} active subscription(s) in Stripe not reflected in database")
+                        logger.info(
+                            f"Found {len(active_subscriptions)} active subscription(s) in Stripe not reflected in database"
+                        )
                         # Update database with the first active subscription
                         latest_sub = max(active_subscriptions, key=lambda s: s.created)
                         BaseDatabaseService.subclasses[0]().update_data(
                             table_name="user_profiles",
-                            data={"is_pro": True, "stripe_subscription_id": latest_sub.id},
+                            data={
+                                "is_pro": True,
+                                "stripe_subscription_id": latest_sub.id,
+                            },
                             cols={"id": user_id},
                         )
                         return True
-                        
+
                 except StripeServiceError as e:
                     logger.warning(f"Could not check Stripe subscriptions: {str(e)}")
-            
+
             return False
-            
+
         except Exception as e:
-            logger.error(f"Error checking subscription status for user {user_id}: {str(e)}")
+            logger.error(
+                f"Error checking subscription status for user {user_id}: {str(e)}"
+            )
             raise StripeServiceError(f"Error checking subscription status: {str(e)}")
 
-    async def get_active_stripe_subscriptions(self, customer_id: str) -> List[stripe.Subscription]:
+    async def get_active_stripe_subscriptions(
+        self, customer_id: str
+    ) -> List[stripe.Subscription]:
         """Get all active subscriptions for a customer from Stripe.
 
         Args:
@@ -780,74 +918,156 @@ class StripeService:
             StripeServiceError: On Stripe API errors
         """
         try:
-            logger.info(f"Checking for active subscriptions for customer: {customer_id}")
-            
+            logger.info(
+                f"Checking for active subscriptions for customer: {customer_id}"
+            )
+
             # Retrieve customer with expanded subscriptions
             customer = stripe.Customer.retrieve(customer_id, expand=["subscriptions"])
-            
+
             # Filter for active subscriptions (active, trialing, past_due)
             active_statuses = ["active", "trialing", "past_due"]
             active_subscriptions = [
-                sub for sub in (customer.subscriptions.data if customer.subscriptions else [])
+                sub
+                for sub in (
+                    customer.subscriptions.data if customer.subscriptions else []
+                )
                 if sub.status in active_statuses
             ]
-            
-            logger.info(f"Found {len(active_subscriptions)} active subscription(s) for customer {customer_id}")
+
+            logger.info(
+                f"Found {len(active_subscriptions)} active subscription(s) for customer {customer_id}"
+            )
             return active_subscriptions
-            
+
         except stripe.StripeError as e:
             logger.error(f"Stripe error retrieving subscriptions: {str(e)}")
-            raise StripeServiceError(f"Error retrieving customer subscriptions: {str(e)}")
+            raise StripeServiceError(
+                f"Error retrieving customer subscriptions: {str(e)}"
+            )
         except Exception as e:
             logger.error(f"Unexpected error retrieving subscriptions: {str(e)}")
-            raise StripeServiceError(f"Unexpected error retrieving subscriptions: {str(e)}")
+            raise StripeServiceError(
+                f"Unexpected error retrieving subscriptions: {str(e)}"
+            )
 
-    async def get_subscription_status(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """Get real-time subscription status from Stripe.
+    async def get_subscription_details(self, user_id: str) -> Dict[str, Any]:
+        """Get comprehensive subscription details including plan information.
 
         Args:
             user_id: Internal user ID
 
         Returns:
-            Dictionary with subscription status information or None if no subscription
+            Dictionary with detailed subscription information
 
         Raises:
             StripeServiceError: On Stripe API errors
         """
         try:
-            logger.info(f"Getting real-time subscription status for user: {user_id}")
-            
+            logger.info(
+                f"Getting detailed subscription information for user: {user_id}"
+            )
+
             # Get customer ID
             customer_id = await self.get_stripe_customer(user_id)
             if not customer_id:
-                return None
-                
+                return {"has_subscription": False}
+
             # Get active subscriptions
-            active_subscriptions = await self.get_active_stripe_subscriptions(customer_id)
-            
+            active_subscriptions = await self.get_active_stripe_subscriptions(
+                customer_id
+            )
+
             if not active_subscriptions:
-                return None
-                
-            # Return the most recent subscription
-            latest_subscription = max(active_subscriptions, key=lambda s: s.created)
-            
+                return {"has_subscription": False}
+
+            # Get the most recent subscription
+            subscription = max(active_subscriptions, key=lambda s: s.created)
+
+            # Get the subscription with expanded price data
+            detailed_subscription = stripe.Subscription.retrieve(
+                subscription.id, expand=["items.data.price.product"]
+            )
+
+            # Extract price information
+            subscription_item = (
+                detailed_subscription["items"]["data"][0]
+                if detailed_subscription.get("items") and detailed_subscription["items"].get("data")
+                else None
+            )
+            price = subscription_item["price"] if subscription_item else None
+
+            # Determine plan type based on price ID
+            plan_type = None
+            plan_name = None
+            if price:
+                if price["id"] == self.monthly_price_id:
+                    plan_type = "monthly"
+                    plan_name = "Monthly Plan"
+                elif price["id"] == self.yearly_price_id:
+                    plan_type = "yearly"
+                    plan_name = "Yearly Plan"
+
+            # Calculate next billing date
+            next_billing_date = None
+            if detailed_subscription.get("status") in ["active", "trialing"]:
+                trial_end = detailed_subscription.get("trial_end")
+                if (
+                    trial_end is not None
+                    and detailed_subscription.get("status") == "trialing"
+                ):
+                    # If in trial, next billing is trial end
+                    next_billing_date = datetime.fromtimestamp(trial_end)
+                elif not detailed_subscription.get("cancel_at_period_end"):
+                    # If not cancelling, next billing is current period end
+                    current_period_end = detailed_subscription.get("current_period_end")
+                    if current_period_end is not None:
+                        next_billing_date = datetime.fromtimestamp(current_period_end)
+
+            cps = datetime.fromtimestamp(detailed_subscription["items"]["data"][0]["current_period_start"]).date()
+            cpe = datetime.fromtimestamp(detailed_subscription["items"]["data"][0]["current_period_end"]).date()
+            trial_end_val = detailed_subscription.get("trial_end")
+            created = detailed_subscription.get("created")
+
             return {
-                "subscription_id": latest_subscription.id,
-                "status": latest_subscription.status,
-                "current_period_start": latest_subscription["current_period_start"],
-                "current_period_end": latest_subscription["current_period_end"],
-                "cancel_at_period_end": latest_subscription.cancel_at_period_end,
-                "trial_end": latest_subscription.get("trial_end"),
-                "past_due": latest_subscription.status == "past_due",
-                "active": latest_subscription.status in ["active", "trialing"],
-                "customer_id": customer_id
+                "has_subscription": True,
+                "subscription_id": detailed_subscription.get("id"),
+                "status": detailed_subscription.get("status"),
+                "plan": plan_type,
+                "plan_name": plan_name,
+                "amount": (
+                    price["unit_amount"] / 100 if price and price.get("unit_amount") else None
+                ),
+                "currency": (
+                    price["currency"].upper() if price and price.get("currency") else None
+                ),
+                "billing_interval": (
+                    price["recurring"]["interval"]
+                    if price
+                    and price.get("recurring")
+                    and price["recurring"].get("interval")
+                    else None
+                ),
+                "current_period_start": cps,
+                "current_period_end": cpe,
+                "next_billing_date": next_billing_date,
+                "trial_end": (
+                    datetime.fromtimestamp(trial_end_val) if trial_end_val is not None else None
+                ),
+                "cancel_at_period_end": detailed_subscription.get(
+                    "cancel_at_period_end"
+                ),
+                "created": datetime.fromtimestamp(created) if created is not None else None,
             }
-            
-        except StripeServiceError:
-            raise
+
+        except stripe.StripeError as e:
+            logger.error(f"Stripe error getting subscription details: {str(e)}")
+            raise StripeServiceError(f"Error retrieving subscription details: {str(e)}")
         except Exception as e:
-            logger.error(f"Error getting subscription status for user {user_id}: {str(e)}")
-            raise StripeServiceError(f"Error getting subscription status: {str(e)}")
+            logger.error(
+                f"Error getting subscription details for user {user_id}: {str(e)}"
+            )
+            raise StripeServiceError(f"Error getting subscription details: {str(e)}")
 
     async def is_webhook_event_processed(self, event_id: str) -> bool:
         """Check if a webhook event has already been processed.
@@ -860,14 +1080,14 @@ class StripeService:
         """
         import httpx
         from app.core.config import settings
-        
+
         logger.info(f"Checking if webhook event {event_id} has been processed")
 
         try:
             if not settings.SUPABASE_SERVICE_ROLE_KEY:
                 logger.error("SUPABASE_SERVICE_ROLE_KEY is not configured")
                 return False
-                
+
             async with httpx.AsyncClient() as client:
                 response = await client.get(
                     f"{settings.SUPABASE_URL}/rest/v1/webhook_events",
@@ -885,7 +1105,9 @@ class StripeService:
                     logger.info(f"Event {event_id} processed status: {is_processed}")
                     return is_processed
                 else:
-                    logger.warning(f"Failed to check webhook event status: {response.status_code}")
+                    logger.warning(
+                        f"Failed to check webhook event status: {response.status_code}"
+                    )
                     return False
 
         except Exception as e:
@@ -898,17 +1120,14 @@ class StripeService:
         Args:
             event_id: Stripe event ID
         """
-        import httpx
-        from datetime import datetime
-        from app.core.config import settings
-        
+
         logger.info(f"Marking webhook event {event_id} as processed")
 
         try:
             if not settings.SUPABASE_SERVICE_ROLE_KEY:
                 logger.error("SUPABASE_SERVICE_ROLE_KEY is not configured")
                 return
-                
+
             webhook_event = {
                 "event_id": event_id,
                 "processed_at": datetime.now().isoformat(),
@@ -936,14 +1155,15 @@ class StripeService:
                     except Exception:
                         pass
 
-                    logger.error(f"Failed to mark event {event_id} as processed: {error_detail}")
-                
+                    logger.error(
+                        f"Failed to mark event {event_id} as processed: {error_detail}"
+                    )
+
                 else:
                     logger.info(f"Successfully marked event {event_id} as processed")
 
         except Exception as e:
             logger.error(f"Error marking webhook event as processed: {str(e)}")
-            
 
 
 stripe_service = StripeService()
