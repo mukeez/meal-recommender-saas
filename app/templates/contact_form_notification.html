@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+    <div style="text-align: center; margin-bottom: 30px;">
+        <h1 style="color: #2c3e50; margin: 0; font-size: 24px; font-weight: 600;">
+            📧 New Contact Form Submission
+        </h1>
+        <p style="color: #7f8c8d; margin: 10px 0 0 0; font-size: 16px;">
+            MacroMeals Support Portal
+        </p>
+    </div>
+
+    <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin-bottom: 25px;">
+        <h2 style="color: #2c3e50; margin: 0 0 15px 0; font-size: 18px;">
+            Contact Details
+        </h2>
+        
+        <div style="margin-bottom: 12px;">
+            <strong style="color: #34495e;">Name:</strong>
+            <span style="color: #2c3e50;">{{ client_name }}</span>
+        </div>
+        
+        <div style="margin-bottom: 12px;">
+            <strong style="color: #34495e;">Email:</strong>
+            <span style="color: #2c3e50;">{{ client_email }}</span>
+        </div>
+        
+        {% if subject %}
+        <div style="margin-bottom: 12px;">
+            <strong style="color: #34495e;">Subject:</strong>
+            <span style="color: #2c3e50;">{{ subject }}</span>
+        </div>
+        {% endif %}
+        
+        <div style="margin-bottom: 12px;">
+            <strong style="color: #34495e;">Submitted:</strong>
+            <span style="color: #2c3e50;">{{ submission_time }}</span>
+        </div>
+        
+        {% if reference_id %}
+        <div style="margin-bottom: 12px;">
+            <strong style="color: #34495e;">Reference ID:</strong>
+            <span style="color: #2c3e50;">{{ reference_id }}</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <div style="background-color: #ffffff; border: 1px solid #e9ecef; border-radius: 6px; padding: 20px; margin-bottom: 25px;">
+        <h2 style="color: #2c3e50; margin: 0 0 15px 0; font-size: 18px;">
+            Message
+        </h2>
+        <div style="color: #2c3e50; line-height: 1.6; white-space: pre-wrap;">{{ message }}</div>
+    </div>
+
+    <div style="background-color: #e8f4fd; padding: 15px; border-radius: 6px; border-left: 4px solid #3498db;">
+        <p style="margin: 0; color: #2c3e50; font-size: 14px;">
+            <strong>Action Required:</strong> Please respond to this inquiry within 24 hours to maintain our excellent customer service standards.
+        </p>
+    </div>
+
+    <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e9ecef;">
+        <p style="color: #7f8c8d; font-size: 12px; margin: 0;">
+            This is an automated notification from the MacroMeals contact form system.
+        </p>
+    </div>
+</div>
+{% endblock %} 
