@@ -22,7 +22,8 @@ from app.models.meal import (
     DeleteMealResponse,
     MealSearchRequest,
     MealSearchResponse,
-    MealType
+    MealType,
+    MacroSummary
 )
 from app.services.meal_service import meal_service
 from app.services.meal_llm_service import meal_llm_service
@@ -268,21 +269,22 @@ async def get_daily_progress(
     description="Retrieve macro intake progress data for a specified date range.",
 )
 async def get_progress(
-    start_date: Optional[date] = None,
-    end_date: Optional[date] = None,
     period: Optional[str] = None,
     user=Depends(auth_guard),
 ) -> ProgressSummary:
-    """Retrieve macro intake progress data for a specified date range.
+    """Retrieve macro intake progress data with intelligent aggregation by period.
 
     Args:
-        start_date: Start date for the progress data (optional if period is provided)
-        end_date: End date for the progress data (optional, defaults to today)
-        period: Predefined period (1W, 1M, 3M, 6M, 1Y, All) - overrides start_date
+        period: Time period for aggregation:
+            - 1w: Current week by weekdays (Mon, Tue, Wed, Thu, Fri, Sat, Sun)  
+            - 1m: Current month by weeks (W1, W2, W3, W4, W5)
+            - 3m: Last 3 complete months by abbreviated month names (Oct, Nov, Dec)
+            - 6m: Last 6 complete months by abbreviated month names (Jul, Aug, Sep, Oct, Nov, Dec)
+            - 1y: Current calendar year by abbreviated month names (Jan, Feb, Mar, etc.)
         user: The authenticated user (injected by the auth_guard dependency)
 
     Returns:
-        Progress summary with daily breakdowns, averages, and comparison to goals
+        Progress summary with period-based aggregation, averages, and comparison to goals
 
     Raises:
         HTTPException: If there is an error retrieving the progress data
@@ -290,47 +292,12 @@ async def get_progress(
     try:
         user_id = user.get("sub")
 
-        # Set end_date to today if not provided
-        if not end_date:
-            end_date = date.today()
-
-        # Handle period parameter (overrides start_date)
-        if period:
-            today = date.today()
-            period = period.replace(" ", "").lower()  # Normalize period input
-            if period == "1w":
-                start_date = today - timedelta(days=7)
-            elif period == "1m":
-                start_date = today - timedelta(days=30)
-            elif period == "3m":
-                start_date = today - timedelta(days=90)
-            elif period == "6m":
-                start_date = today - timedelta(days=180)
-            elif period == "1y":
-                start_date = today - timedelta(days=365)
-            elif period == "all":
-
-                start_date = await meal_service.get_first_meal_date(user_id)
-                if not start_date:
-                    start_date = today - timedelta(days=30)
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid period parameter: {period}",
-                )
-
-        if not start_date:
-            start_date = end_date - timedelta(days=30)
-
-        # Ensure start_date is before or equal to end_date
-        if start_date > end_date:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Start date must be before or equal to end date",
-            )
+        # Set default period if none provided
+        if not period:
+            period = "1w"  # Default to 1 week
 
         progress_summary = await meal_service.get_progress_summary(
-            user_id, start_date, end_date
+            user_id, period
         )
         return progress_summary
 

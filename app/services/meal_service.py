@@ -17,8 +17,8 @@ from app.models.meal import (
     LoggedMeal,
     MacroNutrients,
     DailyProgressResponse,
-    DailyMacroSummary,
     ProgressSummary,
+    MacroSummary,
     UpdateMealRequest,
     MealSearchRequest,
     MealSearchResponse,
@@ -556,27 +556,22 @@ class MealService:
             return None
 
     async def get_progress_summary(
-        self, user_id: str, start_date: date, end_date: date
+        self, user_id: str, period: str
     ) -> ProgressSummary:
-        """Generate a progress summary for the specified date range.
+        """Generate a progress summary with new aggregation logic based on period.
 
         Args:
             user_id: ID of the user
-            start_date: Start date for the summary
-            end_date: End date for the summary
+            period: Period type (1w, 1m, 3m, 6m, 1y, all)
 
         Returns:
-            ProgressSummary object with daily breakdowns, averages, and comparison to goals
+            ProgressSummary object with period-based aggregation
         """
-        logger.info(
-            f"Generating progress summary for user {user_id} from {start_date} to {end_date}"
-        )
+        logger.info(f"Generating progress summary for user {user_id} with period {period}")
 
         try:
             # Get the user's preference data for target macros
             preferences = await user_service.get_user_preferences(user_id)
-
-            # Set target macros from user preferences
             target_macros = MacroNutrients(
                 calories=preferences.get("calorie_target", 0),
                 protein=preferences.get("protein_target", 0),
@@ -584,111 +579,377 @@ class MealService:
                 fat=preferences.get("fat_target", 0),
             )
 
-            # Fetch meals within the date range
-            meals = await self.get_meals_by_date_range(user_id, start_date, end_date)
+            # Handle different period types
+            period = period.replace(" ", "").lower()
+            
+            if period == "1w":
+                return await self._get_weekly_progress(user_id, target_macros)
+            elif period == "1m":
+                return await self._get_monthly_weekly_progress(user_id, target_macros)
+            elif period == "3m":
+                return await self._get_quarterly_progress(user_id, target_macros)
+            elif period == "6m":
+                return await self._get_six_month_progress(user_id, target_macros)
+            elif period == "1y":
+                return await self._get_yearly_progress(user_id, target_macros)
 
-            # Group meals by date
-            daily_meals = defaultdict(list)
-            for meal in meals:
-                meal_date = meal.meal_time.date()
-                daily_meals[meal_date].append(meal)
-
-            # Create a list of all dates in the range
-            all_dates = []
-            current_date = start_date
-            while current_date <= end_date:
-                all_dates.append(current_date)
-                current_date += timedelta(days=1)
-
-            # Calculate daily macros for each date
-            daily_macros = []
-            total_calories = 0
-            total_protein = 0
-            total_carbs = 0
-            total_fat = 0
-
-            for day in all_dates:
-                day_meals = daily_meals.get(day, [])
-
-                daily_calories = sum(meal.calories for meal in day_meals)
-                daily_protein = sum(meal.protein for meal in day_meals)
-                daily_carbs = sum(meal.carbs for meal in day_meals)
-                daily_fat = sum(meal.fat for meal in day_meals)
-
-                daily_macros.append(
-                    DailyMacroSummary(
-                        date=day,
-                        calories=daily_calories,
-                        protein=daily_protein,
-                        carbs=daily_carbs,
-                        fat=daily_fat,
-                    )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid period parameter: {period}",
                 )
 
-                total_calories += daily_calories
-                total_protein += daily_protein
-                total_carbs += daily_carbs
-                total_fat += daily_fat
-
-            # Calculate averages
-            days_with_logs = len([d for d in daily_macros if d.calories > 0])
-            total_days = len(all_dates)
-
-            # Avoid division by zero
-            avg_divisor = max(days_with_logs, 1)
-
-            average_macros = MacroNutrients(
-                calories=round(total_calories / avg_divisor, 1),
-                protein=round(total_protein / avg_divisor, 1),
-                carbs=round(total_carbs / avg_divisor, 1),
-                fat=round(total_fat / avg_divisor, 1),
-            )
-
-            # Calculate comparison percentages
-            comparison_percentage = {
-                "calories": round(
-                    (average_macros.calories / target_macros.calories * 100)
-                    if target_macros.calories
-                    else 0,
-                    1,
-                ),
-                "protein": round(
-                    (average_macros.protein / target_macros.protein * 100)
-                    if target_macros.protein
-                    else 0,
-                    1,
-                ),
-                "carbs": round(
-                    (average_macros.carbs / target_macros.carbs * 100)
-                    if target_macros.carbs
-                    else 0,
-                    1,
-                ),
-                "fat": round(
-                    (average_macros.fat / target_macros.fat * 100)
-                    if target_macros.fat
-                    else 0,
-                    1,
-                ),
-            }
-
-            return ProgressSummary(
-                daily_macros=daily_macros,
-                average_macros=average_macros,
-                target_macros=target_macros,
-                comparison_percentage=comparison_percentage,
-                start_date=start_date,
-                end_date=end_date,
-                days_with_logs=days_with_logs,
-                total_days=total_days,
-            )
-
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error generating progress summary: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error generating progress summary",
             )
+
+    async def _get_weekly_progress(self, user_id: str, target_macros: MacroNutrients) -> ProgressSummary:
+        """Get progress aggregated by weekdays for current week."""
+        today = date.today()
+        # Get current week's Monday
+        days_since_monday = today.weekday()
+        week_start = today - timedelta(days=days_since_monday)
+        week_end = week_start + timedelta(days=6)
+        
+        # Fetch meals for the current week
+        meals = await self.get_meals_by_date_range(user_id, week_start, week_end)
+        
+        # Group meals by weekday
+        weekday_meals = {i: [] for i in range(7)}  # 0=Monday, 6=Sunday
+        for meal in meals:
+            weekday = meal.meal_time.date().weekday()
+            weekday_meals[weekday].append(meal)
+        
+        # Create weekday labels
+        weekday_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        
+        period_macros = []
+        total_calories = total_protein = total_carbs = total_fat = 0
+        days_with_logs = 0
+        
+        for i in range(7):
+            day_date = week_start + timedelta(days=i)
+            day_meals = weekday_meals[i]
+            
+            daily_calories = sum(meal.calories for meal in day_meals)
+            daily_protein = sum(meal.protein for meal in day_meals)
+            daily_carbs = sum(meal.carbs for meal in day_meals)
+            daily_fat = sum(meal.fat for meal in day_meals)
+            
+            if daily_calories > 0:
+                days_with_logs += 1
+                
+            period_macros.append(MacroSummary(
+                period_label=weekday_labels[i],
+                date=day_date,
+                calories=daily_calories,
+                protein=daily_protein,
+                carbs=daily_carbs,
+                fat=daily_fat,
+            ))
+            
+            total_calories += daily_calories
+            total_protein += daily_protein
+            total_carbs += daily_carbs
+            total_fat += daily_fat
+        
+        # Calculate averages
+        avg_divisor = max(days_with_logs, 1)
+        average_macros = MacroNutrients(
+            calories=round(total_calories / avg_divisor, 1),
+            protein=round(total_protein / avg_divisor, 1),
+            carbs=round(total_carbs / avg_divisor, 1),
+            fat=round(total_fat / avg_divisor, 1),
+        )
+        
+        comparison_percentage = self._calculate_comparison_percentage(average_macros, target_macros)
+        
+        return ProgressSummary(
+            period_macros=period_macros,
+            average_macros=average_macros,
+            target_macros=target_macros,
+            comparison_percentage=comparison_percentage,
+            start_date=week_start,
+            end_date=week_end,
+            period_type="weekdays",
+            aggregation_period="1w",
+            days_with_logs=days_with_logs,
+            total_days=7,
+        )
+
+    def _calculate_comparison_percentage(self, average_macros: MacroNutrients, target_macros: MacroNutrients) -> Dict[str, float]:
+        """Helper method to calculate comparison percentages."""
+        return {
+            "calories": round(
+                (average_macros.calories / target_macros.calories * 100)
+                if target_macros.calories
+                else 0,
+                1,
+            ),
+            "protein": round(
+                (average_macros.protein / target_macros.protein * 100)
+                if target_macros.protein
+                else 0,
+                1,
+            ),
+            "carbs": round(
+                (average_macros.carbs / target_macros.carbs * 100)
+                if target_macros.carbs
+                else 0,
+                1,
+            ),
+            "fat": round(
+                (average_macros.fat / target_macros.fat * 100)
+                if target_macros.fat
+                else 0,
+                1,
+            ),
+        }
+
+    async def _get_monthly_weekly_progress(self, user_id: str, target_macros: MacroNutrients) -> ProgressSummary:
+        """Get progress aggregated by weeks for current calendar month."""
+        import calendar
+        
+        today = date.today()
+        # Get current month boundaries
+        month_start = today.replace(day=1)
+        if month_start.month == 12:
+            next_month = month_start.replace(year=month_start.year + 1, month=1)
+        else:
+            next_month = month_start.replace(month=month_start.month + 1)
+        month_end = next_month - timedelta(days=1)
+        
+        # Fetch meals for the current month
+        meals = await self.get_meals_by_date_range(user_id, month_start, month_end)
+        
+        # Calculate weeks in the month
+        week_data = []
+        current_date = month_start
+        week_num = 1
+        
+        while current_date <= month_end:
+            # Find Monday of current week
+            days_since_monday = current_date.weekday()
+            week_monday = current_date - timedelta(days=days_since_monday)
+            week_sunday = week_monday + timedelta(days=6)
+            
+            # Only include if week overlaps with current month
+            if week_monday <= month_end:
+                week_data.append({
+                    "label": f"W{week_num}",
+                    "start": max(week_monday, month_start),
+                    "end": min(week_sunday, month_end)
+                })
+                week_num += 1
+            
+            current_date = week_sunday + timedelta(days=1)
+            if week_num > 6:  # Safety check
+                break
+        
+        period_macros = []
+        total_calories = total_protein = total_carbs = total_fat = 0
+        days_with_logs = 0
+        
+        for week_info in week_data:
+            week_start = week_info["start"]
+            week_end = week_info["end"]
+            week_label = week_info["label"]
+            
+            # Filter meals for this week
+            week_meals = [meal for meal in meals if week_start <= meal.meal_time.date() <= week_end]
+            
+            weekly_calories = sum(meal.calories for meal in week_meals)
+            weekly_protein = sum(meal.protein for meal in week_meals)
+            weekly_carbs = sum(meal.carbs for meal in week_meals)
+            weekly_fat = sum(meal.fat for meal in week_meals)
+            
+            # Count days with logs
+            week_dates_with_logs = set(meal.meal_time.date() for meal in week_meals)
+            days_with_logs += len(week_dates_with_logs)
+            
+            period_macros.append(MacroSummary(
+                period_label=week_label,
+                date=week_start,
+                calories=weekly_calories,
+                protein=weekly_protein,
+                carbs=weekly_carbs,
+                fat=weekly_fat,
+            ))
+            
+            total_calories += weekly_calories
+            total_protein += weekly_protein
+            total_carbs += weekly_carbs
+            total_fat += weekly_fat
+        
+        # Calculate averages
+        avg_divisor = max(len(week_data), 1)
+        average_macros = MacroNutrients(
+            calories=round(total_calories / avg_divisor, 1),
+            protein=round(total_protein / avg_divisor, 1),
+            carbs=round(total_carbs / avg_divisor, 1),
+            fat=round(total_fat / avg_divisor, 1),
+        )
+        
+        comparison_percentage = self._calculate_comparison_percentage(average_macros, target_macros)
+        
+        return ProgressSummary(
+            period_macros=period_macros,
+            average_macros=average_macros,
+            target_macros=target_macros,
+            comparison_percentage=comparison_percentage,
+            start_date=month_start,
+            end_date=month_end,
+            period_type="weeks",
+            aggregation_period="1m",
+            days_with_logs=days_with_logs,
+            total_days=(month_end - month_start).days + 1,
+        )
+
+    async def _get_quarterly_progress(self, user_id: str, target_macros: MacroNutrients) -> ProgressSummary:
+        """Get progress for last 3 complete months."""
+        import calendar
+        
+        today = date.today()
+        months_data = []
+        
+        for i in range(3, 0, -1):  # 3, 2, 1 months ago
+            if today.month - i > 0:
+                target_month = today.month - i
+                target_year = today.year
+            else:
+                target_month = today.month - i + 12
+                target_year = today.year - 1
+                
+            month_start = date(target_year, target_month, 1)
+            month_end = date(target_year, target_month, calendar.monthrange(target_year, target_month)[1])
+            
+            months_data.append({
+                "label": calendar.month_abbr[target_month],
+                "start": month_start,
+                "end": month_end
+            })
+        
+        return await self._get_monthly_aggregation(user_id, target_macros, months_data, "3m")
+
+    async def _get_six_month_progress(self, user_id: str, target_macros: MacroNutrients) -> ProgressSummary:
+        """Get progress for last 6 complete months."""
+        import calendar
+        
+        today = date.today()
+        months_data = []
+        
+        for i in range(6, 0, -1):  # 6, 5, 4, 3, 2, 1 months ago
+            if today.month - i > 0:
+                target_month = today.month - i
+                target_year = today.year
+            else:
+                target_month = today.month - i + 12
+                target_year = today.year - 1
+                
+            month_start = date(target_year, target_month, 1)
+            month_end = date(target_year, target_month, calendar.monthrange(target_year, target_month)[1])
+            
+            months_data.append({
+                "label": calendar.month_abbr[target_month],
+                "start": month_start,
+                "end": month_end
+            })
+        
+        return await self._get_monthly_aggregation(user_id, target_macros, months_data, "6m")
+
+    async def _get_yearly_progress(self, user_id: str, target_macros: MacroNutrients) -> ProgressSummary:
+        """Get progress for current calendar year by months."""
+        import calendar
+        
+        today = date.today()
+        current_year = today.year
+        months_data = []
+        
+        for month_num in range(1, 13):
+            month_start = date(current_year, month_num, 1)
+            month_end = date(current_year, month_num, calendar.monthrange(current_year, month_num)[1])
+            
+            months_data.append({
+                "label": calendar.month_abbr[month_num],
+                "start": month_start,
+                "end": month_end
+            })
+        
+        return await self._get_monthly_aggregation(user_id, target_macros, months_data, "1y")
+
+    async def _get_monthly_aggregation(self, user_id: str, target_macros: MacroNutrients, months_data: list, period_code: str) -> ProgressSummary:
+        """Helper method to aggregate meals by months."""
+        overall_start = months_data[0]["start"]
+        overall_end = months_data[-1]["end"]
+        
+        # Fetch all meals for the period
+        meals = await self.get_meals_by_date_range(user_id, overall_start, overall_end)
+        
+        period_macros = []
+        total_calories = total_protein = total_carbs = total_fat = 0
+        days_with_logs = 0
+        
+        for month_info in months_data:
+            month_start = month_info["start"]
+            month_end = month_info["end"]
+            month_label = month_info["label"]
+            
+            # Filter meals for this month
+            month_meals = [meal for meal in meals if month_start <= meal.meal_time.date() <= month_end]
+            
+            monthly_calories = sum(meal.calories for meal in month_meals)
+            monthly_protein = sum(meal.protein for meal in month_meals)
+            monthly_carbs = sum(meal.carbs for meal in month_meals)
+            monthly_fat = sum(meal.fat for meal in month_meals)
+            
+            # Count days with logs in this month
+            month_dates_with_logs = set(meal.meal_time.date() for meal in month_meals)
+            days_with_logs += len(month_dates_with_logs)
+            
+            period_macros.append(MacroSummary(
+                period_label=month_label,
+                date=month_start,
+                calories=monthly_calories,
+                protein=monthly_protein,
+                carbs=monthly_carbs,
+                fat=monthly_fat,
+            ))
+            
+            total_calories += monthly_calories
+            total_protein += monthly_protein
+            total_carbs += monthly_carbs
+            total_fat += monthly_fat
+        
+        # Calculate averages
+        avg_divisor = max(len(months_data), 1)
+        average_macros = MacroNutrients(
+            calories=round(total_calories / avg_divisor, 1),
+            protein=round(total_protein / avg_divisor, 1),
+            carbs=round(total_carbs / avg_divisor, 1),
+            fat=round(total_fat / avg_divisor, 1),
+        )
+        
+        comparison_percentage = self._calculate_comparison_percentage(average_macros, target_macros)
+        
+        return ProgressSummary(
+            period_macros=period_macros,
+            average_macros=average_macros,
+            target_macros=target_macros,
+            comparison_percentage=comparison_percentage,
+            start_date=overall_start,
+            end_date=overall_end,
+            period_type="months",
+            aggregation_period=period_code,
+            days_with_logs=days_with_logs,
+            total_days=(overall_end - overall_start).days + 1,
+        )
+
+
 
     async def update_meal(self, user_id: str, meal_id: str, meal_data: "UpdateMealRequest") -> LoggedMeal:
         """Update a logged meal for a user.
@@ -951,7 +1212,7 @@ class MealService:
         file_path = generate_meal_photo_path(user_id, meal_id, file_extension)
 
         # Upload using the generalized function
-        return await upload_file_to_bucket(file_content, file_path, content_type, settings.MEAL_PHOTO_BUCKET_NAME)
+        return await upload_file_to_bucket(file_content, file_path, content_type)
 
     async def update_meal_photo_url(self, user_id: str, meal_id: str, photo_url: str) -> None:
         """Update the photo URL for a meal in the database.

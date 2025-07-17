@@ -319,9 +319,10 @@ class DailyProgressResponse(BaseModel):
     progress_percentage: Dict[str, float]
 
 
-class DailyMacroSummary(BaseModel):
-    """Summary of daily macro intake for progress tracking."""
-    date: date
+class MacroSummary(BaseModel):
+    """Summary of macro intake for a time period (day, week, month)."""
+    period_label: str  # e.g., "Mon", "W1", "January"
+    date: date  # Reference date for the period
     calories: float = 0
     protein: float = 0
     carbs: float = 0
@@ -329,15 +330,26 @@ class DailyMacroSummary(BaseModel):
 
 
 class ProgressSummary(BaseModel):
-    """Summary of progress for a time period."""
-    daily_macros: List[DailyMacroSummary]
+    """Summary of progress for a time period with new aggregation."""
+    period_macros: List[MacroSummary]  # Renamed from daily_macros
     average_macros: MacroNutrients
     target_macros: MacroNutrients
     comparison_percentage: Dict[str, float]
     start_date: date
     end_date: date
+    period_type: str  # "weekdays", "weeks", "months"
+    aggregation_period: str  # "1w", "1m", "3m", etc.
     days_with_logs: int
     total_days: int
+
+
+class DailyMacroSummary(BaseModel):
+    """Summary of daily macro intake for progress tracking."""
+    date: date
+    calories: float = 0
+    protein: float = 0
+    carbs: float = 0
+    fat: float = 0
 
 
 class MealSearchRequest(BaseModel):
