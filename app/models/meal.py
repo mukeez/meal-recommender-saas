@@ -150,7 +150,8 @@ class ServingUnitEnum(str, Enum):
     PLATE = "plate"
     SCOOP = "scoop"
     SLICE = "slice"
-    MILL = "mill"
+    BOWL = "bowl"
+    ML = "ml"
 
 
 class LogMealRequest(BaseModel):
