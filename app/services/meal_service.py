@@ -6,6 +6,8 @@ import logging
 from typing import Dict, Any, List, Optional
 from collections import defaultdict
 from datetime import datetime, date, time, timedelta
+import calendar
+from dateutil.relativedelta import relativedelta
 
 import httpx
 from fastapi import HTTPException, status
@@ -811,20 +813,18 @@ class MealService:
         )
 
     async def _get_quarterly_progress(self, user_id: str, target_macros: MacroNutrients) -> ProgressSummary:
-        """Get progress for last 3 complete months."""
-        import calendar
+        """Get progress for the current and previous 2 months."""
         
         today = date.today()
         months_data = []
         
-        for i in range(3, 0, -1):  # 3, 2, 1 months ago
-            if today.month - i > 0:
-                target_month = today.month - i
-                target_year = today.year
-            else:
-                target_month = today.month - i + 12
-                target_year = today.year - 1
-                
+        # Loop for current month and 2 previous months (2, 1, 0 months ago)
+        for i in range(2, -1, -1):
+            # Calculate the target month by subtracting `i` months from today
+            target_date = today - relativedelta(months=i)
+            target_month = target_date.month
+            target_year = target_date.year
+            
             month_start = date(target_year, target_month, 1)
             month_end = date(target_year, target_month, calendar.monthrange(target_year, target_month)[1])
             
@@ -837,20 +837,18 @@ class MealService:
         return await self._get_monthly_aggregation(user_id, target_macros, months_data, "3m")
 
     async def _get_six_month_progress(self, user_id: str, target_macros: MacroNutrients) -> ProgressSummary:
-        """Get progress for last 6 complete months."""
-        import calendar
+        """Get progress for the current and previous 5 months."""
         
         today = date.today()
         months_data = []
         
-        for i in range(6, 0, -1):  # 6, 5, 4, 3, 2, 1 months ago
-            if today.month - i > 0:
-                target_month = today.month - i
-                target_year = today.year
-            else:
-                target_month = today.month - i + 12
-                target_year = today.year - 1
-                
+        # Loop for current month and 5 previous months (5, 4, 3, 2, 1, 0 months ago)
+        for i in range(5, -1, -1):
+            # Calculate the target month by subtracting `i` months from today
+            target_date = today - relativedelta(months=i)
+            target_month = target_date.month
+            target_year = target_date.year
+            
             month_start = date(target_year, target_month, 1)
             month_end = date(target_year, target_month, calendar.monthrange(target_year, target_month)[1])
             
