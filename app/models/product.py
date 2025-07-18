@@ -22,12 +22,13 @@ def parse_datetime(dt_str: Any) -> datetime | Any:
     if not dt_str:
         return datetime.now()
 
-    if "Z" in dt_str:
-        dt_str = dt_str.replace("Z", "+00:00")
+    if isinstance(dt_str, str):
+        if "Z" in dt_str:
+            dt_str = dt_str.replace("Z", "+00:00")
 
     try:
         return datetime.fromisoformat(dt_str)
-    except ValueError:
+    except:
         return datetime.now()
 
 
@@ -50,11 +51,13 @@ class NutritionFacts(BaseModel):
         Optional[float],
         Field(description="Estimated fat content in grams per serving."),
     ]
-    quantity: Annotated[
+    amount: Annotated[
+        Optional[float],
+        Field(description="Serving amount/quantity as a numeric value."),
+    ]
+    serving_unit: Annotated[
         Optional[str],
-        Field(
-            description="Estimated quantity or serving size (e.g., '1 serving', '150g')."
-        ),
+        Field(description="Unit of measurement for the serving (e.g., 'grams', 'ounces')."),
     ]
 
 
@@ -189,3 +192,76 @@ class ProductList(BaseModel):
             description="The total number of products available across all pages.",
         ),
     ]
+
+
+class ProductWithNutrition(BaseModel):
+    """Product model with merged nutrition facts (no gpt_nutrition_facts).
+
+    Attributes:
+        barcode: The unique barcode or identifier of the product
+        product_name: The common or descriptive name of the product
+        brand_name: The name of the brand that manufactures the product
+        ingredients: A list or description of the ingredients contained in the product
+        nutrition_facts: Merged nutritional information (nutrition_facts or gpt_nutrition_facts)
+    """
+    barcode: Annotated[
+        str,
+        Field(
+            ...,
+            alias="code",
+            description="The unique barcode or identifier of the product.",
+        ),
+    ]
+    product_name: Annotated[
+        str, Field(..., description="The common or descriptive name of the product.")
+    ]
+    brand_name: Annotated[
+        str,
+        Field(
+            ...,
+            alias="brands",
+            description="The name of the brand that manufactures the product.",
+        ),
+    ]
+    ingredients: Annotated[
+        Optional[str],
+        Field(
+            None,
+            alias="ingredients_text",
+            description="A list or description of the ingredients contained in the product.",
+        ),
+    ]
+    nutrition_facts: Annotated[
+        Optional[NutritionFacts],
+        Field(None, description="Merged nutritional information (nutrition_facts or gpt_nutrition_facts)."),
+    ]
+
+    model_config = ConfigDict(
+        validate_assignment=True, populate_by_name=True, from_attributes=True
+    )
+
+
+class ProductNutritionResponse(BaseModel):
+    """Response model for product search results with merged nutrition facts.
+
+    Attributes:
+        products: List of products with merged nutrition facts
+        total_products: Total count of products found
+        search_query: The search term that was used
+    """
+    products: List[ProductWithNutrition] = Field(default_factory=list, description="Products with merged nutrition facts")
+    total_products: int = Field(0, description="Total count of products found")
+    search_query: str = Field(..., description="The search term that was used")
+
+
+class ProductSearchResponse(BaseModel):
+    """Response model for product search results.
+
+    Attributes:
+        logged_meals: List of matching products (treated as meals for unified response)
+        total_logged_meals: Total count of products found
+        search_query: The search term that was used
+    """
+    logged_meals: List[Product] = Field(default_factory=list, description="Matching products (treated as meals for unified response)")
+    total_logged_meals: int = Field(0, description="Total count of products found")
+    search_query: str = Field(..., description="The search term that was used")

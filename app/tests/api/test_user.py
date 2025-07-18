@@ -185,3 +185,26 @@ class TestUserEndpoint:
         assert response.json() == updated_preferences_data
 
         mock_user_patch_preferences.assert_called_once()
+
+    async def test_update_unit_preference(
+        self, authenticated_client, mock_user_patch_preferences
+    ):
+        """Test updating user's unit preference from kg to imperial."""
+
+        updated_preferences_data = UserTestConstants.MOCK_USER_PROFILE_DATA.value.copy()
+        updated_preferences_data["unit_preference"] = "imperial"
+
+        mock_user_patch_preferences.return_value = httpx.Response(
+            200, json=[updated_preferences_data]
+        )
+
+        response = authenticated_client.patch(
+            f"{settings.API_V1_STR}/user/me",
+            json={"unit_preference": "imperial"},
+        )
+        
+        assert response.status_code == 200
+        assert response.json()["unit_preference"] == "imperial"
+
+        mock_user_patch_preferences.assert_called_once()
+

@@ -1,0 +1,11 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: api.macromealsapp.com
+  namespace: macromeals-api-ns
+spec:
+  secretName: macromeals-api-tls
+  issuerRef:
+    name: letsencrypt-prod-issuer
+  dnsNames:
+    - api.macromealsapp.com

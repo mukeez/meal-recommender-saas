@@ -22,18 +22,23 @@ class Settings:
         self.API_V1_STR = "/api/v1"
         self.PROJECT_NAME = "Meal Recommender API"
         self.DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+        self.ENVIRONMENT = os.getenv("ENV", "development")
 
         # Supabase Settings
         self.SUPABASE_URL = os.getenv("SUPABASE_URL")
         self.SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
         self.SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
-        self.SUPABASE_BUCKET_NAME = os.getenv("SUPABASE_BUCKET_NAME", "avatars")
+
 
 
         # AI API Settings
         self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
         if not self.OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY environment variable is not set")
+
+        self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+        if not self.GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY environment variable is not set")
 
         self.MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4")
 
@@ -45,20 +50,28 @@ class Settings:
         # Stripe API Settings
         self.STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
         self.STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
-        self.STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
+        self.STRIPE_MONTHLY_PRICE_ID = os.getenv("STRIPE_MONTHLY_PRICE_ID")
+        self.STRIPE_YEARLY_PRICE_ID = os.getenv("STRIPE_YEARLY_PRICE_ID")
         self.STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
 
         # AWS SETTINGS
         self.AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
         self.AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
         self.AWS_REGION = os.getenv("AWS_REGION")
+        self.S3_MEDIA_NAME = os.getenv("S3_MEDIA_NAME")  # S3 bucket for media uploads
 
-        # Slack Settings
+        # Firebase Settings
+        self.FIREBASE_SERVICE_ACCOUNT_FILE = os.getenv("FIREBASE_SERVICE_ACCOUNT_FILE")
+        if not self.FIREBASE_SERVICE_ACCOUNT_FILE:
+            raise ValueError("FIREBASE_SERVICE_ACCOUNT_FILE environment variable is not set")
+        self.FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID")
+        if not self.FIREBASE_PROJECT_ID:
+            raise ValueError("FIREBASE_PROJECT_ID environment variable is not set")        # Slack Settings
         self.SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
         self.SLACK_ALERT_CHANNEL = "#macromeals-alerts"
 
         # Redis Settings
-        self.REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+        self.REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
         self.REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
         # Email Settings

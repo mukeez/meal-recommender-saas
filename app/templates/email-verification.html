@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="email-container">
+  <h2>Verify Your Email Address</h2>
+  <p>Hello{% if user_name %} {{ user_name }}{% endif %},</p>
+  
+  <p>Welcome to MacroMeals! To complete your account setup, please verify your email address by entering the verification code below in the app:</p>
+  
+  <div style="text-align: center; margin: 30px 0;">
+    <div style="background-color: #f8f9fa; border: 2px solid #4CAF50; border-radius: 8px; padding: 20px; display: inline-block;">
+      <p style="margin: 0; font-size: 14px; color: #666; margin-bottom: 10px;">Your verification code:</p>
+      <h1 style="margin: 0; font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #4CAF50; font-family: monospace;">{{ otp_code }}</h1>
+    </div>
+  </div>
+  
+  <p style="text-align: center; color: #666; font-size: 14px;">Enter this 6-digit code in the MacroMeals app to verify your email address.</p>
+  
+  <p>This verification code will expire in {{ expiry_minutes }} minutes.</p>
+  
+  <p>If you didn't create an account with MacroMeals, please ignore this email.</p>
+  
+  <p>Need help? Contact our support team.</p>
+</div>
+{% endblock %} 

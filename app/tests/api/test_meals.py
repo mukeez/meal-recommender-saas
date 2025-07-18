@@ -1,11 +1,14 @@
 import pytest
 from fastapi import HTTPException, status
 from app.core.config import settings
+from app.tests.constants.user import UserTestConstants
 from app.tests.constants.location import MOCK_LOCATION_DATA
 from app.tests.constants.macros import MOCK_MACRO_DATA
 from app.tests.constants.meals import MOCK_RESTAURANT_DATA
 import httpx
 from unittest.mock import patch
+from datetime import date
+from app.models.meal import UpdateMealRequest
 
 
 @pytest.mark.asyncio
@@ -109,7 +112,7 @@ class TestMealsEndpoint:
             "protein": 35,
             "carbs": 50,
             "fat": 15,
-            "timestamp": "2025-05-31T12:00:00Z",
+            "meal_time": "2025-05-31T12:00:00Z",
             "meal_type": "lunch"
         }
 
@@ -173,7 +176,7 @@ class TestMealsEndpoint:
                 "protein": 15,
                 "carbs": 50,
                 "fat": 5,
-                "timestamp": "2025-05-31T08:00:00Z",
+                "meal_time": "2025-05-31T08:00:00Z",
                 "meal_type": "breakfast"
             },
             {
@@ -185,7 +188,7 @@ class TestMealsEndpoint:
                 "protein": 35,
                 "carbs": 50,
                 "fat": 15,
-                "timestamp": "2025-05-31T12:00:00Z",
+                "meal_time": "2025-05-31T12:00:00Z",
                 "meal_type": "lunch"
             }
         ]
@@ -265,3 +268,316 @@ class TestMealsEndpoint:
         assert response.status_code == 500
         assert "Error calculating daily progress" in response.json()["detail"]
         mock_meal_get_progress.assert_called_once()
+
+    async def test_get_progress_summary_success(
+        self, authenticated_client, mock_meal_get_progress_summary
+    ):
+        """Integration test for successful progress summary retrieval."""
+
+        # Mock progress summary response
+        expected_values = {
+            "daily_macros": [
+                {
+                    "date": "2025-06-01",
+                    "calories": 1800,
+                    "protein": 120,
+                    "carbs": 180,
+                    "fat": 60
+                },
+                {
+                    "date": "2025-06-02",
+                    "calories": 2100,
+                    "protein": 140,
+                    "carbs": 200,
+                    "fat": 70
+                }
+            ],
+            "average_macros": {
+                "calories": 1950.0,
+                "protein": 130.0,
+                "carbs": 190.0,
+                "fat": 65.0
+            },
+            "target_macros": {
+                "calories": 2000,
+                "protein": 150,
+                "carbs": 200,
+                "fat": 70
+            },
+            "comparison_percentage": {
+                "calories": 97.5,
+                "protein": 86.7,
+                "carbs": 95.0,
+                "fat": 92.9
+            },
+            "start_date": "2025-06-01",
+            "end_date": "2025-06-02",
+            "days_with_logs": 2,
+            "total_days": 2
+        }
+
+        mock_meal_get_progress_summary.return_value = expected_values
+
+        # Test with explicit start_date and end_date
+        response = authenticated_client.get(
+            f"{settings.API_V1_STR}/meals/progress?start_date=2025-06-01&end_date=2025-06-02"
+        )
+
+        assert response.status_code == 200
+        assert response.json() == expected_values
+        
+        # Verify the mock was called with correct parameters
+        mock_meal_get_progress_summary.assert_called_with(
+            UserTestConstants.MOCK_USER_ID.value, 
+            pytest.approx(date(2025, 6, 1)), 
+            pytest.approx(date(2025, 6, 2))
+        )
+        
+        # Reset the mock for the next call
+        mock_meal_get_progress_summary.reset_mock()
+        mock_meal_get_progress_summary.return_value = expected_values
+        
+        # Test with period parameter
+        response = authenticated_client.get(
+            f"{settings.API_V1_STR}/meals/progress?period=1W"
+        )
+        
+        assert response.status_code == 200
+        assert response.json() == expected_values
+        
+        assert mock_meal_get_progress_summary.called
+        
+        # Testing default parameters (no query params)
+        mock_meal_get_progress_summary.reset_mock()
+        mock_meal_get_progress_summary.return_value = expected_values
+        
+        response = authenticated_client.get(
+            f"{settings.API_V1_STR}/meals/progress"
+        )
+        
+        assert response.status_code == 200
+        assert response.json() == expected_values
+        assert mock_meal_get_progress_summary.called
+
+   
+    async def test_get_progress_summary_failed(
+        self, authenticated_client, mock_meal_get_progress_summary
+    ):
+        """Integration test for failed progress summary retrieval."""
+
+        mock_meal_get_progress_summary.side_effect = Exception("Database error")
+
+        response = authenticated_client.get(
+            f"{settings.API_V1_STR}/meals/progress?period=1M"
+        )
+
+        assert response.status_code == 500
+        assert "Error retrieving progress data" in response.json()["detail"]
+        assert mock_meal_get_progress_summary.called
+
+    async def test_get_progress_summary_empty_state(
+        self, authenticated_client, mock_meal_get_progress_summary, mock_meal_get_first_date
+    ):
+        """Test progress summary with no meal data."""
+        
+        # Set up mocks to simulate empty state
+        mock_meal_get_first_date.return_value = None
+        
+        # Create empty response data
+        empty_response = {
+            "daily_macros": [],  # This would actually contain date entries with zero values
+            "average_macros": {
+                "calories": 0,
+                "protein": 0,
+                "carbs": 0,
+                "fat": 0
+            },
+            "target_macros": {
+                "calories": 2000,
+                "protein": 150,
+                "carbs": 200,
+                "fat": 70
+            },
+            "comparison_percentage": {
+                "calories": 0,
+                "protein": 0,
+                "carbs": 0,
+                "fat": 0
+            },
+            "start_date": "2025-06-01",
+            "end_date": "2025-06-07",
+            "days_with_logs": 0,
+            "total_days": 7
+        }
+        
+        mock_meal_get_progress_summary.return_value = empty_response
+        
+        response = authenticated_client.get(
+            f"{settings.API_V1_STR}/meals/progress?start_date=2025-06-01&end_date=2025-06-07"
+        )
+        
+        assert response.status_code == 200
+        assert response.json()["days_with_logs"] == 0
+        assert response.json()["average_macros"]["calories"] == 0
+        assert response.json()["comparison_percentage"]["protein"] == 0
+
+    async def test_update_meal_success(
+        self, authenticated_client, mock_meal_update
+    ):
+        """Integration test for successful meal update."""
+
+        from app.tests.constants.meals import MOCK_MEAL_ID, MOCK_UPDATE_MEAL_DATA, MOCK_UPDATED_MEAL_RESPONSE
+
+        expected_values = MOCK_UPDATED_MEAL_RESPONSE["meal"]
+        mock_meal_update.return_value = expected_values
+
+        response = authenticated_client.put(
+            f"{settings.API_V1_STR}/meals/{MOCK_MEAL_ID}",
+            json=MOCK_UPDATE_MEAL_DATA
+        )
+
+        assert response.status_code == 200
+        assert response.json() == MOCK_UPDATED_MEAL_RESPONSE
+        mock_meal_update.assert_called_once_with(
+            UserTestConstants.MOCK_USER_ID.value,
+            MOCK_MEAL_ID,
+            UpdateMealRequest(**MOCK_UPDATE_MEAL_DATA)
+        )
+
+    async def test_update_meal_failed(
+        self, authenticated_client, mock_meal_update
+    ):
+        """Integration test for failed meal update."""
+
+        from app.tests.constants.meals import MOCK_MEAL_ID, MOCK_UPDATE_MEAL_DATA
+
+        mock_meal_update.side_effect = Exception("Database error")
+
+        response = authenticated_client.put(
+            f"{settings.API_V1_STR}/meals/{MOCK_MEAL_ID}",
+            json=MOCK_UPDATE_MEAL_DATA
+        )
+
+        assert response.status_code == 500
+        assert "Error updating meal" in response.json()["detail"]
+        mock_meal_update.assert_called_once()
+
+    async def test_update_meal_partial_data(
+        self, authenticated_client, mock_meal_update
+    ):
+        """Integration test for meal update with partial data."""
+
+        from app.tests.constants.meals import MOCK_MEAL_ID
+
+        partial_update_data = {
+            "name": "Updated Meal Name",
+            "calories": 600
+        }
+
+        expected_values = {
+            "id": MOCK_MEAL_ID,
+            "user_id": "user-123",
+            "name": "Updated Meal Name",
+            "description": "Original description",
+            "calories": 600,
+            "protein": 35,
+            "carbs": 50,
+            "fat": 15,
+            "meal_time": "2025-05-31T12:00:00Z",
+            "meal_type": "lunch"
+        }
+
+        mock_meal_update.return_value = expected_values
+
+        response = authenticated_client.put(
+            f"{settings.API_V1_STR}/meals/{MOCK_MEAL_ID}",
+            json=partial_update_data
+        )
+
+        assert response.status_code == 200
+        assert response.json()["meal"]["name"] == "Updated Meal Name"
+        assert response.json()["meal"]["calories"] == 600
+        mock_meal_update.assert_called_once_with(
+            UserTestConstants.MOCK_USER_ID.value,
+            MOCK_MEAL_ID,
+            UpdateMealRequest(**partial_update_data)
+        )
+
+    async def test_delete_meal_success(
+        self, authenticated_client, mock_meal_delete
+    ):
+        """Integration test for successful meal deletion."""
+
+        from app.tests.constants.meals import MOCK_MEAL_ID, MOCK_DELETE_MEAL_RESPONSE
+
+        mock_meal_delete.return_value = MOCK_MEAL_ID
+
+        response = authenticated_client.delete(
+            f"{settings.API_V1_STR}/meals/{MOCK_MEAL_ID}"
+        )
+
+        assert response.status_code == 200
+        assert response.json() == MOCK_DELETE_MEAL_RESPONSE
+        mock_meal_delete.assert_called_once_with(
+            UserTestConstants.MOCK_USER_ID.value,
+            MOCK_MEAL_ID
+        )
+
+    async def test_delete_meal_failed(
+        self, authenticated_client, mock_meal_delete
+    ):
+        """Integration test for failed meal deletion."""
+
+        from app.tests.constants.meals import MOCK_MEAL_ID
+
+        mock_meal_delete.side_effect = Exception("Database error")
+
+        response = authenticated_client.delete(
+            f"{settings.API_V1_STR}/meals/{MOCK_MEAL_ID}"
+        )
+
+        assert response.status_code == 500
+        assert "Error deleting meal" in response.json()["detail"]
+        mock_meal_delete.assert_called_once()
+
+    async def test_update_meal_not_found(
+        self, authenticated_client, mock_meal_update
+    ):
+        """Integration test for updating a non-existent meal."""
+
+        from app.tests.constants.meals import MOCK_UPDATE_MEAL_DATA
+        from fastapi import HTTPException, status
+
+        mock_meal_update.side_effect = HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Meal not found or does not belong to user"
+        )
+
+        response = authenticated_client.put(
+            f"{settings.API_V1_STR}/meals/non-existent-id",
+            json=MOCK_UPDATE_MEAL_DATA
+        )
+
+        assert response.status_code == 404
+        assert "Meal not found" in response.json()["detail"]
+        mock_meal_update.assert_called_once()
+
+    async def test_delete_meal_not_found(
+        self, authenticated_client, mock_meal_delete
+    ):
+        """Integration test for deleting a non-existent meal."""
+
+        from fastapi import HTTPException, status
+
+        mock_meal_delete.side_effect = HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Meal not found or does not belong to user"
+        )
+
+        response = authenticated_client.delete(
+            f"{settings.API_V1_STR}/meals/non-existent-id"
+        )
+
+        assert response.status_code == 404
+        assert "Meal not found" in response.json()["detail"]
+        mock_meal_delete.assert_called_once()

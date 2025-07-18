@@ -14,9 +14,13 @@ class LoginRequest(BaseModel):
     Attributes:
         email: User's email address
         password: User's password
+        fcm_token: Optional Firebase Cloud Messaging token for push notifications
     """
     email: EmailStr = Field(..., description="User's email address")
     password: str = Field(..., description="User's password")
+    fcm_token: Optional[str] = Field(
+        None, description="Firebase Cloud Messaging token for push notifications"
+    )
 
 
 class UserMetadata(BaseModel):
@@ -66,10 +70,14 @@ class SignupRequest(BaseModel):
         email: User's email address
         password: User's password
         display_name: User's display name (optional)
+        fcm_token: Optional Firebase Cloud Messaging token for push notifications
     """
     email: EmailStr = Field(..., description="User's email address")
     password: str = Field(..., min_length=6, description="User's password (min 6 characters)")
     display_name: Optional[str] = Field(None, description="User's display name")
+    fcm_token: Optional[str] = Field(
+        None, description="Firebase Cloud Messaging token for push notifications"
+    )
 
     @field_validator('password')
     def validate_password_length(cls, value):
@@ -80,21 +88,23 @@ class SignupRequest(BaseModel):
     
 
 class ResetPasswordRequest(BaseModel):
-    """
-    ResetPasswordRequest represents the request model for resetting a user's password.
-    
-    This model is used when a user completes the password reset flow after verifying 
-    their identity with an OTP. It contains the user's email, new password, and the 
-    session token obtained during OTP verification.
-    
+    """Reset password request model.
+
     Attributes:
-        email (EmailStr): The email address of the user requesting password reset.
-        new_password (str): The new password that will replace the user's current password.
-        session_token (str): The verification token received after successful OTP validation.
+        email: User's email address
+        password: New password
+        session_token: Session token from OTP verification
     """
-    email: Annotated[EmailStr, Field(..., description="User's email address for password reset")]
-    new_password: Annotated[str, Field(..., description="The new password to set for the user account")]
-    session_token: Annotated[str, Field(..., description="Session token for password reset verification")]
+    email: EmailStr = Field(..., description="User's email address")
+    password: str = Field(..., min_length=6, description="New password (min 6 characters)")
+    session_token: str = Field(..., description="Session token from OTP verification")
+
+    @field_validator('password')
+    def validate_password_length(cls, value):
+        """Validate password meets minimum length requirement."""
+        if len(value) < 6:
+            raise ValueError("Password must be at least 6 characters long")
+        return value
 
 
 class VerifyOtpResponse(BaseModel):
@@ -122,4 +132,70 @@ class VerifyOtpRequest(BaseModel):
     """
     email: Annotated[EmailStr, Field(..., description="User's email address for verification")]
     otp: Annotated[str, Field(..., description="One-time password code to verify")]
+
+
+class VerifyEmailRequest(BaseModel):
+    """Email verification request model.
+
+    Attributes:
+        email: User's email address
+        otp: OTP code for verification
+    """
+    email: EmailStr = Field(..., description="User's email address")
+    otp: str = Field(..., description="6-digit OTP code for verification")
+
+
+class VerifyEmailResponse(BaseModel):
+    """Email verification response model.
+
+    Attributes:
+        message: Success message
+        verified: Whether verification was successful
+    """
+    message: str = Field(..., description="Response message")
+    verified: bool = Field(..., description="Whether email was verified successfully")
+
+
+class ResendVerificationRequest(BaseModel):
+    """Resend verification email request model.
+
+    Attributes:
+        email: User's email address
+    """
+    email: EmailStr = Field(..., description="User's email address")
+
+
+class ResendVerificationResponse(BaseModel):
+    """Resend verification email response model.
+
+    Attributes:
+        message: Success message
+    """
+    message: str = Field(..., description="Success message")
+
+
+class RefreshTokenRequest(BaseModel):
+    """Refresh token request model.
+
+    Attributes:
+        refresh_token: The refresh token to exchange for new tokens
+    """
+    refresh_token: str = Field(..., description="Refresh token")
+
+
+class RefreshTokenResponse(BaseModel):
+    """Refresh token response model.
+
+    Attributes:
+        access_token: New access token
+        refresh_token: New refresh token  
+        expires_in: Expiration time in seconds for access token
+        expires_at: Timestamp when access token expires
+        user: User metadata
+    """
+    access_token: str = Field(..., description="New access token")
+    refresh_token: str = Field(..., description="New refresh token")
+    expires_in: int = Field(..., description="Expiration time in seconds for access token")
+    expires_at: int = Field(..., description="Timestamp when access token expires")
+    user: UserMetadata = Field(..., description="User metadata")
 

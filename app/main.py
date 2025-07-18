@@ -22,9 +22,12 @@ from app.api.endpoints import (
     location,
     billing,
     products,
+    notifications,
+    contact,
 )
 from app.core.config import settings
 from app.tasks.macromeals_tasks import macromeals_tasks
+from app.utils.cloudwatch_middleware import CloudWatchLoggingMiddleware
 import logging
 import json
 
@@ -39,6 +42,46 @@ scheduler = BackgroundScheduler()
 
 # scheduled for midnight each day
 scheduler.add_job(macromeals_tasks.downgrade_users, CronTrigger(hour="0"))
+
+# scheduled for 8:00 AM each day
+scheduler.add_job(
+    macromeals_tasks.schedule_start_of_day_meal_reminders, CronTrigger(hour="8")
+)
+
+# scheduled for 8:10 AM daily
+scheduler.add_job(
+    macromeals_tasks.schedule_custom_meal_reminders_breakfast,
+    CronTrigger(hour="8", minute="10"),
+)
+
+# scheduled for 8:20 AM daily
+scheduler.add_job(
+    macromeals_tasks.send_trial_expiry_notification_24_hours_prior,
+    CronTrigger(hour="8", minute="20"),
+)
+
+# scheduled for 12:00 PM daily
+scheduler.add_job(
+    macromeals_tasks.schedule_custom_meal_reminders_dinner,
+    CronTrigger(hour="12"),
+)
+
+# scheduled for 5:00 PM each day
+scheduler.add_job(
+    macromeals_tasks.schedule_end_of_day_meal_reminders, CronTrigger(hour="17")
+)
+
+# scheduled for 7:00 PM daily
+scheduler.add_job(
+    macromeals_tasks.schedule_custom_meal_reminders_dinner,
+    CronTrigger(hour="19"),
+)
+
+# scheduled for 8:00 PM daily
+scheduler.add_job(
+    macromeals_tasks.trigger_macro_goal_completion_notification,
+    CronTrigger(hour="20"),
+)
 
 
 @asynccontextmanager
@@ -97,6 +140,19 @@ async def custom_swagger_ui_html():
 
 app.openapi = custom_openapi
 
+# CloudWatch logging middleware
+if settings.ENVIRONMENT == "development":
+    log_group_name = "meal-recommender-api-dev"
+else:
+    log_group_name = "meal-recommender-api"
+
+app.add_middleware(
+    CloudWatchLoggingMiddleware,
+    log_group_name=log_group_name,
+    batch_size=10,
+    batch_timeout=30
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -145,6 +201,18 @@ app.include_router(
 
 app.include_router(
     products.router, prefix=f"{settings.API_V1_STR}/products", tags=["products"]
+)
+
+app.include_router(
+    notifications.router,
+    prefix=f"{settings.API_V1_STR}/notifications",
+    tags=["notifications"],
+)
+
+app.include_router(
+    contact.router,
+    prefix=f"{settings.API_V1_STR}/contact",
+    tags=["contact"],
 )
 
 

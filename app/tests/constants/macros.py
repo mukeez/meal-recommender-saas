@@ -1,25 +1,37 @@
 from enum import Enum
+from app.models.macro_tracking import Sex, ActivityLevel, GoalType
+from app.models.user import HeightUnitPreference, WeightUnitPreference
 
 
 class MacrosTestConstants(Enum):
+    """Constants for testing the macros endpoints."""
     AGE = 30
-    WEIGHT = 84
-    HEIGHT = 1.8
-    SEX = "male"
-    ACTIVITY_LEVEL = "moderate"
-    GOAL = "gain"
-    UNIT_SYSTEM = "metric"
-    MOCK_CALORIES = 2000
-    MOCK_PROTEIN = 150
-    MOCK_CARBS = 200
-    MOCK_FAT = 70
+    WEIGHT = 80.0  # kg
+    HEIGHT = 180.0  # cm
+    SEX = Sex.MALE.value
+    ACTIVITY_LEVEL = ActivityLevel.MODERATE.value
+    GOAL_TYPE = GoalType.MAINTAIN.value
+    PROGRESS_RATE = 0.0  # No weight change
+    HEIGHT_UNIT_PREFERENCE = HeightUnitPreference.METRIC.value
+    WEIGHT_UNIT_PREFERENCE = WeightUnitPreference.METRIC.value
 
 
-# Convenient dictionary for test use
+# Mock data for macro calculator response
 MOCK_MACRO_DATA = {
-    "calories": MacrosTestConstants.MOCK_CALORIES.value,
-    "protein": MacrosTestConstants.MOCK_PROTEIN.value,
-    "carbs": MacrosTestConstants.MOCK_CARBS.value,
-    "fat": MacrosTestConstants.MOCK_FAT.value
+    "calories": 2000,
+    "protein": 150,
+    "carbs": 200,
+    "fat": 67,
+    "progress_rate": 0.0,
+    "deficit_surplus": 0,
+    "is_safe": True
+}
+
+# Mock data for time to goal calculation
+MOCK_TIME_TO_GOAL = {
+    "weeks": 10.0,
+    "days": 70,
+    "estimated_date": "2025-06-20",
+    "is_possible": True
 }
 

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Account Deletion Confirmation</h2>
+
+<p>This email confirms that your Macro Meals account has been permanently deleted on {{ deletion_date }}.</p>
+
+<h3>What was deleted:</h3>
+<ul>
+    <li>Your user profile and personal information</li>
+    <li>All logged meals and nutrition data</li>
+    <li>Macro tracking history and preferences</li>
+    <li>All notifications and app settings</li>
+    <li>Any scanned product history</li>
+    {% if subscription_cancelled %}
+    <li>Your active subscription was cancelled</li>
+    {% endif %}
+</ul>
+
+<h3>Important Information:</h3>
+<ul>
+    <li><strong>This action is permanent</strong> - Your data cannot be recovered</li>
+    <li>Your email address ({{ user_email }}) can be used to create a new account in the future</li>
+    {% if subscription_cancelled %}
+    <li>Your subscription has been cancelled and you will not be charged further</li>
+    {% else %}
+    <li>If you had an active subscription, please contact support to ensure proper cancellation</li>
+    {% endif %}
+    <li>Any pending charges or refunds will be processed according to our terms of service</li>
+</ul>
+
+<p>If you deleted your account by mistake or have any questions, please contact our support team at support@macromealsapp.com within 7 days. While we cannot restore your data, we can help with account or billing related questions.</p>
+
+<p>Thank you for using Macro Meals. We're sorry to see you go!</p>
+
+<p>Best regards,<br>The Macro Meals Team</p>
+
+<hr>
+<p style="font-size: 12px; color: #666;">
+    Account deleted on: {{ deletion_date }}<br>
+    User email: {{ user_email }}<br>
+    This is an automated message - please do not reply to this email.
+</p>
+{% endblock %} 

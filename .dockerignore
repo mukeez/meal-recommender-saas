@@ -1,0 +1,4 @@
+app/.env
+app/.env.staging
+code/app/.env
+code/app/.env.staging

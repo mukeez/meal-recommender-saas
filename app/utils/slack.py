@@ -9,7 +9,7 @@ import logging
 # Setup logging for Slack alerts
 logger = logging.getLogger(__name__)
 
-def send_slack_alert(message, title=None):
+def send_slack_alert(message:str, title:str):
     """Send alert to Slack with optional title."""
     try:
         client = WebClient(token=settings.SLACK_BOT_TOKEN)

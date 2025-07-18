@@ -76,8 +76,9 @@ def scrape_restaurants_task(self, location_name, latitude, longitude):
             except Exception as e:
                 logger.error(f"Error processing restaurant : {str(e)}")
 
-        print(bulk_restaurant_data)
+
         # Insert into database
+        dedup_restaurants = []
         if bulk_restaurant_data:
             dedup_restaurants = deduplicate_dict_list(bulk_restaurant_data)
             logger.info(f"Inserting {len(dedup_restaurants)} restaurants into database")
@@ -85,6 +86,8 @@ def scrape_restaurants_task(self, location_name, latitude, longitude):
                 table_name="restaurants", 
                 data=dedup_restaurants
             )
+        else:
+            logger.info("No restaurants to insert into database")
         
         return {"status": "success", "count": len(dedup_restaurants)}
         

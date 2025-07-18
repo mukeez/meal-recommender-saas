@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subscription Past Due - MacroMeals</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .alert {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+            color: #721c24;
+        }
+        .button {
+            display: inline-block;
+            background-color: #dc3545;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">MacroMeals</div>
+        </div>
+        
+        <h2>Subscription Past Due</h2>
+        
+        <div class="alert">
+            <strong>Urgent Action Required:</strong> Your MacroMeals subscription is past due and may be canceled soon.
+        </div>
+        
+        <p>Hello,</p>
+        
+        <p>We've attempted to charge your payment method multiple times for your MacroMeals subscription, but all attempts have failed.</p>
+        
+        <p><strong>Subscription ID:</strong> {{ subscription_id }}</p>
+        
+        <p>To avoid service interruption, please update your payment method immediately:</p>
+        
+        <a href="https://macromealsapp.com/settings/billing" class="button">Update Payment Method</a>
+        
+        <p>If you don't update your payment method soon, your subscription will be canceled and you'll lose access to MacroMeals Pro features.</p>
+        
+        <p>If you have any questions or need assistance, please contact our support team immediately.</p>
+        
+        <p>Best regards,<br>
+        The MacroMeals Team</p>
+        
+        <div class="footer">
+            <p>This email was sent to {{ customer_email }}</p>
+            <p>MacroMeals - Your Personal Nutrition Tracker</p>
+        </div>
+    </div>
+</body>
+</html> 

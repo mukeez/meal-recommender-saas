@@ -55,6 +55,46 @@ def mock_meal_get_progress(mocker):
 
 
 @pytest.fixture(scope="function")
+def mock_meal_get_progress_summary(mocker):
+    """Fixture to patch and provide a mock for meal_service.get_progress_summary."""
+    mock = mocker.patch(
+        "app.api.endpoints.meals.meal_service.get_progress_summary",
+        new_callable=AsyncMock,
+    )
+    return mock
+
+
+@pytest.fixture(scope="function")
+def mock_meal_get_first_date(mocker):
+    """Fixture to patch and provide a mock for meal_service.get_first_meal_date."""
+    mock = mocker.patch(
+        "app.api.endpoints.meals.meal_service.get_first_meal_date",
+        new_callable=AsyncMock,
+    )
+    return mock
+
+
+@pytest.fixture(scope="function")
+def mock_meal_update(mocker):
+    """Fixture to patch and provide a mock for meal_service.update_meal."""
+    mock = mocker.patch(
+        "app.api.endpoints.meals.meal_service.update_meal",
+        new_callable=AsyncMock,
+    )
+    return mock
+
+
+@pytest.fixture(scope="function")
+def mock_meal_delete(mocker):
+    """Fixture to patch and provide a mock for meal_service.delete_meal."""
+    mock = mocker.patch(
+        "app.api.endpoints.meals.meal_service.delete_meal",
+        new_callable=AsyncMock,
+    )
+    return mock
+
+
+@pytest.fixture(scope="function")
 def mock_meal_suggestion_response():
     """Fixture providing a mock MealSuggestionResponse model instance."""
     from app.models.meal import MealSuggestionResponse, MealSuggestion, MacroNutrients, Restaurant

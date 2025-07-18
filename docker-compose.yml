@@ -7,7 +7,9 @@ services:
       - "8000:8000"
     volumes:
       - ./app:/code/app
+      - ./app/.env.staging:/code/app/.env
     environment:
+      - ENV_FILE=/code/app/.env
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:

@@ -1,3 +1,110 @@
+# Constants for unit conversions
+LBS_TO_KG = 0.453592
+KG_TO_LBS = 1 / LBS_TO_KG  # ~2.20462
+INCHES_TO_CM = 2.54
+CM_TO_INCHES = 1 / INCHES_TO_CM
+FEET_TO_CM = 30.48  # 12 inches * 2.54 cm/inch
+CM_TO_FEET = 1 / FEET_TO_CM  # ~0.0328084
+GRAMS_PER_OUNCE = 28.3495
+
+# Serving units
+class ServingUnit:
+    GRAMS = "grams"
+    OUNCES = "ounces"
+
+def convert_to_grams(value: float, unit: str) -> float:
+    """Convert serving size to grams."""
+    if unit == ServingUnit.OUNCES:
+        return value * GRAMS_PER_OUNCE
+    return value  # Already in grams
+
+def convert_from_grams(value: float, target_unit: str) -> float:
+    """Convert serving size from grams to target unit."""
+    if target_unit == ServingUnit.OUNCES:
+        return value / GRAMS_PER_OUNCE
+    return value  # Already in grams
+
+def parse_gram_quantity(quantity_str: str) -> float:
+    """Parse gram quantity from strings like '150g', '100g', etc.
+    
+    Args:
+        quantity_str: String containing gram quantity (e.g., "150g", "100g")
+        
+    Returns:
+        Float value of the gram quantity, defaults to 1.0 if parsing fails
+    """
+    import re
+    
+    # Extract numbers from the string, looking for patterns like "150g" or "100 g"
+    match = re.search(r'(\d+(?:\.\d+)?)\s*g', quantity_str.lower())
+    if match:
+        return float(match.group(1))
+    
+    # Fallback: try to extract any number from the string
+    numbers = re.findall(r'\d+(?:\.\d+)?', quantity_str)
+    if numbers:
+        return float(numbers[0])
+    
+    # Default to 1 gram if no parseable quantity found
+    return 1.0
+
+def normalize_nutrition_to_per_gram(calories: float, protein: float, carbs: float, fat: float, total_grams: float) -> tuple[float, float, float, float]:
+    """Normalize nutritional values to per-gram basis.
+    
+    Args:
+        calories: Total calories for the given quantity
+        protein: Total protein in grams for the given quantity
+        carbs: Total carbs in grams for the given quantity
+        fat: Total fat in grams for the given quantity
+        total_grams: Total weight in grams that the nutrition values represent
+        
+    Returns:
+        Tuple of (calories_per_gram, protein_per_gram, carbs_per_gram, fat_per_gram)
+    """
+    if total_grams <= 0:
+        return 0.0, 0.0, 0.0, 0.0
+    
+    return (
+        calories / total_grams,
+        protein / total_grams,
+        carbs / total_grams,
+        fat / total_grams
+    )
+
+def calculate_nutrition_for_amount(calories_per_gram: float, protein_per_gram: float, carbs_per_gram: float, fat_per_gram: float, amount_grams: float) -> tuple[float, float, float, float]:
+    """Calculate nutritional values for a specific amount of grams.
+    
+    Args:
+        calories_per_gram: Calories per gram
+        protein_per_gram: Protein per gram
+        carbs_per_gram: Carbs per gram
+        fat_per_gram: Fat per gram
+        amount_grams: Amount in grams to calculate for
+        
+    Returns:
+        Tuple of (total_calories, total_protein, total_carbs, total_fat)
+    """
+    return (
+        calories_per_gram * amount_grams,
+        protein_per_gram * amount_grams,
+        carbs_per_gram * amount_grams,
+        fat_per_gram * amount_grams
+    )
+
+# Constants for macro calculations
+PROTEIN_PER_KG = 1.8
+FAT_PER_KG = 1.0
+PROTEIN_CALS_PER_GRAM = 4
+FAT_CALS_PER_GRAM = 9
+CARB_CALS_PER_GRAM = 4
+MIN_CARBS_GRAMS = 50
+
+
+# Constants for goal calculations
+CALORIES_PER_LB = 3500
+CALORIES_PER_KG = 7700
+
+
 USER_AGENTS = [
     # MACINSTOSH - Safari
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36 Edg/134.0.3124.85",

@@ -58,7 +58,6 @@ class RestaurantService:
                 "result_limit": limit
             }
         )
-            print(f"Response from find_restaurants_within_radius: {response}, type: {type(response)}")
             if not response:
                 return []
             return response
@@ -69,7 +68,7 @@ class RestaurantService:
         
     
     async def find_restaurants_for_location(
-        self, location:str, latitude: str, longitude: str, search_radius: Optional[float] = None
+        self, location:str, latitude: float, longitude: float, search_radius: Optional[float] = None
     ) -> List[Dict]:
         """
         Find restaurants for a given location by geocoding the address and searching within a radius.
@@ -108,7 +107,6 @@ class RestaurantService:
                     longitude=longitude
                 )
 
-            # Return what we have, even if stale
             return restaurants if restaurants else []
         except Exception as e:
             logger.error(f"Error finding restaurants for location: {e}")

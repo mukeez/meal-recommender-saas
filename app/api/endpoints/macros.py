@@ -3,268 +3,252 @@
 This module contains the FastAPI routes for calculating macronutrient requirements
 with support for both metric and imperial unit systems.
 """
+import logging
 
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
-from enum import Enum
-from typing import Dict, Optional
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from app.api.auth_guard import auth_guard
+
+from app.models.macro_tracking import (
+    MacroCalculatorRequest,
+    MacroCalculatorResponse,
+    MacroDistributionRequest,
+    TimeToGoal,
+    GoalType
+)
+from app.models.meal import CalculateMacrosRequest, CalculateMacrosResponse
+from app.models.user import UpdateUserProfileRequest
+from app.services.macros_service import macros_service, MacrosServiceError
+from app.services.user_service import user_service
+import traceback
 
 router = APIRouter()
 
+logger = logging.getLogger(__name__)
 
-class Sex(str, Enum):
-    """Sex enumeration for BMR calculation."""
+@router.post(
+    "/macros-setup",
+    response_model=MacroCalculatorResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Calculate daily macronutrient targets",
+    description="Calculate daily calorie and macronutrient targets based on personal metrics and weight change goals. Supports both metric and imperial units.",
+)
+async def macros_setup_endpoint(
+    request: MacroCalculatorRequest, user=Depends(auth_guard)
+) -> MacroCalculatorResponse:
+    """Calculate daily macronutrient targets with weight change projections."""
+    try:
+        user_id = user.get("sub")
 
-    MALE = "male"
-    FEMALE = "female"
-
-
-class ActivityLevel(str, Enum):
-    """Activity level enumeration for TDEE calculation."""
-
-    SEDENTARY = "sedentary"
-    MODERATE = "moderate"
-    ACTIVE = "active"
-
-
-class Goal(str, Enum):
-    """Fitness goal enumeration."""
-
-    LOSE = "lose"
-    MAINTAIN = "maintain"
-    GAIN = "gain"
-
-
-class UnitSystem(str, Enum):
-    """Unit system enumeration for height and weight."""
-
-    METRIC = "metric"
-    IMPERIAL = "imperial"
+        if request.manual_macros:
+            response = MacroCalculatorResponse(**request.manual_macros.model_dump())
+            # Save the manually entered macros to user preferences
+            macros_service.save_user_preferences(user_id, response)
+            return response
+        
+        target_weight = request.target_weight if request.target_weight else request.weight
 
 
-class ManualMacros(BaseModel):
-    """Manual macros input for overriding calculated values.
+        # Convert to metric if needed 
+        weight_kg, height_cm, target_weight_kg, progress_rate_kg = macros_service.convert_to_metric(
+            weight=request.weight, 
+            height=request.height, 
+            target_weight=target_weight,
+            height_unit_preference=request.height_unit_preference,
+            weight_unit_preference=request.weight_unit_preference,
+            progress_rate=request.progress_rate
+        )
 
-    Attributes:
-        calories: User-specified daily calorie target
-        protein: User-specified daily protein target in grams
-        carbs: User-specified daily carbohydrate target in grams
-        fat: User-specified daily fat target in grams
-    """
+        if progress_rate_kg is not None:
+            progress_rate_kg = -progress_rate_kg if request.goal_type == GoalType.LOSE else progress_rate_kg
+        else:
+            progress_rate_kg = 0.0
 
-    calories: int = Field(..., gt=0, description="Daily calorie target")
-    protein: int = Field(..., ge=0, description="Daily protein target in grams")
-    carbs: int = Field(..., ge=0, description="Daily carbohydrate target in grams")
-    fat: int = Field(..., ge=0, description="Daily fat target in grams")
+        # Calculate BMR and TDEE
+        bmr = macros_service.calculate_bmr(
+            sex=request.sex, weight_kg=weight_kg, height_cm=height_cm, age=request.age
+        )
+        tdee = macros_service.calculate_tdee(bmr=bmr, activity_level=request.activity_level)
 
+        # Adjust calories based on goal - now using kg/week for progress_rate
+        goal_adjustment = macros_service.adjust_for_goal(
+            tdee=tdee,
+            goal_type=request.goal_type,
+            progress_rate=progress_rate_kg, 
+            sex=request.sex
+        )
 
-class MacroCalculatorRequest(BaseModel):
-    """Request model for macro calculation.
+        # Calculate macros based on adjusted calories
+        macro_response = macros_service.calculate_macros(
+            weight_kg=weight_kg, calories=goal_adjustment["calories"]
+        )
 
-    Attributes:
-        age: User's age in years (18-100)
-        weight: User's weight (in kg or lbs depending on unit_system)
-        height: User's height (in cm or inches depending on unit_system)
-        sex: User's biological sex (male/female)
-        activity_level: User's activity level
-        goal: User's fitness goal
-        unit_system: Measurement system for weight and height
-        manual_macros: Optional manual macros to override calculations
-    """
+        dietary_preference = request.dietary_preference or "balanced"
 
-    age: int = Field(..., ge=18, le=100, description="Age in years (18-100)")
-    weight: float = Field(..., gt=0, description="Weight (in kg or lbs)")
-    height: float = Field(..., gt=0, description="Height (in cm or inches)")
-    sex: Sex = Field(..., description="Biological sex (male/female)")
-    activity_level: ActivityLevel = Field(..., description="Activity level")
-    goal: Goal = Field(..., description="Fitness goal")
-    unit_system: UnitSystem = Field(..., description="Unit system for measurements")
-    manual_macros: Optional[ManualMacros] = Field(
-        None, description="Optional manual macro values"
-    )
+        # Add the goal adjustment data to the response
+        macro_response.progress_rate = abs(goal_adjustment["progress_rate"])
+        macro_response.deficit_surplus = goal_adjustment["deficit_surplus"]
+        macro_response.is_safe = goal_adjustment["is_safe"]
+        macro_response.target_weight = target_weight_kg
+        macro_response.goal_type = request.goal_type.value
+        macro_response.dietary_preference = dietary_preference
 
+        # Calculate time to goal if target weight is provided - using kg for all weights
+        if target_weight_kg is not None and goal_adjustment["progress_rate"] != 0:
+            time_calculation = macros_service.calculate_time_to_goal(
+                current_weight=weight_kg,
+                target_weight=target_weight_kg,
+                progress_rate=goal_adjustment["progress_rate"]
+            )
+            macro_response.time_to_goal = TimeToGoal(**time_calculation)
 
-class MacroCalculatorResponse(BaseModel):
-    """Response model for macro calculation.
+        # Save the calculated macros
+        macros_service.save_user_preferences(user_id, macro_response)
 
-    Attributes:
-        calories: Total daily calorie target
-        protein: Daily protein target in grams
-        carbs: Daily carbohydrate target in grams
-        fat: Daily fat target in grams
-    """
-
-    calories: int = Field(..., description="Total daily calorie target")
-    protein: int = Field(..., description="Daily protein target in grams")
-    carbs: int = Field(..., description="Daily carbohydrate target in grams")
-    fat: int = Field(..., description="Daily fat target in grams")
-
-
-ACTIVITY_MULTIPLIERS: Dict[ActivityLevel, float] = {
-    ActivityLevel.SEDENTARY: 1.2,
-    ActivityLevel.MODERATE: 1.55,
-    ActivityLevel.ACTIVE: 1.725,
-}
-
-GOAL_ADJUSTMENTS: Dict[Goal, float] = {
-    Goal.LOSE: 0.8,
-    Goal.MAINTAIN: 1.0,
-    Goal.GAIN: 1.15,
-}
-
-# Macronutrient constants
-PROTEIN_PER_KG = 1.8
-FAT_PER_KG = 1.0
-PROTEIN_CALS_PER_GRAM = 4
-FAT_CALS_PER_GRAM = 9
-CARB_CALS_PER_GRAM = 4
-MIN_CARBS_GRAMS = 50
-
-LBS_TO_KG = 0.453592
-INCHES_TO_CM = 2.54
+        user_data = {
+            "age": request.age,
+            "height": height_cm,
+            "weight": weight_kg,
+            "sex": request.sex,
+            "has_macros": True,
+            "height_unit_preference": request.height_unit_preference,
+            "weight_unit_preference": request.weight_unit_preference,
+        }
 
 
-def convert_to_metric(
-    weight: float, height: float, unit_system: UnitSystem
-) -> tuple[float, float]:
-    """Convert weight and height to metric units (kg and cm) if needed.
+        if request.dob:
+            user_data["dob"] = request.dob
 
-    Args:
-        weight: Weight in original units
-        height: Height in original units
-        unit_system: Current unit system
+        await user_service.update_user_profile(
+            user_id=user_id,
+            user_data=UpdateUserProfileRequest(**user_data)
+        )
 
-    Returns:
-        Tuple of (weight in kg, height in cm)
-    """
-    if unit_system == UnitSystem.IMPERIAL:
-        weight_kg = weight * LBS_TO_KG
-        height_cm = height * INCHES_TO_CM
-        return weight_kg, height_cm
-    else:
-        return weight, height
+        return macro_response
+
+    except MacrosServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error calculating macros: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error calculating macros",
+        )
 
 
-def calculate_bmr(sex: Sex, weight_kg: float, height_cm: float, age: int) -> float:
-    """Calculate Basal Metabolic Rate using the Mifflin-St Jeor Formula.
+@router.post(
+    "/adjust-macros",
+    response_model=MacroCalculatorResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Adjust macronutrient distribution",
+    description="Redistribute macronutrient targets while maintaining a fixed calorie target. Specify targets for one or two macros, and the remaining macro will be adjusted to maintain the calorie target.",
+)
+async def adjust_macro_distribution(
+    request: MacroDistributionRequest, user=Depends(auth_guard)
+) -> MacroCalculatorResponse:
+    """Adjust the distribution of macronutrients while maintaining a fixed calorie target.
+
+    This endpoint allows users to specify targets for one or two macronutrients,
+    and the system will calculate the remaining macronutrient to maintain the
+    given calorie target.
 
     Args:
-        sex: User's biological sex
-        weight_kg: Weight in kg
-        height_cm: Height in cm
-        age: Age in years
+        request: The macro adjustment request with fixed calorie target and macro preferences
+        user: The authenticated user
 
     Returns:
-        BMR in calories per day
+        The adjusted macronutrient targets
+
+    Raises:
+        HTTPException: If the requested distribution is not possible or causes errors
     """
-    if sex == Sex.MALE:
-        return 10 * weight_kg + 6.25 * height_cm - 5 * age + 5
-    else:
-        return 10 * weight_kg + 6.25 * height_cm - 5 * age - 161
+    try:
+        user_id = user.get("sub")
+        macro_response = macros_service.adjust_macro_distribution(
+            protein=request.protein,
+            carbs=request.carbs,
+            fat=request.fat,
+        )
 
+        # Save the adjusted macros to user preferences
+        macros_service.save_user_preferences(user_id, macro_response)
 
-def calculate_tdee(bmr: float, activity_level: ActivityLevel) -> float:
-    """Calculate Total Daily Energy Expenditure.
+        return macro_response
 
-    Args:
-        bmr: Basal Metabolic Rate
-        activity_level: User's activity level
-
-    Returns:
-        TDEE in calories per day
-    """
-    return bmr * ACTIVITY_MULTIPLIERS[activity_level]
-
-
-def adjust_for_goal(tdee: float, goal: Goal) -> int:
-    """Adjust calories based on user's goal.
-
-    Args:
-        tdee: Total Daily Energy Expenditure
-        goal: User's fitness goal
-
-    Returns:
-        Adjusted daily calories (rounded to integer)
-    """
-    return int(tdee * GOAL_ADJUSTMENTS[goal])
-
-
-def calculate_macros(weight_kg: float, calories: int) -> MacroCalculatorResponse:
-    """Calculate macronutrient distribution.
-
-    Args:
-        weight_kg: User's weight in kg
-        calories: Total daily calories
-
-    Returns:
-        Calculated macronutrient targets
-    """
-    protein_g = int(weight_kg * PROTEIN_PER_KG)
-    protein_cals = protein_g * PROTEIN_CALS_PER_GRAM
-
-    fat_g = int(weight_kg * FAT_PER_KG)
-    fat_cals = fat_g * FAT_CALS_PER_GRAM
-
-    carbs_cals = calories - protein_cals - fat_cals
-    carbs_g = int(carbs_cals / CARB_CALS_PER_GRAM)
-
-    if carbs_g < MIN_CARBS_GRAMS:
-        carbs_g = MIN_CARBS_GRAMS
-        carbs_cals = carbs_g * CARB_CALS_PER_GRAM
-
-        calories = protein_cals + fat_cals + carbs_cals
-
-    return MacroCalculatorResponse(
-        calories=calories, protein=protein_g, carbs=carbs_g, fat=fat_g
-    )
+    except MacrosServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error adjusting macro distribution: {str(e)}",
+        )
 
 
 @router.post(
     "/calculate-macros",
-    response_model=MacroCalculatorResponse,
+    response_model=CalculateMacrosResponse,
     status_code=status.HTTP_200_OK,
-    summary="Calculate daily macronutrient targets",
-    description="Calculate daily calorie and macronutrient targets based on personal metrics. Supports both metric and imperial units.",
+    summary="Calculate macros based on amount changes",
+    description="Calculate new macro values when the amount/quantity of a meal is changed. This is a stateless calculation endpoint for real-time macro updates.",
 )
 async def calculate_macros_endpoint(
-    request: MacroCalculatorRequest,
-) -> MacroCalculatorResponse:
-    """Calculate daily macronutrient targets.
-
-    This endpoint calculates Basal Metabolic Rate (BMR) using the Mifflin-St Jeor
-    formula, then applies activity and goal adjustments to find Total Daily Energy
-    Expenditure (TDEE). Macronutrients are then calculated based on protein and fat
-    requirements, with remaining calories assigned to carbohydrates.
-
-    Supports both metric and imperial units through unit_system parameter.
-
+    request: CalculateMacrosRequest, user=Depends(auth_guard)
+) -> CalculateMacrosResponse:
+    """Calculate new macro values based on amount changes.
+    
+    This endpoint performs a simple proportional calculation:
+    new_macros = base_macros × (new_amount / base_amount)
+    
     Args:
-        request: The calculation request with user metrics and goals
-
+        request: The macro calculation request with base and new amounts
+        user: The authenticated user
+        
     Returns:
-        The calculated macronutrient targets
-
+        Calculated macros rounded to 2 decimal places
+        
     Raises:
-        HTTPException: If there is an error processing the request
+        HTTPException: If amounts are invalid (zero or negative)
     """
     try:
-        if request.manual_macros:
-            return MacroCalculatorResponse(**request.manual_macros.model_dump())
-
-        weight_kg, height_cm = convert_to_metric(
-            request.weight, request.height, request.unit_system
+        # Validate amounts
+        if request.base_amount <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Base amount must be greater than 0"
+            )
+        
+        if request.new_amount <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New amount must be greater than 0"
+            )
+        
+        # Calculate the multiplier
+        multiplier = request.new_amount / request.base_amount
+        
+        # Calculate new macros
+        calculated_calories = round(request.base_calories * multiplier, 2)
+        calculated_protein = round(request.base_protein * multiplier, 2)
+        calculated_carbs = round(request.base_carbs * multiplier, 2)
+        calculated_fat = round(request.base_fat * multiplier, 2)
+        
+        logger.info(f"Calculated macros for amount change: {request.base_amount} -> {request.new_amount} (multiplier: {multiplier})")
+        
+        return CalculateMacrosResponse(
+            calories=calculated_calories,
+            protein=calculated_protein,
+            carbs=calculated_carbs,
+            fat=calculated_fat
         )
-
-        bmr = calculate_bmr(request.sex, weight_kg, height_cm, request.age)
-
-        tdee = calculate_tdee(bmr, request.activity_level)
-
-        calories = adjust_for_goal(tdee, request.goal)
-
-        return calculate_macros(weight_kg, calories)
-
+        
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"Error calculating macros: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error calculating macros",
+            detail="Error calculating macros",
         )
