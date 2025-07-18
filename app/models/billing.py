@@ -67,7 +67,10 @@ class BillingPortalResponse(BaseModel):
 
 
 class SubscriptionCancellationRequest(BaseModel):
-    """Request model for cancelling a subscription."""
+    """Request model for cancelling a subscription.
+       subscription_id: ID of the subscription to cancel
+       cancel_at_period_end: If True, cancels at period end. If False, cancels immediately.
+    """
 
     subscription_id: str = Field(..., description="The ID of the subscription to cancel")
     cancel_at_period_end: bool = Field(

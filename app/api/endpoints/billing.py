@@ -13,6 +13,7 @@ from app.models.billing import (
     SetupIntentResponse,
     BillingPortalResponse,
     PublishableKey,
+    SubscriptionCancellationRequest,
 )
 from typing import Dict, Any, Optional
 from app.services.stripe_service import stripe_service, StripeServiceError
@@ -395,50 +396,51 @@ async def stripe_webhook(
     status_code=status.HTTP_200_OK,
     response_model=SubscriptionStatus,
     summary="Cancel a Stripe subscription",
+    description="Cancels the user's Stripe subscription either immediately or at the end of the current billing period.",
 )
 async def cancel_subscription(
-    cancel_at_period_end: bool = Query(
-        True,
-        description="Set to True to cancel at period request: CheckoutSessionRequest",
-    ),
+    request: SubscriptionCancellationRequest,
     user=Depends(auth_guard),
 ) -> SubscriptionStatus:
     """
-    Cancel a Stripe subscription.
+    Cancel a Stripe subscription by its ID.
 
-    - **cancel_at_period_end**: if True, the subscription remains active until period end.
+    - **subscription_id**: The ID of the subscription to cancel.
+    - **cancel_at_period_end**: If True, the subscription remains active until the current billing period ends. If False, it is cancelled immediately.
     """
     try:
         user_id = user.get("sub")
-        if cancel_at_period_end:
-            # Schedule cancellation at period end
-            sub = await stripe_service.cancel_user_subscription(
-                user_id=user_id, cancel_at_period_end=True
-            )
-        else:
-            # Cancel immediately
-            sub = await stripe_service.cancel_user_subscription(
-                user_id=user_id, cancel_at_period_end=False
-            )
+
+        # Proceed with cancellation
+        sub = await stripe_service.cancel_user_subscription(
+            subscription_id=request.subscription_id,
+            cancel_at_period_end=request.cancel_at_period_end,
+        )
+
+        return SubscriptionStatus(
+            status=sub.status,
+            subscription_id=sub.id,
+            cancel_at_period_end=sub.cancel_at_period_end,
+        )
 
     except StripeServiceError as e:
-        logger.error(f"Stripe service error: {str(e)}")
+        logger.error(
+            f"Stripe service error cancelling subscription {request.subscription_id} for user {user_id}: {str(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error cancelling subscription",
+            detail=f"Error cancelling subscription: {str(e)}",
         )
+    except HTTPException as e:
+        raise
     except Exception as e:
-        logger.error(f"Unexpected error cancelling subscription: {str(e)}")
+        logger.error(
+            f"Unexpected error cancelling subscription {request.subscription_id} for user {user_id}: {str(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred",
+            detail="An unexpected error occurred while cancelling the subscription.",
         )
-
-    return SubscriptionStatus(
-        status=sub.status,
-        subscription_id=sub.id,
-        cancel_at_period_end=sub.cancel_at_period_end
-    )
 
 
 @router.post(

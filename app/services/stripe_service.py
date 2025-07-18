@@ -355,6 +355,9 @@ class StripeService:
         try:
             logger.info(f"Reactivating subscription: {subscription_id}")
 
+            if not BaseDatabaseService.subclasses:
+                raise StripeServiceError("No database service implementation available")
+
             # Get subscription details from Stripe
             subscription = stripe.Subscription.retrieve(subscription_id)
 
@@ -381,6 +384,15 @@ class StripeService:
             # Reactivate the subscription
             reactivated_subscription = stripe.Subscription.modify(
                 subscription_id, cancel_at_period_end=False
+            )
+
+            BaseDatabaseService.subclasses[0]().update_data(
+                table_name="user_profiles",
+                data={
+                    "stripe_subscription_id": reactivated_subscription.id,
+                    "is_pro": True,
+                },
+                cols={"stripe_subscription_id": subscription_id},
             )
 
             logger.info(
