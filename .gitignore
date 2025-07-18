@@ -128,7 +128,7 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
+.env*
 .venv
 env/
 venv/
@@ -175,3 +175,8 @@ cython_debug/
 simulate.ipynb
 macro-meals-mobile-d3f2c02bc942.json
 openapi.yaml
+
+# Cursor AI exclusions
+.cursorignore
+
+secrets/
