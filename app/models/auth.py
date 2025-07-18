@@ -92,12 +92,10 @@ class ResetPasswordRequest(BaseModel):
 
     Attributes:
         email: User's email address
-        otp: OTP for verification
         password: New password
         session_token: Session token from OTP verification
     """
     email: EmailStr = Field(..., description="User's email address")
-    otp: str = Field(..., description="OTP for verification")
     password: str = Field(..., min_length=6, description="New password (min 6 characters)")
     session_token: str = Field(..., description="Session token from OTP verification")
 

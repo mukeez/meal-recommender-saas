@@ -144,32 +144,11 @@ class UpdateUserProfileRequest(BaseModel):
     height: Annotated[Optional[float], Field(None, description="new height. If provided, 'height_unit_preference' must also be specified. Assumed to be in cm if metric, feet if imperial.")] # Changed to float for consistency
     weight: Annotated[Optional[float], Field(None, description="new weight. If provided, 'weight_unit_preference' must also be specified. Assumed to be in kg if metric, lbs if imperial.")]
     avatar_url: Annotated[Optional[str], Field(None, description="new avatar image")]
-    meal_reminder_preferences_set: Annotated[Optional[bool], Field(None, description="Whether the user has meal reminder preferences set")] # Made optional for updates
+    meal_reminder_preferences_set: Annotated[Optional[bool], Field(None, description="Whether the user has meal reminder preferences set")]
     height_unit_preference: Annotated[Optional[HeightUnitPreference], Field(None, description="Preferred unit for height measurements (metric: cm, imperial: inches)")]
-    weight_unit_preference: Annotated[Optional[WeightUnitPreference], Field(None, description="Preferred unit for weight measurements (metric: kg, imperial: lbs)")] # Made optional, but conditionally required
+    weight_unit_preference: Annotated[Optional[WeightUnitPreference], Field(None, description="Preferred unit for weight measurements (metric: kg, imperial: lbs)")]
 
-    @field_validator('dob')
-    @classmethod
-    def validate_dob(cls, v):
-        """Validate that dob is a valid date string in ISO format (YYYY-MM-DD)."""
-        if v is None:
-            return v
-            
-        try:
-            # Try to parse the string as a date
-            date.fromisoformat(v)
-            return v
-        except ValueError:
-            raise ValueError("Date of birth must be a valid date string in ISO format (YYYY-MM-DD)")
-
-    @model_validator(mode='after')
-    def check_height_and_unit_preference(self) -> 'UpdateUserProfileRequest':
-        if self.height is not None and self.height_unit_preference is None:
-            raise ValueError("If 'height' is provided, 'height_unit_preference' must also be specified.")
-        if self.weight is not None and self.weight_unit_preference is None:
-            raise ValueError("If 'weight' is provided, 'weight_unit_preference' must also be specified.")
-        return self
-
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 
 class UpdateUserPreferencesRequest(BaseModel):
     """Request model for updating user preferences.
@@ -191,4 +170,4 @@ class UpdateUserPreferencesRequest(BaseModel):
     protein_target: Optional[float] = None
     carbs_target: Optional[float] = None
     fat_target: Optional[float] = None
-
+    dietary_preference: Optional[str] = None

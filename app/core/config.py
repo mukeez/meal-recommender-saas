@@ -28,9 +28,7 @@ class Settings:
         self.SUPABASE_URL = os.getenv("SUPABASE_URL")
         self.SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
         self.SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
-        self.SUPABASE_BUCKET_NAME = os.getenv("SUPABASE_BUCKET_NAME", "avatars")
-        self.AVATAR_BUCKET_NAME = os.getenv("AVATAR_BUCKET_NAME", "avatars")
-        self.MEAL_PHOTO_BUCKET_NAME = os.getenv("MEAL_PHOTO_BUCKET_NAME", "meals")
+
 
 
         # AI API Settings
@@ -60,6 +58,7 @@ class Settings:
         self.AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
         self.AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
         self.AWS_REGION = os.getenv("AWS_REGION")
+        self.S3_MEDIA_NAME = os.getenv("S3_MEDIA_NAME")  # S3 bucket for media uploads
 
         # Firebase Settings
         self.FIREBASE_SERVICE_ACCOUNT_FILE = os.getenv("FIREBASE_SERVICE_ACCOUNT_FILE")
