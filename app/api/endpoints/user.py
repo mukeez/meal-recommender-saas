@@ -29,6 +29,8 @@ from app.models.user import (
     WeightUnitPreference,
 )
 from app.services.user_service import user_service
+from app.services.stripe_service import stripe_service, StripeServiceError
+from app.services.mail_service import mail_service
 from typing import Optional
 import traceback
 
@@ -344,4 +346,117 @@ async def update_user_preferences(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error updating preferences: {str(e)}",
+        )
+
+
+@router.delete(
+    "/me",
+    summary="Delete user account and all data",
+    description="Permanently delete the user account, cancel all subscriptions, and remove all associated data. This action cannot be undone.",
+    status_code=status.HTTP_200_OK,
+)
+async def delete_user_account(user=Depends(auth_guard)) -> dict:
+    """Delete the current user's account and all associated data.
+
+    This endpoint will:
+    1. Cancel all active Stripe subscriptions
+    2. Delete all user data from the database (profile, preferences, meals, etc.)
+    3. Send a confirmation email
+    4. Log the deletion for audit purposes
+
+    WARNING: This action is irreversible and will permanently delete all user data.
+
+    Args:
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        A confirmation message
+
+    Raises:
+        HTTPException: If the deletion process fails
+    """
+    try:
+        user_id = user.get("sub")
+        
+        logger.info(f"Account deletion requested for user: {user_id}")
+        
+        
+        try:
+            user_profile = await user_service.get_user_profile(user_id)
+            user_email = user_profile.email
+        except Exception as e:
+            logger.warning(f"Could not retrieve user profile during deletion: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to retrieve user profile. Please contact support."
+            )
+            
+        # Cancel all active Stripe subscriptions
+        subscription_cancelled = False
+        try:
+            has_active_subscription = await stripe_service.has_active_subscription(user_id)
+            if has_active_subscription:
+                logger.info(f"Cancelling active subscription for user: {user_id}")
+                await stripe_service.cancel_user_subscription(
+                    user_id=user_id, 
+                    cancel_at_period_end=False  # Cancel immediately for account deletion
+                )
+                subscription_cancelled = True
+                logger.info(f"Successfully cancelled subscription for user: {user_id}")
+            else:
+                logger.info(f"No active subscription found for user: {user_id}")
+        except StripeServiceError as e:
+            logger.error(f"Failed to cancel subscription for user {user_id}: {str(e)}")
+            
+        except Exception as e:
+            logger.error(f"Unexpected error cancelling subscription for user {user_id}: {str(e)}")
+            
+        # Delete all user data from database
+        try:
+            await user_service.delete_user_account(user_id)
+            logger.info(f"Successfully deleted all data for user: {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to delete user data for user {user_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to delete user data. Please contact support."
+            )
+            
+        # Send confirmation email
+        try:
+            await mail_service.send_email(
+                recipient=user_email,
+                subject="Account Deletion Confirmation - Macro Meals",
+                template_name="account_deleted.html",
+                context={
+                    "user_email": user_email,
+                    "deletion_date": datetime.now().strftime("%B %d, %Y"),
+                    "subscription_cancelled": subscription_cancelled
+                }
+            )
+            logger.info(f"Sent account deletion confirmation email to: {user_email}")
+        except Exception as e:
+            logger.warning(f"Failed to send deletion confirmation email to {user_email}: {str(e)}")
+                
+        logger.info(f"Account deletion completed successfully for user: {user_id}, email: {user_email}")
+        
+        return {
+            "message": "Your account and all associated data have been permanently deleted from all systems.",
+            "details": {
+                "profile_data_deleted": True,
+                "auth_access_removed": True,
+                "subscription_cancelled": subscription_cancelled,
+                "login_disabled": True
+            },
+            "deletion_date": datetime.now().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during account deletion for user {user_id if 'user_id' in locals() else 'unknown'}: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred during account deletion. Please contact support."
         )

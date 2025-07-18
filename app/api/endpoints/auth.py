@@ -108,7 +108,7 @@ async def login(payload: LoginRequest) -> LoginResponse:
                         detail="Invalid login request. Please check your email and password."
                     )
             elif response.status_code == 401:
-                # Unauthorized - typically wrong credentials
+                # Unauthorized
                 logger.warning(f"Unauthorized login attempt for user {payload.email}")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -404,7 +404,7 @@ async def forgot_password(email: str = Body(..., embed=True)) -> Dict:
         await mail_service.send_email(
             recipient=email,
             subject="Password Reset OTP",
-            template_name="otp.html",  # Changed from otp_email.html to match your actual file
+            template_name="otp.html",  
             context={"otp_code": otp, "otp_expiry_minutes": 10},
         )
 
