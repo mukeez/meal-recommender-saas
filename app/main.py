@@ -23,6 +23,7 @@ from app.api.endpoints import (
     billing,
     products,
     notifications,
+    contact,
 )
 from app.core.config import settings
 from app.tasks.macromeals_tasks import macromeals_tasks
@@ -139,10 +140,15 @@ async def custom_swagger_ui_html():
 
 app.openapi = custom_openapi
 
-# Add CloudWatch logging middleware first (runs last, captures final response)
+# CloudWatch logging middleware
+if settings.ENVIRONMENT == "development":
+    log_group_name = "meal-recommender-api-dev"
+else:
+    log_group_name = "meal-recommender-api"
+
 app.add_middleware(
     CloudWatchLoggingMiddleware,
-    log_group_name="meal-recommender-api",
+    log_group_name=log_group_name,
     batch_size=10,
     batch_timeout=30
 )
@@ -201,6 +207,12 @@ app.include_router(
     notifications.router,
     prefix=f"{settings.API_V1_STR}/notifications",
     tags=["notifications"],
+)
+
+app.include_router(
+    contact.router,
+    prefix=f"{settings.API_V1_STR}/contact",
+    tags=["contact"],
 )
 
 
