@@ -8,6 +8,7 @@ from app.models.billing import (
     CheckoutSessionResponse,
     SubscriptionStatus,
     SubscriptionDetails,
+    SubscriptionReactivationRequest,
     SubscriptionReactivationResponse,
     SetupIntentResponse,
     BillingPortalResponse,
@@ -594,7 +595,7 @@ async def get_subscription_details(
     description="Reactivate a subscription that was set to cancel at the end of the billing period",
 )
 async def reactivate_subscription(
-    user=Depends(auth_guard)
+    request: SubscriptionReactivationRequest, user=Depends(auth_guard)
 ) -> SubscriptionReactivationResponse:
     """
     Reactivate a subscription that was set to cancel at period end.
@@ -607,41 +608,45 @@ async def reactivate_subscription(
     The subscription will continue with its normal billing cycle after reactivation.
     """
     try:
-        user_id = user.get("sub")
-        
-        # Reactivate the subscription
-        subscription = await stripe_service.reactivate_user_subscription(user_id)
-        
+        # Reactivate the subscription using the ID from the request
+        subscription = await stripe_service.reactivate_user_subscription(
+            request.subscription_id
+        )
+
         return SubscriptionReactivationResponse(
             success=True,
             message="Subscription successfully reactivated. Your subscription will continue with its normal billing cycle.",
             subscription_id=subscription.id,
             status=subscription.status,
-            cancel_at_period_end=subscription.cancel_at_period_end
+            cancel_at_period_end=subscription.cancel_at_period_end,
         )
-        
+
     except StripeServiceError as e:
-        logger.error(f"Stripe service error reactivating subscription: {str(e)}")
-        
+        logger.error(
+            f"Stripe service error reactivating subscription {request.subscription_id}: {str(e)}"
+        )
+
         # Return specific error messages for common scenarios
         error_message = str(e)
         if "No subscription found" in error_message:
             status_code = status.HTTP_404_NOT_FOUND
         elif "not set to cancel" in error_message:
             status_code = status.HTTP_400_BAD_REQUEST
-        elif "cannot be reactivated" in error_message or "period has already ended" in error_message:
+        elif (
+            "cannot be reactivated" in error_message
+            or "period has already ended" in error_message
+        ):
             status_code = status.HTTP_400_BAD_REQUEST
         else:
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
             error_message = "Error reactivating subscription"
-        
-        raise HTTPException(
-            status_code=status_code,
-            detail=error_message
-        )
+
+        raise HTTPException(status_code=status_code, detail=error_message)
     except Exception as e:
-        logger.error(f"Unexpected error reactivating subscription: {str(e)}")
+        logger.error(
+            f"Unexpected error reactivating subscription {request.subscription_id}: {str(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred"
+            detail="An unexpected error occurred",
         )
