@@ -22,12 +22,17 @@ spec:
         - name: macromeals-api
           image: 390844748928.dkr.ecr.eu-west-2.amazonaws.com/dev/macromeals-api:latest
           imagePullPolicy: Always
+          envFrom:
+            - secretRef:
+                name: prod-secret
+            
           command: ["sh", "-c"]
           args:
             - |
               python app/main.py
           ports:
             - containerPort: 8000
+          
         
         - name: redis
           image: redis:8.0-M04-alpine3.21
@@ -35,8 +40,11 @@ spec:
             - containerPort: 6379
 
         - name: worker
-          image: 390844748928.dkr.ecr.eu-west-2.amazonaws.com/dev/macromeals-api:worker-latest
+          image: 390844748928.dkr.ecr.eu-west-2.amazonaws.com/dev/macromeals-api:latest
           command: ["celery", "-A", "app.worker", "worker", "--loglevel=info"]
+          envFrom:
+            - secretRef:
+                name: prod-secret
           env:
             - name: CELERY_BROKER_URL
               value: "redis://localhost:6379/0"
