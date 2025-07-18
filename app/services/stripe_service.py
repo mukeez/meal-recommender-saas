@@ -305,40 +305,22 @@ class StripeService:
             raise StripeServiceError(f"Error updating user subscription: {str(e)}")
 
     async def cancel_user_subscription(
-        self, user_id: str, cancel_at_period_end: bool = True
+        self, subscription_id: str, cancel_at_period_end: bool = True
     ) -> stripe.Subscription:
-        """Cancel user's Stripe subscription.
+        """Cancel a Stripe subscription by its ID.
 
         Args:
-            user_id: User identifier
-            cancel_at_period_end: Whether to cancel at billing period end
+            subscription_id: The ID of the Stripe subscription to cancel.
+            cancel_at_period_end: Whether to cancel at billing period end.
 
         Returns:
-            Updated Stripe Subscription object
+            Updated Stripe Subscription object.
 
         Raises:
-            StripeServiceError: When subscription not found or cancellation fails
+            StripeServiceError: When subscription not found or cancellation fails.
         """
         try:
-            logger.info(f"Cancelling subscription for user: {user_id}")
-            if not BaseDatabaseService.subclasses:
-                raise StripeServiceError("No database service implementation available")
-
-            # fetch stripe subscription id for user if it exists
-            response = BaseDatabaseService.subclasses[0]().select_data(
-                table_name="user_profiles", cols={"id": user_id}
-            )
-            if response and isinstance(response, List):
-                subscription_id = response[0]["stripe_subscription_id"]
-            elif response:
-                subscription_id = response
-
-            else:
-                subscription_id = None
-
-            if not subscription_id:
-                raise StripeServiceError("Subscription id not found for customer")
-
+            logger.info(f"Cancelling subscription: {subscription_id}")
 
             if cancel_at_period_end:
                 sub = stripe.Subscription.modify(
@@ -350,83 +332,82 @@ class StripeService:
 
             return sub
         except stripe.StripeError as e:
-            logger.error(f"Stripe error: {str(e)}")
+            logger.error(f"Stripe error cancelling subscription {subscription_id}: {str(e)}")
             raise StripeServiceError(f"Error cancelling subscription: {str(e)}")
         except Exception as e:
             logger.error(
-                f"Failed to cancel subscription for user: {user_id} with error{str(e)}"
+                f"Failed to cancel subscription {subscription_id} with error: {str(e)}"
             )
             raise StripeServiceError("Unexpected error while cancelling subscription")
 
-    async def reactivate_user_subscription(self, user_id: str) -> stripe.Subscription:
-        """Reactivate user's subscription that was set to cancel at period end.
+    async def reactivate_user_subscription(self, subscription_id: str) -> stripe.Subscription:
+        """Reactivate a subscription that was set to cancel at period end.
 
         Args:
-            user_id: User identifier
+            subscription_id: The ID of the subscription to reactivate.
 
         Returns:
-            Updated Stripe Subscription object
+            Updated Stripe Subscription object.
 
         Raises:
-            StripeServiceError: When subscription not found, not eligible for reactivation, or reactivation fails
+            StripeServiceError: When subscription not found, not eligible for reactivation, or reactivation fails.
         """
         try:
-            logger.info(f"Reactivating subscription for user: {user_id}")
+            logger.info(f"Reactivating subscription: {subscription_id}")
 
             if not BaseDatabaseService.subclasses:
                 raise StripeServiceError("No database service implementation available")
 
-            # Get subscription details first
-            subscription_details = await self.get_subscription_details(user_id)
-
-            if not subscription_details.get("has_subscription"):
-                raise StripeServiceError("No subscription found for user")
-
-            subscription_id = subscription_details.get("subscription_id")
-            if not subscription_id:
-                raise StripeServiceError("Subscription ID not found")
+            # Get subscription details from Stripe
+            subscription = stripe.Subscription.retrieve(subscription_id)
 
             # Check if subscription is eligible for reactivation
-            if not subscription_details.get("cancel_at_period_end"):
+            if not subscription.cancel_at_period_end:
                 raise StripeServiceError(
                     "Subscription is not set to cancel - no reactivation needed"
                 )
 
             # Check if subscription is still active (hasn't ended yet)
-            status = subscription_details.get("status")
-            if status not in ["active", "trialing"]:
+            if subscription.status not in ["active", "trialing"]:
                 raise StripeServiceError(
-                    f"Subscription cannot be reactivated - current status: {status}"
+                    f"Subscription cannot be reactivated - current status: {subscription.status}"
                 )
 
             # Check if we're still within the current period
-
-            current_period_end = subscription_details.get("current_period_end")
-            if current_period_end and datetime.now(
-                timezone.utc
-            ) >= current_period_end.replace(tzinfo=timezone.utc):
+            if datetime.now(timezone.utc) >= datetime.fromtimestamp(
+                subscription.current_period_end, tz=timezone.utc
+            ):
                 raise StripeServiceError(
                     "Subscription period has already ended - cannot reactivate"
                 )
 
             # Reactivate the subscription
-            subscription = stripe.Subscription.modify(
+            reactivated_subscription = stripe.Subscription.modify(
                 subscription_id, cancel_at_period_end=False
             )
 
-            logger.info(
-                f"Successfully reactivated subscription {subscription_id} for user {user_id}"
+            BaseDatabaseService.subclasses[0]().update_data(
+                table_name="user_profiles",
+                data={
+                    "stripe_subscription_id": reactivated_subscription.id,
+                    "is_pro": True,
+                },
+                cols={"stripe_subscription_id": subscription_id},
             )
-            return subscription
+
+            logger.info(
+                f"Successfully reactivated subscription {subscription_id}"
+            )
+            return reactivated_subscription
 
         except stripe.StripeError as e:
-            logger.error(f"Stripe error: {str(e)}")
+            logger.error(f"Stripe error reactivating subscription {subscription_id}: {str(e)}")
             raise StripeServiceError(f"Error reactivating subscription: {str(e)}")
         except StripeServiceError:
             raise
         except Exception as e:
             logger.error(
-                f"Failed to reactivate subscription for user: {user_id} with error: {str(e)}"
+                f"Failed to reactivate subscription {subscription_id} with error: {str(e)}"
             )
             raise StripeServiceError("Unexpected error while reactivating subscription")
 

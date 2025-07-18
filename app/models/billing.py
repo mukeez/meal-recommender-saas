@@ -66,6 +66,25 @@ class BillingPortalResponse(BaseModel):
     url: str = Field(..., description="URL to redirect to Stripe customer billing portal")
 
 
+class SubscriptionCancellationRequest(BaseModel):
+    """Request model for cancelling a subscription.
+       subscription_id: ID of the subscription to cancel
+       cancel_at_period_end: If True, cancels at period end. If False, cancels immediately.
+    """
+
+    subscription_id: str = Field(..., description="The ID of the subscription to cancel")
+    cancel_at_period_end: bool = Field(
+        True,
+        description="If True, cancels at period end. If False, cancels immediately.",
+    )
+
+
+class SubscriptionReactivationRequest(BaseModel):
+    """Request model for reactivating a subscription."""
+
+    subscription_id: str = Field(..., description="The ID of the subscription to reactivate")
+
+
 class SubscriptionReactivationResponse(BaseModel):
     """Response model for subscription reactivation."""
     success: bool = Field(..., description="Whether reactivation was successful")
