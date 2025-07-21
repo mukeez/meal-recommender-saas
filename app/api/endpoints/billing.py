@@ -246,7 +246,7 @@ async def stripe_webhook(
             customer_id = session["customer"]
             await stripe_service.update_stripe_user_subscription(
                 customer=customer_id,
-                subscription_data={"is_pro": False, "stripe_subscription_id": None, "subscription_start": None, "subscription_end": None, "trial_end_date": None, "plan": None},
+                subscription_data={"is_pro": False, "stripe_subscription_id": None, "subscription_start": None, "subscription_end": None},
                 
             )
             

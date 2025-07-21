@@ -372,11 +372,13 @@ class StripeService:
                 raise StripeServiceError(
                     f"Subscription cannot be reactivated - current status: {subscription.status}"
                 )
+            
+            current_period_end = datetime.fromtimestamp(subscription["items"]["data"][0]["current_period_end"], tz=timezone.utc)
+            current_period_start = datetime.fromtimestamp(subscription["items"]["data"][0]["current_period_start"], tz=timezone.utc)
+
 
             # Check if we're still within the current period
-            if datetime.now(timezone.utc) >= datetime.fromtimestamp(
-                subscription.current_period_end, tz=timezone.utc
-            ):
+            if datetime.now(timezone.utc) >= current_period_end:
                 raise StripeServiceError(
                     "Subscription period has already ended - cannot reactivate"
                 )
@@ -391,6 +393,8 @@ class StripeService:
                 data={
                     "stripe_subscription_id": reactivated_subscription.id,
                     "is_pro": True,
+                    "subscription_start": current_period_start.isoformat(),
+                    "subscription_end": current_period_end.isoformat(),
                 },
                 cols={"stripe_subscription_id": subscription_id},
             )
@@ -1145,6 +1149,93 @@ class StripeService:
 
         except Exception as e:
             logger.error(f"Error marking webhook event as processed: {str(e)}")
+
+
+    async def anonymize_stripe_customer(self, customer_id: str, user_id: str, user_email: str) -> bool:
+        """Anonymize a Stripe customer by removing PII while preserving financial records.
+
+        Args:
+            customer_id: Stripe customer ID to anonymize
+            user_id: Internal user ID for logging
+            user_email: User's original email for audit trail
+
+        Returns:
+            True if customer was anonymized successfully
+
+        Raises:
+            StripeServiceError: On Stripe API errors
+        """
+        try:
+            logger.info(f"Anonymizing Stripe customer: {customer_id} for user: {user_id} (email: {user_email})")
+            
+            # Remove/anonymize personally identifiable information
+            anonymized_data = {
+                'email': user_email,
+                'name': 'Deleted User',
+                'phone': None,
+                'description': f'Account deleted on {datetime.now().isoformat()}',
+                # Remove any custom metadata that might contain PII
+                'metadata': {
+                    'user_id': user_id,  # Keep for record keeping
+                    'original_email': user_email,  # Keep original email for audit trail
+                    'account_deleted': 'true',
+                    'deletion_date': datetime.now().isoformat()
+                }
+            }
+            
+            # Update the customer with anonymized data
+            stripe.Customer.modify(customer_id, **anonymized_data)
+            
+            # Remove all payment methods to prevent future charges
+            payment_methods = stripe.PaymentMethod.list(
+                customer=customer_id,
+                type='card'
+            )
+            
+            for pm in payment_methods.data:
+                try:
+                    stripe.PaymentMethod.detach(pm.id)
+                    logger.info(f"Detached payment method {pm.id} from customer {customer_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to detach payment method {pm.id}: {str(e)}")
+            
+            logger.info(f"Successfully anonymized Stripe customer: {customer_id} (original email: {user_email})")
+            return True
+            
+        except stripe.StripeError as e:
+            logger.error(f"Stripe error anonymizing customer {customer_id}: {str(e)}")
+            raise StripeServiceError(f"Error anonymizing Stripe customer: {str(e)}")
+        except Exception as e:
+            logger.error(f"Unexpected error anonymizing customer {customer_id}: {str(e)}")
+            raise StripeServiceError(f"Unexpected error anonymizing customer: {str(e)}")
+
+    async def delete_stripe_customer(self, customer_id: str) -> bool:
+        """Delete a Stripe customer.
+
+        Args:
+            customer_id: Stripe customer ID to delete
+
+        Returns:
+            True if customer was deleted successfully, False otherwise
+
+        Raises:
+            StripeServiceError: On Stripe API errors
+        """
+        try:
+            logger.info(f"Deleting Stripe customer: {customer_id}")
+            
+            # Delete the customer from Stripe
+            stripe.Customer.delete(customer_id)
+            
+            logger.info(f"Successfully deleted Stripe customer: {customer_id}")
+            return True
+            
+        except stripe.StripeError as e:
+            logger.error(f"Stripe error deleting customer {customer_id}: {str(e)}")
+            raise StripeServiceError(f"Error deleting Stripe customer: {str(e)}")
+        except Exception as e:
+            logger.error(f"Unexpected error deleting customer {customer_id}: {str(e)}")
+            raise StripeServiceError(f"Unexpected error deleting customer: {str(e)}")
 
 
 stripe_service = StripeService()
