@@ -68,8 +68,25 @@ class MealService:
             if not meal_type:
                 meal_type = self._classify_meal_by_time(current_time)
 
+            if not meal_data.meal_time:
+                meal_time = datetime.now().isoformat()
+
+            elif isinstance(meal_data.meal_time, datetime):
+                meal_time = meal_data.meal_time.isoformat()
+            elif isinstance(meal_data.meal_time, str):
+                try:
+                    meal_time = datetime.fromisoformat(meal_data.meal_time).isoformat()
+                except ValueError:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid meal_time format. Use ISO 8601 format."
+                    )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="meal_time must be a datetime or ISO 8601 string."
+                )
             
-            timestamp = datetime.now().isoformat()
 
             # Create the meal entry
             meal_entry = {
@@ -80,7 +97,7 @@ class MealService:
                 "protein": meal_data.protein,
                 "carbs": meal_data.carbs,
                 "fat": meal_data.fat,
-                "meal_time": timestamp,
+                "meal_time": meal_time,
                 "meal_type": meal_type,
                 "logging_mode": meal_data.logging_mode,
                 "notes": meal_data.notes,
@@ -1530,7 +1547,6 @@ class MealService:
         query = query.strip()
         
         # Handle nested quotes like '"Oat Meal"' or "'Oat Meal'"
-        # First remove outer quotes if present
         if (query.startswith('"') and query.endswith('"')) or (query.startswith("'") and query.endswith("'")):
             query = query[1:-1]
         
