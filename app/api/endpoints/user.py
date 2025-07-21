@@ -27,6 +27,8 @@ from app.models.user import (
     Sex,
     HeightUnitPreference,
     WeightUnitPreference,
+    UserDeletionResponse,
+    UserDeletionDetails,
 )
 from app.services.user_service import user_service
 from app.services.stripe_service import stripe_service, StripeServiceError
@@ -354,8 +356,9 @@ async def update_user_preferences(
     summary="Delete user account and all data",
     description="Permanently delete the user account, cancel all subscriptions, and remove all associated data. This action cannot be undone.",
     status_code=status.HTTP_200_OK,
+    response_model=UserDeletionResponse,
 )
-async def delete_user_account(user=Depends(auth_guard)) -> dict:
+async def delete_user_account(user=Depends(auth_guard)) -> UserDeletionResponse:
     """Delete the current user's account and all associated data.
 
     This endpoint will:
@@ -391,25 +394,48 @@ async def delete_user_account(user=Depends(auth_guard)) -> dict:
                 detail="Failed to retrieve user profile. Please contact support."
             )
             
-        # Cancel all active Stripe subscriptions
+        # Cancel all active Stripe subscriptions and delete customer
         subscription_cancelled = False
+        customer_deleted = False
         try:
-            has_active_subscription = await stripe_service.has_active_subscription(user_id)
-            if has_active_subscription:
-                logger.info(f"Cancelling active subscription for user: {user_id}")
-                await stripe_service.cancel_user_subscription(
-                    user_id=user_id, 
-                    cancel_at_period_end=False  # Cancel immediately for account deletion
-                )
-                subscription_cancelled = True
-                logger.info(f"Successfully cancelled subscription for user: {user_id}")
+            # Get customer ID first
+            customer_id = await stripe_service.get_stripe_customer(user_id)
+            print(f"Stripe customer ID for user {user_id}: {customer_id}")
+            if customer_id:
+                logger.info(f"Found Stripe customer {customer_id} for user: {user_id}")
+                
+                # Get all active subscriptions for this customer
+                active_subscriptions = await stripe_service.get_active_stripe_subscriptions(customer_id)
+                if active_subscriptions:
+                    logger.info(f"Found {len(active_subscriptions)} active subscription(s) for user: {user_id}")
+                    
+                    # Cancel each subscription individually
+                    for subscription in active_subscriptions:
+                        try:
+                            await stripe_service.cancel_user_subscription(
+                                subscription_id=subscription.id,
+                                cancel_at_period_end=False  # Cancel immediately for account deletion
+                            )
+                            logger.info(f"Successfully cancelled subscription {subscription.id} for user: {user_id}")
+                            subscription_cancelled = True
+                        except StripeServiceError as e:
+                            logger.error(f"Failed to cancel subscription {subscription.id} for user {user_id}: {str(e)}")
+                else:
+                    logger.info(f"No active subscriptions found for user: {user_id}")
+                
+                # Anonymize the Stripe customer instead of deleting
+                logger.info(f"Anonymizing Stripe customer for user: {user_id}")
+                await stripe_service.anonymize_stripe_customer(customer_id, user_id, user_email)
+                customer_deleted = True  # Still report as "handled" in response
+                logger.info(f"Successfully anonymized Stripe customer for user: {user_id}")
             else:
-                logger.info(f"No active subscription found for user: {user_id}")
+                logger.info(f"No Stripe customer found for user: {user_id}")
+                
         except StripeServiceError as e:
-            logger.error(f"Failed to cancel subscription for user {user_id}: {str(e)}")
+            logger.error(f"Failed to cancel subscriptions or delete customer for user {user_id}: {str(e)}")
             
         except Exception as e:
-            logger.error(f"Unexpected error cancelling subscription for user {user_id}: {str(e)}")
+            logger.error(f"Unexpected error cancelling subscriptions or deleting customer for user {user_id}: {str(e)}")
             
         # Delete all user data from database
         try:
@@ -446,6 +472,7 @@ async def delete_user_account(user=Depends(auth_guard)) -> dict:
                 "profile_data_deleted": True,
                 "auth_access_removed": True,
                 "subscription_cancelled": subscription_cancelled,
+                "customer_deleted": customer_deleted,
                 "login_disabled": True
             },
             "deletion_date": datetime.now().isoformat()
