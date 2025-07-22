@@ -156,6 +156,59 @@ class ProductUpdate(BaseModel):
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 
 
+class ProductLogRequest(BaseModel):
+    """Request model for logging a new product when barcode scan returns no results.
+    
+    This model represents the data structure expected when users manually
+    input product information after an unsuccessful barcode scan.
+    """
+    barcode: Annotated[
+        str,
+        Field(
+            ...,
+            alias="code",
+            description="The unique barcode or identifier of the product.",
+            min_length=1,
+        ),
+    ]
+    product_name: Annotated[
+        str, 
+        Field(
+            ..., 
+            description="The common or descriptive name of the product.",
+            min_length=1,
+        )
+    ]
+    brand_name: Annotated[
+        str,
+        Field(
+            ...,
+            alias="brands",
+            description="The name of the brand that manufactures the product.",
+            min_length=1,
+        ),
+    ]
+    ingredients: Annotated[
+        Optional[str],
+        Field(
+            None,
+            alias="ingredients_text",
+            description="A list or description of the ingredients contained in the product.",
+        ),
+    ]
+    nutrition_facts: Annotated[
+        NutritionFacts,
+        Field(..., description="Nutritional information of the product - required for logging."),
+    ]
+
+    model_config = ConfigDict(
+        validate_assignment=True, 
+        populate_by_name=True, 
+        from_attributes=True,
+        str_strip_whitespace=True,
+    )
+
+
 class LoggedProduct(Product):
     created_at: Annotated[
         datetime,

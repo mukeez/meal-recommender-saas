@@ -5,10 +5,10 @@ import traceback
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, Body
 
 from app.api.auth_guard import auth_guard
-from app.models.product import ProductList, ProductSearchResponse, ProductNutritionResponse, ProductWithNutrition
+from app.models.product import ProductList, ProductSearchResponse, ProductNutritionResponse, ProductWithNutrition, Product, LoggedProduct, NutritionFacts, ProductLogRequest
 from app.models.meal import LoggedMeal, MealSearchResponse, MealType, LoggingMode, ServingUnitEnum, LoggedMealWithBarcode, ProductMealSearchResponse
 from app.services.product_service import product_service
 from app.services.openfoodfacts_service import openfoodfacts_service
@@ -227,4 +227,88 @@ async def product_search_meals_format(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving products: {str(e)}",
+        )
+
+
+@router.post(
+    "/log",
+    response_model=LoggedProduct,
+    status_code=status.HTTP_201_CREATED,
+    summary="Log a new product",
+    description="Create a new product entry when barcode scan returns no results. Users can manually input product information.",
+)
+async def log_product(
+    product_data: ProductLogRequest = Body(..., description="Product information to log"),
+    user=Depends(auth_guard),
+) -> LoggedProduct:
+    """Log a new product to the database.
+
+    This endpoint allows users to manually log product information when
+    a barcode scan doesn't return any results. The user provides all
+    necessary product details including nutrition facts.
+
+    Args:
+        product_data: Complete product information including barcode, name, brand, and nutrition facts
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        LoggedProduct: The created product with timestamp
+
+    Raises:
+        HTTPException: If there is an error creating the product or if product already exists
+    """
+    try:
+        user_id = user.get("sub")
+        
+        logger.info(f"User {user_id} logging new product with barcode: {product_data.barcode}")
+        
+        # Check if product with this barcode already exists
+        existing_product = await product_service.scan_barcode(product_data.barcode)
+        if existing_product:
+            logger.warning(f"Product with barcode {product_data.barcode} already exists")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Product with barcode {product_data.barcode} already exists. Use the update endpoint to modify existing products."
+            )
+        
+        # Validate nutrition facts if provided
+        if product_data.nutrition_facts:
+            nutrition = product_data.nutrition_facts
+            if nutrition.calories is not None and nutrition.calories < 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Calories cannot be negative"
+                )
+            
+            # Validate macronutrients
+            for field, value in [("protein", nutrition.protein), ("carbs", nutrition.carbs), ("fat", nutrition.fat)]:
+                if value is not None and value < 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"{field.capitalize()} cannot be negative"
+                    )
+        
+        # Log the product to database
+        logged_products = await product_service.log_product(product_data)
+        
+        if not logged_products or len(logged_products) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to log product - no data returned"
+            )
+        
+        logged_product = logged_products[0]
+        logger.info(f"Successfully logged product {logged_product.barcode} for user {user_id}")
+        
+        return logged_product
+        
+    except HTTPException:
+        raise
+        
+    except Exception as e:
+        logger.error(f"Unexpected error logging product for user {user_id if 'user_id' in locals() else 'unknown'}: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error logging product: {str(e)}",
         )
