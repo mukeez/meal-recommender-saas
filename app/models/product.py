@@ -9,6 +9,11 @@ from typing_extensions import Annotated
 from pydantic import BaseModel, Field, BeforeValidator, ConfigDict
 from datetime import datetime
 
+# Import the PaginationInfo from meal models to avoid circular dependency
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from app.models.meal import PaginationInfo
+
 
 def parse_datetime(dt_str: Any) -> datetime | Any:
     """Parse a datetime string, handling timezone information.
@@ -317,4 +322,17 @@ class ProductSearchResponse(BaseModel):
     """
     logged_meals: List[Product] = Field(default_factory=list, description="Matching products (treated as meals for unified response)")
     total_logged_meals: int = Field(0, description="Total count of products found")
+    search_query: str = Field(..., description="The search term that was used")
+
+
+class PaginatedProductNutritionResponse(BaseModel):
+    """Paginated response model for product search results with merged nutrition facts.
+
+    Attributes:
+        results: List of products with merged nutrition facts for current page
+        pagination: Pagination information
+        search_query: The search term that was used
+    """
+    results: List[ProductWithNutrition] = Field(default_factory=list, description="Products with merged nutrition facts for current page")
+    pagination: "PaginationInfo" = Field(..., description="Pagination information")
     search_query: str = Field(..., description="The search term that was used")
