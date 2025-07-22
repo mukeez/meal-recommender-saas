@@ -6,7 +6,7 @@ This module contains the FastAPI routes for logging meals and tracking daily pro
 import logging
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Form, UploadFile, File
 from typing import List
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from typing import Optional
 
 from app.api.auth_guard import auth_guard
@@ -108,6 +108,7 @@ async def log_meal(
     amount: float = Form(1.0, description="Amount/quantity of the serving unit", ge=0),
     favorite: bool = Form(False, description="Whether to mark this meal as a favorite"),
     photo: Optional[UploadFile] = File(None, description="Meal photo (optional)"),
+    meal_time: Optional[datetime] = Form(datetime.now, description="Time of the meal (optional)"),
     user=Depends(auth_guard)
 ) -> LoggedMeal:
     """Log a meal for the current user with automatic meal type classification.
@@ -157,7 +158,7 @@ async def log_meal(
             carbs=carbs,
             fat=fat,
             calories=calories,
-            meal_time=datetime.now(),
+            meal_time=meal_time,
             meal_type=None,  # Will be auto-classified
             notes=notes,
             logging_mode=LoggingMode(logging_mode),
