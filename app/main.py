@@ -62,7 +62,7 @@ scheduler.add_job(
 
 # scheduled for 12:00 PM daily
 scheduler.add_job(
-    macromeals_tasks.schedule_custom_meal_reminders_dinner,
+    macromeals_tasks.schedule_custom_meal_reminders_lunch,
     CronTrigger(hour="12"),
 )
 
@@ -150,7 +150,7 @@ app.add_middleware(
     CloudWatchLoggingMiddleware,
     log_group_name=log_group_name,
     batch_size=10,
-    batch_timeout=30
+    batch_timeout=30,
 )
 
 app.add_middleware(
