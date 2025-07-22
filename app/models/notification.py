@@ -142,3 +142,33 @@ class SendPushNotificationRequest(BaseModel):
     fcm_token: str
     title: str
     body: str
+
+
+class PaginationInfo(BaseModel):
+    """Pagination information for paginated responses."""
+
+    page: Annotated[int, Field(..., description="Current page number (1-based)")]
+    page_size: Annotated[int, Field(..., description="Number of items per page")]
+    total: Annotated[int, Field(..., description="Total number of items")]
+    total_pages: Annotated[int, Field(..., description="Total number of pages")]
+    has_next: Annotated[bool, Field(..., description="Whether there is a next page")]
+    has_previous: Annotated[bool, Field(..., description="Whether there is a previous page")]
+
+
+class PaginatedNotificationResponse(BaseModel):
+    """
+    Paginated response model for notifications with proper pagination info.
+
+    Attributes:
+        results (list[Notification]): List of notifications for the current page.
+        pagination (PaginationInfo): Detailed pagination information.
+    """
+
+    results: Annotated[
+        list[Notification],
+        Field(..., description="List of notifications for the current page"),
+    ]
+    pagination: Annotated[
+        PaginationInfo,
+        Field(..., description="Pagination information"),
+    ]
