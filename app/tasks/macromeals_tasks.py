@@ -42,20 +42,29 @@ class MacroMealsTasks:
                 .eq("meal_reminder_preferences_set", False)
                 .execute()
             )
+            
+            successful_notifications = 0
+            failed_notifications = 0
+            
             for user in response.data:
                 user_id = user.get("id")
                 token = user.get("fcm_token")
                 first_name = user.get("first_name", None)
-                if token:
-                    logger.info(
-                        f"Sending meal reminder notification to user: {user_id}"
-                    )
+                
+                if not token:
+                    logger.warning(f"No FCM token for user {user_id}, skipping notification")
+                    continue
+                
+                try:
+                    logger.info(f"Sending meal reminder notification to user: {user_id}")
                     title = (
                         f"Good morning, {first_name}!"
                         if first_name
                         else "Good morning!"
                     )
                     body = "Ready to fuel your day right? Tap to plan your meals and hit those macro goals today!"
+                    
+                    # Send push notification
                     asyncio.run(
                         notification_service.send_push_notification(
                             fcm_token=token,
@@ -63,6 +72,8 @@ class MacroMealsTasks:
                             body=body,
                         )
                     )
+                    
+                    # Log notification to database
                     self.supabase_client.table("notifications").insert(
                         {
                             "user_id": user_id,
@@ -73,10 +84,19 @@ class MacroMealsTasks:
                             "status": "unread",
                         }
                     ).execute()
+                    
+                    successful_notifications += 1
+                    logger.info(f"Successfully sent start of day reminder to user: {user_id}")
+                    
+                except Exception as user_error:
+                    failed_notifications += 1
+                    logger.error(f"Failed to send start of day reminder to user {user_id}: {str(user_error)}")
+                    continue  # Continue to next user
+            
+            logger.info(f"Start of day reminders completed: {successful_notifications} successful, {failed_notifications} failed")
+            
         except Exception as e:
-            logger.error(
-                f"Failed to schedule start of day meal reminders with error: {e}"
-            )
+            logger.error(f"Failed to schedule start of day meal reminders with error: {e}")
 
     def schedule_end_of_day_meal_reminders(self) -> None:
         """Schedule end of day meal reminders for users with meal_reminder_preferences_set key as False."""
@@ -88,20 +108,29 @@ class MacroMealsTasks:
                 .eq("meal_reminder_preferences_set", False)
                 .execute()
             )
+            
+            successful_notifications = 0
+            failed_notifications = 0
+            
             for user in response.data:
                 user_id = user.get("id")
                 token = user.get("fcm_token")
                 first_name = user.get("first_name", None)
-                if token:
-                    logger.info(
-                        f"Sending end of day meal reminder notification to user: {user_id}"
-                    )
+                
+                if not token:
+                    logger.warning(f"No FCM token for user {user_id}, skipping notification")
+                    continue
+                
+                try:
+                    logger.info(f"Sending end of day meal reminder notification to user: {user_id}")
                     title = (
                         f"Day is almost over, {first_name}!"
                         if first_name
                         else "Day is almost over!"
                     )
-                    body = "Don’t forget to log your meals. It only takes a minute to stay on track."
+                    body = "Don't forget to log your meals. It only takes a minute to stay on track."
+                    
+                    # Send push notification
                     asyncio.run(
                         notification_service.send_push_notification(
                             fcm_token=token,
@@ -109,6 +138,8 @@ class MacroMealsTasks:
                             body=body,
                         )
                     )
+                    
+                    # Log notification to database
                     self.supabase_client.table("notifications").insert(
                         {
                             "user_id": user_id,
@@ -119,10 +150,19 @@ class MacroMealsTasks:
                             "status": "unread",
                         }
                     ).execute()
+                    
+                    successful_notifications += 1
+                    logger.info(f"Successfully sent end of day reminder to user: {user_id}")
+                    
+                except Exception as user_error:
+                    failed_notifications += 1
+                    logger.error(f"Failed to send end of day reminder to user {user_id}: {str(user_error)}")
+                    continue  # Continue to next user
+            
+            logger.info(f"End of day reminders completed: {successful_notifications} successful, {failed_notifications} failed")
+            
         except Exception as e:
-            logger.error(
-                f"Failed to schedule end of day meal reminders with error: {e}"
-            )
+            logger.error(f"Failed to schedule end of day meal reminders with error: {e}")
 
     def schedule_custom_meal_reminders_breakfast(self) -> None:
         """Schedule custom meal reminders for breakfast."""
@@ -134,17 +174,28 @@ class MacroMealsTasks:
                 .eq("meal_reminder_preferences_set", True)
                 .execute()
             )
+            
+            successful_notifications = 0
+            failed_notifications = 0
+            
             for user in response.data:
                 user_id = user.get("id")
                 token = user.get("fcm_token")
                 first_name = user.get("first_name", None)
-                if token:
+                
+                if not token:
+                    logger.warning(f"No FCM token for user {user_id}, skipping notification")
+                    continue
+                
+                try:
                     title = (
                         f"Time for breakfast, {first_name}!"
                         if first_name
                         else "Time for breakfast!"
                     )
                     body = "Log your morning meal to start your macro tracking off right today. 🍳"
+                    
+                    # Send push notification
                     asyncio.run(
                         notification_service.send_push_notification(
                             fcm_token=token,
@@ -152,6 +203,8 @@ class MacroMealsTasks:
                             body=body,
                         )
                     )
+                    
+                    # Log notification to database
                     self.supabase_client.table("notifications").insert(
                         {
                             "user_id": user_id,
@@ -162,6 +215,17 @@ class MacroMealsTasks:
                             "status": "unread",
                         }
                     ).execute()
+                    
+                    successful_notifications += 1
+                    logger.info(f"Successfully sent breakfast reminder to user: {user_id}")
+                    
+                except Exception as user_error:
+                    failed_notifications += 1
+                    logger.error(f"Failed to send breakfast reminder to user {user_id}: {str(user_error)}")
+                    continue  # Continue to next user
+            
+            logger.info(f"Breakfast reminders completed: {successful_notifications} successful, {failed_notifications} failed")
+            
         except Exception as e:
             logger.error(f"Failed to schedule breakfast reminders with error: {e}")
 
@@ -175,13 +239,24 @@ class MacroMealsTasks:
                 .eq("meal_reminder_preferences_set", True)
                 .execute()
             )
+            
+            successful_notifications = 0
+            failed_notifications = 0
+            
             for user in response.data:
                 user_id = user.get("id")
                 token = user.get("fcm_token")
                 first_name = user.get("first_name", None)
-                if token:
+                
+                if not token:
+                    logger.warning(f"No FCM token for user {user_id}, skipping notification")
+                    continue
+                
+                try:
                     title = f"Lunchtime, {first_name}!" if first_name else "Lunchtime!"
                     body = "Take a moment to log your meal and see how your macros are stacking up. 🥗"
+                    
+                    # Send push notification
                     asyncio.run(
                         notification_service.send_push_notification(
                             fcm_token=token,
@@ -189,6 +264,8 @@ class MacroMealsTasks:
                             body=body,
                         )
                     )
+                    
+                    # Log notification to database
                     self.supabase_client.table("notifications").insert(
                         {
                             "user_id": user_id,
@@ -199,6 +276,17 @@ class MacroMealsTasks:
                             "status": "unread",
                         }
                     ).execute()
+                    
+                    successful_notifications += 1
+                    logger.info(f"Successfully sent lunch reminder to user: {user_id}")
+                    
+                except Exception as user_error:
+                    failed_notifications += 1
+                    logger.error(f"Failed to send lunch reminder to user {user_id}: {str(user_error)}")
+                    continue  # Continue to next user
+            
+            logger.info(f"Lunch reminders completed: {successful_notifications} successful, {failed_notifications} failed")
+            
         except Exception as e:
             logger.error(f"Failed to schedule lunch reminders with error: {e}")
 
@@ -212,15 +300,26 @@ class MacroMealsTasks:
                 .eq("meal_reminder_preferences_set", True)
                 .execute()
             )
+            
+            successful_notifications = 0
+            failed_notifications = 0
+            
             for user in response.data:
                 user_id = user.get("id")
                 token = user.get("fcm_token")
                 first_name = user.get("first_name", None)
-                if token:
+                
+                if not token:
+                    logger.warning(f"No FCM token for user {user_id}, skipping notification")
+                    continue
+                
+                try:
                     title = (
                         f"Dinner time, {first_name}!" if first_name else "Dinner time!"
                     )
                     body = "Log your evening meal to complete your day's macro tracking. What's on the menu? 🍽️"
+                    
+                    # Send push notification
                     asyncio.run(
                         notification_service.send_push_notification(
                             fcm_token=token,
@@ -228,6 +327,8 @@ class MacroMealsTasks:
                             body=body,
                         )
                     )
+                    
+                    # Log notification to database
                     self.supabase_client.table("notifications").insert(
                         {
                             "user_id": user_id,
@@ -238,6 +339,17 @@ class MacroMealsTasks:
                             "status": "unread",
                         }
                     ).execute()
+                    
+                    successful_notifications += 1
+                    logger.info(f"Successfully sent dinner reminder to user: {user_id}")
+                    
+                except Exception as user_error:
+                    failed_notifications += 1
+                    logger.error(f"Failed to send dinner reminder to user {user_id}: {str(user_error)}")
+                    continue  # Continue to next user
+            
+            logger.info(f"Dinner reminders completed: {successful_notifications} successful, {failed_notifications} failed")
+            
         except Exception as e:
             logger.error(f"Failed to schedule dinner reminders with error: {e}")
 
