@@ -460,3 +460,91 @@ class CalculateMacrosResponse(BaseModel):
     protein: float = Field(..., description="Calculated protein (grams)")
     carbs: float = Field(..., description="Calculated carbohydrates (grams)")
     fat: float = Field(..., description="Calculated fat (grams)")
+
+
+class PaginationInfo(BaseModel):
+    """Pagination information for paginated responses.
+
+    Attributes:
+        page: Current page number (1-based)
+        page_size: Number of items per page
+        total: Total number of items across all pages
+        total_pages: Total number of pages
+        has_next: Whether there are more pages after current
+        has_previous: Whether there are pages before current
+    """
+    page: int = Field(..., description="Current page number (1-based)")
+    page_size: int = Field(..., description="Number of items per page")
+    total: int = Field(..., description="Total number of items across all pages")
+    total_pages: int = Field(..., description="Total number of pages")
+    has_next: bool = Field(..., description="Whether there are more pages after current")
+    has_previous: bool = Field(..., description="Whether there are pages before current")
+
+
+class PaginatedMealSearchRequest(BaseModel):
+    """Request model for paginated meal search.
+
+    Attributes:
+        query: Search term for food item name
+        meal_type: Filter by meal type (optional)
+        start_date: Start date for search range (optional)
+        end_date: End date for search range (optional)
+        page: Page number (1-based, default: 1)
+        page_size: Number of items per page (default: 20)
+        favorites_only: Filter to show only favorite meals (optional)
+    """
+    query: str = Field(..., description="Search term for food item name", min_length=1)
+    meal_type: Optional[MealType] = Field(None, description="Filter by meal type")
+    start_date: Optional[date] = Field(None, description="Start date for search range")
+    end_date: Optional[date] = Field(None, description="End date for search range")
+    page: int = Field(1, description="Page number (1-based)", ge=1)
+    page_size: int = Field(20, description="Number of items per page", ge=1)
+    favorites_only: Optional[bool] = Field(None, description="Filter to show only favorite meals")
+
+
+class PaginatedMealSearchResponse(BaseModel):
+    """Paginated response model for meal search results.
+
+    Attributes:
+        results: List of matching logged meals for current page
+        pagination: Pagination information
+        search_query: The search term that was used
+    """
+    results: List[LoggedMeal] = Field(default_factory=list, description="Matching logged meals for current page")
+    pagination: PaginationInfo = Field(..., description="Pagination information")
+    search_query: str = Field(..., description="The search term that was used")
+
+
+class PaginatedMealLogsResponse(BaseModel):
+    """Paginated response model for meal logs.
+
+    Attributes:
+        results: List of logged meals for current page
+        pagination: Pagination information
+    """
+    results: List[LoggedMeal] = Field(default_factory=list, description="Logged meals for current page")
+    pagination: PaginationInfo = Field(..., description="Pagination information")
+
+
+class PaginatedFavoriteMealsResponse(BaseModel):
+    """Paginated response model for favorite meals.
+
+    Attributes:
+        results: List of favorite meals for current page
+        pagination: Pagination information
+    """
+    results: List[LoggedMeal] = Field(default_factory=list, description="Favorite meals for current page")
+    pagination: PaginationInfo = Field(..., description="Pagination information")
+
+
+class PaginatedProductMealSearchResponse(BaseModel):
+    """Paginated response model for product search results in meal format.
+
+    Attributes:
+        results: List of products converted to meal format with barcodes for current page
+        pagination: Pagination information
+        search_query: The search term that was used
+    """
+    results: List[LoggedMealWithBarcode] = Field(default_factory=list, description="Products converted to meal format with barcodes for current page")
+    pagination: PaginationInfo = Field(..., description="Pagination information")
+    search_query: str = Field(..., description="The search term that was used")

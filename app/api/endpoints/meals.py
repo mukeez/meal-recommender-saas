@@ -23,7 +23,11 @@ from app.models.meal import (
     MealSearchRequest,
     MealSearchResponse,
     MealType,
-    MacroSummary
+    MacroSummary,
+    PaginatedMealSearchRequest,
+    PaginatedMealSearchResponse,
+    PaginatedMealLogsResponse,
+    PaginatedFavoriteMealsResponse,
 )
 from app.services.meal_service import meal_service
 from app.services.meal_llm_service import meal_llm_service
@@ -480,34 +484,191 @@ async def delete_meal(
 
 
 @router.get(
-    "/logs",
-    response_model=List[LoggedMeal],
+    "/search",
+    response_model=PaginatedMealSearchResponse,
     status_code=status.HTTP_200_OK,
-    summary="Get meal history for a date range",
-    description="Retrieve meals logged by the current user for a specified date range or period.",
+    summary="Search meal logs with pagination",
+    description="Search for meals in user's logged meal history with pagination support. Supports filtering by meal type, date range, and favorites.",
+)
+async def search_meals(
+    query: str,
+    meal_type: Optional[MealType] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    page: int = 1,
+    page_size: int = 20,
+    favorites_only: Optional[bool] = None,
+    user=Depends(auth_guard),
+) -> PaginatedMealSearchResponse:
+    """Search for meals in user's logged meal history with pagination.
+
+    Args:
+        query: Search term for food item name
+        meal_type: Filter by meal type (optional)
+        start_date: Start date for search range (optional)
+        end_date: End date for search range (optional)
+        page: Page number (1-based, default: 1)
+        page_size: Number of items per page (default: 20)
+        favorites_only: Filter to show only favorite meals (optional)
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        PaginatedMealSearchResponse with matching logged meals and pagination info
+
+    Raises:
+        HTTPException: If there is an error processing the search
+    """
+    try:
+        user_id = user.get("sub")
+
+        # Validate pagination parameters
+        if page < 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Page must be 1 or greater",
+            )
+        
+        if page_size < 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Page size must be 1 or greater",
+            )
+
+        # Validate date range
+        if start_date and end_date and start_date > end_date:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Start date must be before or equal to end date",
+            )
+
+        # Create paginated search request
+        search_request = PaginatedMealSearchRequest(
+            query=query,
+            meal_type=meal_type,
+            start_date=start_date,
+            end_date=end_date,
+            page=page,
+            page_size=page_size,
+            favorites_only=favorites_only
+        )
+
+        # Perform the search
+        search_results = await meal_service.search_meals(user_id, search_request)
+        
+        return search_results
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error searching meals for user {user_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error searching meals: {str(e)}",
+        )
+
+
+@router.get(
+    "/favorites",
+    response_model=PaginatedFavoriteMealsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get paginated favorite meals",
+    description="Retrieve meals marked as favorites by the current user with pagination support.",
+)
+async def get_favorite_meals(
+    page: int = 1,
+    page_size: int = 20,
+    user=Depends(auth_guard)
+) -> PaginatedFavoriteMealsResponse:
+    """Retrieve paginated meals marked as favorites by the current user.
+
+    Args:
+        page: Page number (1-based, default: 1)
+        page_size: Number of items per page (default: 20)
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        PaginatedFavoriteMealsResponse with favorite meals and pagination info
+
+    Raises:
+        HTTPException: If there is an error retrieving favorite meals
+    """
+    try:
+        user_id = user.get("sub")
+
+        # Validate pagination parameters
+        if page < 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Page must be 1 or greater",
+            )
+        
+        if page_size < 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Page size must be 1 or greater",
+            )
+
+        # Get favorite meals
+        paginated_favorites = await meal_service.get_favorite_meals(user_id, page, page_size)
+        
+        return paginated_favorites
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving paginated favorite meals for user {user_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving favorite meals: {str(e)}",
+        )
+
+
+@router.get(
+    "/logs",
+    response_model=PaginatedMealLogsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get paginated meal history for a date range",
+    description="Retrieve meals logged by the current user for a specified date range or period with pagination support.",
 )
 async def get_meal_history(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     period: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20,
     user=Depends(auth_guard),
-) -> List[LoggedMeal]:
-    """Retrieve meal history for a specified date range or period.
+) -> PaginatedMealLogsResponse:
+    """Retrieve paginated meal history for a specified date range or period.
 
     Args:
         start_date: Start date for the meal history (optional if period is provided)
         end_date: End date for the meal history (optional, defaults to today)
         period: Predefined period (1W, 1M, 3M, 6M, 1Y, All) - overrides start_date
+        page: Page number (1-based, default: 1)
+        page_size: Number of items per page (default: 20)
         user: The authenticated user
 
     Returns:
-        A list of logged meals within the specified date range.
+        PaginatedMealLogsResponse with meals and pagination information
 
     Raises:
         HTTPException: If the request is invalid or an error occurs.
     """
     try:
         user_id = user.get("sub")
+
+        # Validate pagination parameters
+        if page < 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Page must be 1 or greater",
+            )
+        
+        if page_size < 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Page size must be 1 or greater",
+            )
 
         if not end_date:
             end_date = date.today()
@@ -544,139 +705,18 @@ async def get_meal_history(
                 detail="Start date must be before or equal to end date",
             )
 
-        meals = await meal_service.get_meals_by_date_range(
-            user_id, start_date, end_date
+        paginated_meals = await meal_service.get_meals_by_date_range(
+            user_id, start_date, end_date, page, page_size
         )
-        return meals
+        return paginated_meals
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error retrieving meal history: {str(e)}")
+        logger.error(f"Error retrieving paginated meal history: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving meal history: {str(e)}",
         )
 
 
-@router.get(
-    "/search",
-    response_model=MealSearchResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Search meal logs",
-    description="Search for meals in user's logged meal history. Supports filtering by meal type, date range, and favorites.",
-)
-async def search_meals(
-    query: str,
-    meal_type: Optional[MealType] = None,
-    start_date: Optional[date] = None,
-    end_date: Optional[date] = None,
-    limit: int = 20,
-    favorites_only: Optional[bool] = None,
-    user=Depends(auth_guard),
-) -> MealSearchResponse:
-    """Search for meals in user's logged meal history.
-
-    Args:
-        query: Search term for food item name
-        meal_type: Filter by meal type (optional)
-        start_date: Start date for search range (optional)
-        end_date: End date for search range (optional)
-        limit: Maximum number of results to return (1-100, default: 20)
-        favorites_only: Filter to show only favorite meals (optional)
-        user: The authenticated user (injected by the auth_guard dependency)
-
-    Returns:
-        MealSearchResponse with matching logged meals
-
-    Raises:
-        HTTPException: If there is an error processing the search
-    """
-    try:
-        user_id = user.get("sub")
-
-        # Validate limit
-        if limit < 1 or limit > 100:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Limit must be between 1 and 100",
-            )
-
-        # Validate date range
-        if start_date and end_date and start_date > end_date:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Start date must be before or equal to end date",
-            )
-
-        # Create search request
-        search_request = MealSearchRequest(
-            query=query,
-            meal_type=meal_type,
-            start_date=start_date,
-            end_date=end_date,
-            limit=limit,
-            favorites_only=favorites_only
-        )
-
-        # Perform the search
-        search_results = await meal_service.search_meals(user_id, search_request)
-        
-        return search_results
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error searching meals for user {user_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error searching meals: {str(e)}",
-        )
-
-
-@router.get(
-    "/favorites",
-    response_model=List[LoggedMeal],
-    status_code=status.HTTP_200_OK,
-    summary="Get favorite meals",
-    description="Retrieve all meals marked as favorites by the current user.",
-)
-async def get_favorite_meals(
-    limit: int = 50,
-    user=Depends(auth_guard)
-) -> List[LoggedMeal]:
-    """Retrieve meals marked as favorites by the current user.
-
-    Args:
-        limit: Maximum number of results to return (1-100, default: 50)
-        user: The authenticated user (injected by the auth_guard dependency)
-
-    Returns:
-        List of favorite meals
-
-    Raises:
-        HTTPException: If there is an error retrieving favorite meals
-    """
-    try:
-        user_id = user.get("sub")
-
-        # Validate limit
-        if limit < 1 or limit > 100:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Limit must be between 1 and 100",
-            )
-
-        # Get favorite meals directly from meal service
-        favorite_meals = await meal_service.get_favorite_meals(user_id, limit)
-        
-        return favorite_meals
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error retrieving favorite meals for user {user_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving favorite meals: {str(e)}",
-        )
