@@ -13,6 +13,8 @@ from app.core.config import settings
 from app.models.notification import (
     Notification,
     NotificationResponse,
+    PaginatedNotificationResponse,
+    PaginationInfo,
 )
 
 logger = logging.getLogger(__name__)
@@ -105,7 +107,7 @@ class NotificationService:
         page_size: int = 20,
         status: Optional[str] = None,
         type: Optional[str] = None,
-    ) -> Optional[NotificationResponse]:
+    ) -> PaginatedNotificationResponse:
         """
         Retrieve a paginated list of notifications for a specific user, with optional filtering by status and type.
 
@@ -117,19 +119,31 @@ class NotificationService:
             type (Optional[str], optional): Filter notifications by type. Defaults to None.
 
         Returns:
-            Optional[NotificationResponse]: A response object containing the list of notifications, count, page, and page size.
+            PaginatedNotificationResponse: A response object with notifications and proper pagination info.
 
         Raises:
             HTTPException: If an error occurs while retrieving notifications, an HTTP 500 error is raised.
         """
         try:
-            query = (
-                self.client.table("notifications").select("*").eq("user_id", user_id)
-            )
+            # Build base query for filtering
+            base_query = self.client.table("notifications").select("id").eq("user_id", user_id)
+            if status:
+                base_query = base_query.eq("status", status)
+            if type:
+                base_query = base_query.eq("type", type)
+
+            # Get total count
+            count_response = base_query.execute().model_dump()
+            total_count = len(count_response["data"]) if count_response["data"] else 0
+            logger.info(f"Total count for notifications: {total_count}")
+
+            # Get paginated results
+            query = self.client.table("notifications").select("*").eq("user_id", user_id)
             if status:
                 query = query.eq("status", status)
             if type:
                 query = query.eq("type", type)
+            
             response = (
                 query.order("created_at", desc=True)
                 .limit(page_size)
@@ -137,18 +151,18 @@ class NotificationService:
                 .execute()
                 .model_dump()
             )
-            notifications = response["data"] or []
-            logger.info(
-                f"Retrieved {len(notifications)} notifications for user {user_id}"
-            )
-            notifications = [
-                Notification(**notification) for notification in notifications
-            ]
-            return NotificationResponse(
-                notifications=notifications,
-                count=len(notifications),
-                page=page,
-                page_size=page_size,
+            
+            notifications_data = response["data"] or []
+            notifications = [Notification(**notification) for notification in notifications_data]
+            
+            logger.info(f"Retrieved {len(notifications)} notifications for user {user_id} (page {page})")
+
+            # Calculate pagination info
+            pagination = self._calculate_pagination_info(page, page_size, total_count)
+
+            return PaginatedNotificationResponse(
+                results=notifications,
+                pagination=pagination
             )
         except Exception as e:
             logger.error(f"Unexpected error retrieving notifications: {str(e)}")
@@ -225,6 +239,30 @@ class NotificationService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error marking notification as read: {str(e)}",
             )
+
+    def _calculate_pagination_info(self, page: int, page_size: int, total: int) -> PaginationInfo:
+        """Calculate pagination information.
+
+        Args:
+            page: Current page number (1-based)
+            page_size: Number of items per page
+            total: Total number of items
+
+        Returns:
+            PaginationInfo object with calculated values
+        """
+        total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+        has_next = page < total_pages
+        has_previous = page > 1
+
+        return PaginationInfo(
+            page=page,
+            page_size=page_size,
+            total=total,
+            total_pages=total_pages,
+            has_next=has_next,
+            has_previous=has_previous
+        )
 
 
 notification_service = NotificationService()

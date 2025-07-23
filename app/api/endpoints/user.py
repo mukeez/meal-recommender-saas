@@ -93,7 +93,7 @@ async def update_user_profile(
     weight_unit_preference: Optional[str] = Form(None, description="weight unit preference (metric/imperial) (optional)"),
     avatar: Optional[UploadFile] = File(None, description="new avatar image(optional)"),
     meal_reminder_preferences_set: Optional[bool] = Form(
-        False, description="Whether the user has meal reminder preferences set"
+        None, description="Whether the user has meal reminder preferences set"
     ),
     user=Depends(auth_guard),
 ):

@@ -184,18 +184,17 @@ class RefreshTokenRequest(BaseModel):
 
 
 class RefreshTokenResponse(BaseModel):
-    """Refresh token response model.
-
-    Attributes:
-        access_token: New access token
-        refresh_token: New refresh token  
-        expires_in: Expiration time in seconds for access token
-        expires_at: Timestamp when access token expires
-        user: User metadata
-    """
+    """Response model for token refresh."""
     access_token: str = Field(..., description="New access token")
     refresh_token: str = Field(..., description="New refresh token")
-    expires_in: int = Field(..., description="Expiration time in seconds for access token")
-    expires_at: int = Field(..., description="Timestamp when access token expires")
-    user: UserMetadata = Field(..., description="User metadata")
+    expires_in: int = Field(..., description="Token expiration time in seconds")
+    expires_at: int = Field(..., description="Token expiration timestamp")
+    user: UserMetadata = Field(..., description="User information")
+
+
+class LogoutResponse(BaseModel):
+    """Response model for user logout."""
+    message: str = Field(..., description="Logout status message")
+    logged_out: bool = Field(..., description="Whether logout was successful")
+    warning: Optional[str] = Field(None, description="Warning message if applicable")
 

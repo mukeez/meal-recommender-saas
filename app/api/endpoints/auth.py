@@ -14,7 +14,7 @@ from app.core.config import settings
 from app.models.user import UpdateUserProfileRequest
 from app.services.user_service import user_service, UserProfileData
 from app.services.mail_service import mail_service
-from app.models.auth import LoginRequest, LoginResponse, SignupRequest, SignUpResponse, VerifyOtpRequest, VerifyOtpResponse, ResetPasswordRequest, VerifyEmailRequest, VerifyEmailResponse, ResendVerificationRequest, ResendVerificationResponse, RefreshTokenRequest, RefreshTokenResponse, UserMetadata
+from app.models.auth import LoginRequest, LoginResponse, SignupRequest, SignUpResponse, VerifyOtpRequest, VerifyOtpResponse, ResetPasswordRequest, VerifyEmailRequest, VerifyEmailResponse, ResendVerificationRequest, ResendVerificationResponse, RefreshTokenRequest, RefreshTokenResponse, UserMetadata, LogoutResponse
 from app.api.auth_guard import auth_guard
 from typing import Dict
 
@@ -646,4 +646,116 @@ async def refresh_token(request: RefreshTokenRequest) -> RefreshTokenResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred during token refresh",
+        )
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_200_OK,
+    summary="Logout user",
+    description="Log out the current user and invalidate their session.",
+    response_model=LogoutResponse,
+)
+async def logout(request: Request, user=Depends(auth_guard)) -> LogoutResponse:
+    """Log out the current user and invalidate their session.
+
+    This endpoint invalidates the user's current session on the server side.
+    The client should also clear their stored access and refresh tokens.
+
+    Args:
+        request: The incoming FastAPI request containing the Authorization header
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        LogoutResponse: Confirmation message with logout status
+
+    Raises:
+        HTTPException: If the logout process fails
+    """
+    try:
+        user_id = user.get("sub")
+        
+        logger.info(f"Logout requested for user: {user_id}")
+
+        if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_ROLE_KEY:
+            logger.error("Supabase configuration is missing")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Authentication service configuration error",
+            )
+
+        # Extract the access token from the Authorization header
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            logger.warning(f"Invalid authorization header for logout: {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authorization header"
+            )
+        
+        access_token = auth_header.split(" ")[1]
+
+        # Call Supabase logout endpoint to invalidate the session
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{settings.SUPABASE_URL}/auth/v1/logout",
+                headers={
+                    "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+            )
+
+        # Supabase may return 200 or 204 for successful logout
+        if response.status_code not in (200, 204):
+            error_detail = "Logout failed"
+            try:
+                error_data = response.json()
+                if "error" in error_data:
+                    error_detail = error_data.get("message", error_detail)
+            except Exception:
+                pass
+
+            logger.warning(f"Logout failed for user {user_id}: {error_detail}")
+        else:
+            logger.info(f"Server session invalidated for user: {user_id}")
+
+        # Clear any session tokens stored in our database using user_id
+        try:
+            try:
+                user_profile = await user_service.get_user_profile(user_id)
+                user_email = user_profile.email
+                await user_service.invalidate_session_token(user_email)
+                logger.info(f"Local session tokens cleared for user: {user_id}")
+            except Exception:
+                logger.info(f"Could not clear session tokens by email for user: {user_id}")
+                # This is not critical for logout success
+        except Exception as e:
+            logger.warning(f"Failed to clear local session tokens for user {user_id}: {str(e)}")
+            # Continue - this is not critical for logout
+
+        logger.info(f"User {user_id} logged out successfully")
+        
+        return LogoutResponse(
+            message="Logged out successfully. Please clear your local session data.",
+            logged_out=True
+        )
+
+    except HTTPException:
+        raise
+    except httpx.RequestError as e:
+        logger.error(f"Error communicating with authentication service: {str(e)}")
+        # Even if we can't reach Supabase, we should tell client to logout
+        return LogoutResponse(
+            message="Session cleared. Please clear your local session data.",
+            logged_out=True,
+            warning="Could not verify server logout"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error during logout for user {user_id if 'user_id' in locals() else 'unknown'}: {str(e)}")
+        # Even on error, we should tell client to logout
+        return LogoutResponse(
+            message="Please clear your local session data and try logging in again.",
+            logged_out=True,
+            warning="Logout may not have completed successfully on server"
         )

@@ -24,6 +24,11 @@ from app.models.meal import (
     UpdateMealRequest,
     MealSearchRequest,
     MealSearchResponse,
+    PaginatedMealSearchRequest,
+    PaginatedMealSearchResponse,
+    PaginatedMealLogsResponse,
+    PaginatedFavoriteMealsResponse,
+    PaginationInfo,
 )
 from app.services.user_service import user_service
 from app.utils.file_upload import upload_file_to_bucket, generate_meal_photo_path, validate_image_file
@@ -273,21 +278,21 @@ class MealService:
             )
 
     async def get_meals_by_date_range(
-        self, user_id: str, start_date: date, end_date: date
-    ) -> List[LoggedMeal]:
-        """Retrieve meals logged by the user within a date range.
+        self, user_id: str, start_date: date, end_date: date, page: int = 1, page_size: int = 20
+    ) -> "PaginatedMealLogsResponse":
+        """Retrieve meals by date range with pagination.
 
         Args:
             user_id: ID of the user
             start_date: Start date for the range (inclusive)
             end_date: End date for the range (inclusive)
+            page: Page number (1-based)
+            page_size: Number of items per page
 
         Returns:
-            List of meals logged within the date range
+            PaginatedMealLogsResponse with meals and pagination info
         """
-        logger.info(
-            f"Fetching meals for user {user_id} from {start_date} to {end_date}"
-        )
+        logger.info(f"Meal logs for user {user_id}: {start_date} to {end_date}, page={page}, page_size={page_size}")
 
         try:
             if not self.api_key:
@@ -295,8 +300,130 @@ class MealService:
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Service configuration error"
                 )
-            
-            # Use the SQL function via RPC call
+
+            # Calculate offset
+            offset = (page - 1) * page_size
+
+            async with httpx.AsyncClient() as client:
+                # Get total count
+                count_response = await client.get(
+                    f"{self.base_url}/rest/v1/meal_logs",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params=[
+                        ("user_id", f"eq.{user_id}"),
+                        ("meal_time", f"gte.{start_date.isoformat()}"),
+                        ("meal_time", f"lt.{(end_date + timedelta(days=1)).isoformat()}"),
+                        ("select", "id"),  # Only select ID for counting
+                    ],
+                )
+
+                total_count = 0
+                if count_response.status_code == 200:
+                    count_data = count_response.json()
+                    total_count = len(count_data) if isinstance(count_data, list) else 0
+                    logger.info(f"Total count for date range query: {total_count}")
+
+                # Get paginated results
+                response = await client.get(
+                    f"{self.base_url}/rest/v1/meal_logs",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params=[
+                        ("user_id", f"eq.{user_id}"),
+                        ("meal_time", f"gte.{start_date.isoformat()}"),
+                        ("meal_time", f"lt.{(end_date + timedelta(days=1)).isoformat()}"),
+                        ("order", "meal_time.desc"),
+                        ("limit", str(page_size)),
+                        ("offset", str(offset)),
+                    ],
+                )
+
+                if response.status_code not in (200, 201, 204):
+                    logger.error(f"Failed to fetch meals: {response.text}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to retrieve meals: {response.text}",
+                    )
+
+                # Parse meals
+                meals_data = response.json()
+                meals = []
+
+                for meal in meals_data:
+                    logging_mode = meal.get("logging_mode", "manual")
+                    read_only = logging_mode in ["barcode", "scanned"]
+                    
+                    meals.append(
+                        LoggedMeal(
+                            id=meal["id"],
+                            user_id=meal["user_id"],
+                            name=meal["name"],
+                            description=meal["description"],
+                            protein=meal["protein"],
+                            carbs=meal["carbs"],
+                            fat=meal["fat"],
+                            calories=meal["calories"],
+                            meal_time=meal["meal_time"],
+                            created_at=meal["created_at"],
+                            notes=meal.get("notes"),
+                            meal_type=meal.get("meal_type"),
+                            logging_mode=logging_mode,
+                            photo_url=meal.get("photo_url"),
+                            serving_unit=meal.get("serving_unit", "grams"),
+                            amount=meal.get("amount", 1.0),
+                            read_only=read_only,
+                            favorite=meal.get("favorite", False),
+                        )
+                    )
+
+                # Calculate pagination info
+                pagination = self._calculate_pagination_info(page, page_size, total_count)
+
+                logger.info(f"Retrieved {len(meals)} meals (page {page} of {pagination.total_pages})")
+                
+                return PaginatedMealLogsResponse(
+                    results=meals,
+                    pagination=pagination
+                )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error fetching meals: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error retrieving meals: {str(e)}",
+            )
+
+    async def get_meals_by_date_range_simple(
+        self, user_id: str, start_date: date, end_date: date
+    ) -> List[LoggedMeal]:
+        """Retrieve all meals by date range without pagination (for aggregations).
+
+        Args:
+            user_id: ID of the user
+            start_date: Start date for the range (inclusive)
+            end_date: End date for the range (inclusive)
+
+        Returns:
+            List of all meals in the date range
+        """
+        logger.info(f"Fetching all meals for user {user_id}: {start_date} to {end_date}")
+
+        try:
+            if not self.api_key:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Service configuration error"
+                )
+
             async with httpx.AsyncClient() as client:
                 response = await client.get(
                     f"{self.base_url}/rest/v1/meal_logs",
@@ -334,7 +461,7 @@ class MealService:
                             id=meal["id"],
                             user_id=meal["user_id"],
                             name=meal["name"],
-                            description=meal["description"],
+                            description=meal.get("description"),
                             protein=meal["protein"],
                             carbs=meal["carbs"],
                             fat=meal["fat"],
@@ -363,17 +490,20 @@ class MealService:
                 detail=f"Error retrieving meals: {str(e)}",
             )
 
-    async def get_favorite_meals(self, user_id: str, limit: int = 50) -> List[LoggedMeal]:
-        """Retrieve meals marked as favorites by the user.
+    async def get_favorite_meals(self, user_id: str, page: int = 1, page_size: int = 20) -> "PaginatedFavoriteMealsResponse":
+        """Retrieve favorite meals with pagination.
 
         Args:
             user_id: ID of the user
-            limit: Maximum number of results to return
+            page: Page number (1-based)
+            page_size: Number of items per page
 
         Returns:
-            List of favorite meals
+            PaginatedFavoriteMealsResponse with favorite meals and pagination info
         """
-        logger.info(f"Fetching favorite meals for user: {user_id}")
+        from app.models.meal import PaginatedFavoriteMealsResponse
+        
+        logger.info(f"Favorite meals for user {user_id}: page={page}, page_size={page_size}")
 
         try:
             if not self.api_key:
@@ -381,35 +511,61 @@ class MealService:
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Service configuration error"
                 )
-            
-            # Type assertion to help the type checker
-            api_key: str = self.api_key
+
+            # Calculate offset
+            offset = (page - 1) * page_size
 
             async with httpx.AsyncClient() as client:
+                # Get total count of favorite meals
+                count_response = await client.get(
+                    f"{self.base_url}/rest/v1/meal_logs",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params=[
+                        ("user_id", f"eq.{user_id}"),
+                        ("favorite", "eq.true"),
+                        ("select", "id"),  # Only select ID for counting
+                    ],
+                )
+
+                total_count = 0
+                if count_response.status_code == 200:
+                    count_data = count_response.json()
+                    total_count = len(count_data) if isinstance(count_data, list) else 0
+                    logger.info(f"Total count for favorite meals: {total_count}")
+
+                # Get paginated results
                 response = await client.get(
                     f"{self.base_url}/rest/v1/meal_logs",
                     headers={
-                        "apikey": api_key,
-                        "Authorization": f"Bearer {api_key}",
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
                     },
                     params=[
                         ("user_id", f"eq.{user_id}"),
                         ("favorite", "eq.true"),
                         ("order", "meal_time.desc"),
-                        ("limit", str(limit)),
+                        ("limit", str(page_size)),
+                        ("offset", str(offset)),
                     ],
                 )
 
                 if response.status_code != 200:
                     logger.warning(f"Failed to fetch favorite meals: {response.text}")
-                    return []
+                    return PaginatedFavoriteMealsResponse(
+                        results=[],
+                        pagination=self._calculate_pagination_info(page, page_size, 0)
+                    )
 
+                # Parse meals
                 meals_data = response.json()
                 meals = []
 
                 for meal in meals_data:
-                    # Calculate read_only based on logging_mode
                     logging_mode = meal.get("logging_mode", "manual")
                     read_only = logging_mode in ["barcode", "scanned"]
                     
@@ -436,12 +592,24 @@ class MealService:
                         )
                     )
 
-                logger.info(f"Retrieved {len(meals)} favorite meals")
-                return meals
+                # Calculate pagination info
+                pagination = self._calculate_pagination_info(page, page_size, total_count)
 
+                logger.info(f"Retrieved {len(meals)} favorite meals (page {page} of {pagination.total_pages})")
+                
+                return PaginatedFavoriteMealsResponse(
+                    results=meals,
+                    pagination=pagination
+                )
+
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Unexpected error fetching favorite meals: {str(e)}")
-            return []
+            return PaginatedFavoriteMealsResponse(
+                results=[],
+                pagination=self._calculate_pagination_info(page, page_size, 0)
+            )
 
     async def get_daily_progress(self, user_id: str) -> DailyProgressResponse:
         """Calculate daily progress towards macro targets.
@@ -636,7 +804,7 @@ class MealService:
         week_end = week_start + timedelta(days=6)
         
         # Fetch meals for the current week
-        meals = await self.get_meals_by_date_range(user_id, week_start, week_end)
+        meals = await self.get_meals_by_date_range_simple(user_id, week_start, week_end)
         
         # Group meals by weekday
         weekday_meals = {i: [] for i in range(7)}  # 0=Monday, 6=Sunday
@@ -744,7 +912,8 @@ class MealService:
         month_end = next_month - timedelta(days=1)
         
         # Fetch meals for the current month
-        meals = await self.get_meals_by_date_range(user_id, month_start, month_end)
+        meals = await self.get_meals_by_date_range_simple(user_id, month_start, month_end)
+
         
         # Calculate weeks in the month
         week_data = []
@@ -903,7 +1072,7 @@ class MealService:
         overall_end = months_data[-1]["end"]
         
         # Fetch all meals for the period
-        meals = await self.get_meals_by_date_range(user_id, overall_start, overall_end)
+        meals = await self.get_meals_by_date_range_simple(user_id, overall_start, overall_end)
         
         period_macros = []
         total_calories = total_protein = total_carbs = total_fat = 0
@@ -963,8 +1132,6 @@ class MealService:
             days_with_logs=days_with_logs,
             total_days=(overall_end - overall_start).days + 1,
         )
-
-
 
     async def update_meal(self, user_id: str, meal_id: str, meal_data: "UpdateMealRequest") -> LoggedMeal:
         """Update a logged meal for a user.
@@ -1341,195 +1508,42 @@ class MealService:
         else:
             return MealType.OTHER
 
-    async def search_meals(self, user_id: str, search_request: MealSearchRequest) -> MealSearchResponse:
-        """Search for meals in user's logged meals and suggest products if no matches found.
+    async def search_meals(self, user_id: str, search_request: "PaginatedMealSearchRequest") -> "PaginatedMealSearchResponse":
+        """Search for meals with pagination support.
 
         Args:
             user_id: ID of the user
-            search_request: Search parameters including query, filters, and pagination
+            search_request: Search parameters with pagination
 
         Returns:
-            MealSearchResponse with logged meals and/or product suggestions
+            PaginatedMealSearchResponse with results and pagination info
         """
-        logger.info(f"Searching meals for user {user_id} with query: '{search_request.query}'")
+        from app.models.meal import PaginatedMealSearchResponse
+        
+        logger.info(f"Meal search for user {user_id}: query='{search_request.query}', page={search_request.page}, page_size={search_request.page_size}")
 
         try:
-            if not self.api_key:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Service configuration error"
-                )
-
-            # Search in logged meals
-            logged_meals = await self._search_logged_meals(user_id, search_request)
-
-            response = MealSearchResponse(
-                results=logged_meals,
-                total_results=len(logged_meals),
+            # Get total count first
+            total_count = await self._get_total_count(user_id, search_request)
+            
+            # Get paginated results
+            meals = await self._search_logged_meals(user_id, search_request)
+            
+            # Calculate pagination info
+            pagination = self._calculate_pagination_info(search_request.page, search_request.page_size, total_count)
+            
+            return PaginatedMealSearchResponse(
+                results=meals,
+                pagination=pagination,
                 search_query=search_request.query
             )
 
-            logger.info(f"Search completed: {len(logged_meals)} meals found")
-            return response
-
         except Exception as e:
-            logger.error(f"Error searching meals: {str(e)}")
+            logger.error(f"Error in meal search: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error searching meals: {str(e)}",
             )
-
-    async def _search_logged_meals(self, user_id: str, search_request: MealSearchRequest) -> List[LoggedMeal]:
-        """Search for logged meals based on query and filters.
-
-        Args:
-            user_id: ID of the user
-            search_request: Search parameters
-
-        Returns:
-            List of matching logged meals
-        """
-        try:
-            if not self.api_key:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Service configuration error"
-                )
-            
-            # Type assertion to help the type checker
-            api_key: str = self.api_key
-
-            # Process the query - handle quoted strings and clean up
-            search_query = self._process_search_query(search_request.query)
-
-            # Build base query parameters (common to both searches)
-            base_params = [
-                ("user_id", f"eq.{user_id}"),
-                ("order", "meal_time.desc"),
-            ]
-
-            # Add meal type filter if specified
-            if search_request.meal_type:
-                base_params.append(("meal_type", f"eq.{search_request.meal_type}"))
-
-            # Add date range filters if specified
-            if search_request.start_date:
-                base_params.append(("meal_time", f"gte.{search_request.start_date.isoformat()}"))
-            
-            if search_request.end_date:
-                # Add one day to make end_date inclusive
-                end_date_inclusive = search_request.end_date + timedelta(days=1)
-                base_params.append(("meal_time", f"lt.{end_date_inclusive.isoformat()}"))
-
-            # Add favorites filter if specified
-            if search_request.favorites_only is not None:
-                base_params.append(("favorite", f"eq.{search_request.favorites_only}"))
-
-            all_meals = []
-            meal_ids_seen = set()
-
-            async with httpx.AsyncClient() as client:
-                # Search by name if query is meaningful
-                if search_query.strip() and search_query not in ["*", "**"]:
-                    # Search in name field
-                    name_params = base_params.copy()
-                    name_params.append(("name", f"ilike.*{search_query}*"))
-                    name_params.append(("limit", str(search_request.limit)))
-
-                    response = await client.get(
-                        f"{self.base_url}/rest/v1/meal_logs",
-                        headers={
-                            "apikey": api_key,
-                            "Authorization": f"Bearer {api_key}",
-                            "Content-Type": "application/json",
-                        },
-                        params=name_params,  # type: ignore
-                    )
-
-                    if response.status_code == 200:
-                        name_meals = response.json()
-                        for meal in name_meals:
-                            if meal["id"] not in meal_ids_seen:
-                                all_meals.append(meal)
-                                meal_ids_seen.add(meal["id"])
-
-                    # Search in description field if we haven't reached the limit
-                    if len(all_meals) < search_request.limit:
-                        remaining_limit = search_request.limit - len(all_meals)
-                        desc_params = base_params.copy()
-                        desc_params.append(("description", f"ilike.*{search_query}*"))
-                        desc_params.append(("limit", str(remaining_limit)))
-
-                        response = await client.get(
-                            f"{self.base_url}/rest/v1/meal_logs",
-                            headers={
-                                "apikey": api_key,
-                                "Authorization": f"Bearer {api_key}",
-                                "Content-Type": "application/json",
-                            },
-                            params=desc_params,  # type: ignore
-                        )
-
-                        if response.status_code == 200:
-                            desc_meals = response.json()
-                            for meal in desc_meals:
-                                if meal["id"] not in meal_ids_seen and len(all_meals) < search_request.limit:
-                                    all_meals.append(meal)
-                                    meal_ids_seen.add(meal["id"])
-
-                else:
-                    # No search query, just get all meals with filters
-                    params = base_params.copy()
-                    params.append(("limit", str(search_request.limit)))
-
-                    response = await client.get(
-                        f"{self.base_url}/rest/v1/meal_logs",
-                        headers={
-                            "apikey": api_key,
-                            "Authorization": f"Bearer {api_key}",
-                            "Content-Type": "application/json",
-                        },
-                        params=params,  # type: ignore
-                    )
-
-                    if response.status_code == 200:
-                        all_meals = response.json()
-
-
-                meals = []
-                for meal in all_meals:
-                    # Calculate read_only based on logging_mode
-                    logging_mode = meal.get("logging_mode", "manual")
-                    read_only = logging_mode in ["barcode", "scanned"]
-                    
-                    meals.append(
-                        LoggedMeal(
-                            id=meal["id"],
-                            user_id=meal["user_id"],
-                            name=meal["name"],
-                            description=meal.get("description"),
-                            protein=meal["protein"],
-                            carbs=meal["carbs"],
-                            fat=meal["fat"],
-                            calories=meal["calories"],
-                            meal_time=meal["meal_time"],
-                            created_at=meal["created_at"],
-                            notes=meal.get("notes"),
-                            meal_type=meal.get("meal_type"),
-                            logging_mode=logging_mode,
-                            photo_url=meal.get("photo_url"),
-                            serving_unit=meal.get("serving_unit", "grams"),
-                            amount=meal.get("amount", 1.0),
-                            read_only=read_only,
-                            favorite=meal.get("favorite", False),
-                        )
-                    )
-
-                return meals
-
-        except Exception as e:
-            logger.error(f"Error searching logged meals: {str(e)}")
-            return []
 
     def _process_search_query(self, query: str) -> str:
         """Process the search query to handle quoted strings and clean up input.
@@ -1562,5 +1576,255 @@ class MealService:
         
         return query
 
+    def _calculate_pagination_info(self, page: int, page_size: int, total: int) -> "PaginationInfo":
+        """Calculate pagination information.
+
+        Args:
+            page: Current page number (1-based)
+            page_size: Number of items per page
+            total: Total number of items
+
+        Returns:
+            PaginationInfo object with calculated values
+        """
+        from app.models.meal import PaginationInfo
+        
+        total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+        has_next = page < total_pages
+        has_previous = page > 1
+
+        return PaginationInfo(
+            page=page,
+            page_size=page_size,
+            total=total,
+            total_pages=total_pages,
+            has_next=has_next,
+            has_previous=has_previous
+        )
+
+    async def _get_total_count(self, user_id: str, search_request: "PaginatedMealSearchRequest") -> int:
+        """Get total count of search results for pagination.
+
+        Args:
+            user_id: ID of the user
+            search_request: Search parameters
+
+        Returns:
+            Total count of matching meals
+        """
+        try:
+            if not self.api_key:
+                return 0
+
+            search_query = self._process_search_query(search_request.query)
+            base_params = [("user_id", f"eq.{user_id}")]
+
+            # Add filters
+            if search_request.meal_type:
+                base_params.append(("meal_type", f"eq.{search_request.meal_type}"))
+            if search_request.start_date:
+                base_params.append(("meal_time", f"gte.{search_request.start_date.isoformat()}"))
+            if search_request.end_date:
+                end_date_inclusive = search_request.end_date + timedelta(days=1)
+                base_params.append(("meal_time", f"lt.{end_date_inclusive.isoformat()}"))
+            if search_request.favorites_only is not None:
+                base_params.append(("favorite", f"eq.{search_request.favorites_only}"))
+
+            async with httpx.AsyncClient() as client:
+                if search_query.strip() and search_query not in ["*", "**"]:
+                    # For search queries, get all matching records and count them
+                    # This is more accurate than trying to combine name + description counts
+                    name_params = base_params + [("name", f"ilike.*{search_query}*"), ("select", "id")]
+                    desc_params = base_params + [("description", f"ilike.*{search_query}*"), ("select", "id")]
+                    
+                    # Get name matches
+                    response = await client.get(
+                        f"{self.base_url}/rest/v1/meal_logs",
+                        headers={
+                            "apikey": self.api_key,
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        params=name_params,
+                    )
+                    
+                    meal_ids = set()
+                    if response.status_code == 200:
+                        name_results = response.json()
+                        meal_ids.update(meal["id"] for meal in name_results)
+                    
+                    # Get description matches
+                    response = await client.get(
+                        f"{self.base_url}/rest/v1/meal_logs",
+                        headers={
+                            "apikey": self.api_key,
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        params=desc_params,
+                    )
+                    
+                    if response.status_code == 200:
+                        desc_results = response.json()
+                        meal_ids.update(meal["id"] for meal in desc_results)
+                    
+                    return len(meal_ids)
+                
+                else:
+                    # No search query, count all with filters
+                    params = base_params + [("select", "id")]
+                    
+                    response = await client.get(
+                        f"{self.base_url}/rest/v1/meal_logs",
+                        headers={
+                            "apikey": self.api_key,
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        params=params,
+                    )
+                    
+                    if response.status_code == 200:
+                        count_data = response.json()
+                        return len(count_data) if isinstance(count_data, list) else 0
+
+                return 0
+
+        except Exception as e:
+            logger.error(f"Error getting total count: {str(e)}")
+            return 0
+
+    async def _search_logged_meals(self, user_id: str, search_request: "PaginatedMealSearchRequest") -> List[LoggedMeal]:
+        """Search for logged meals with pagination.
+
+        Args:
+            user_id: ID of the user
+            search_request: Paginated search parameters
+
+        Returns:
+            List of matching logged meals for the current page
+        """
+        try:
+            if not self.api_key:
+                return []
+
+            search_query = self._process_search_query(search_request.query)
+            offset = (search_request.page - 1) * search_request.page_size
+
+            base_params = [
+                ("user_id", f"eq.{user_id}"),
+                ("order", "meal_time.desc"),
+                ("limit", str(search_request.page_size)),
+                ("offset", str(offset)),
+            ]
+
+            # Add filters
+            if search_request.meal_type:
+                base_params.append(("meal_type", f"eq.{search_request.meal_type}"))
+            if search_request.start_date:
+                base_params.append(("meal_time", f"gte.{search_request.start_date.isoformat()}"))
+            if search_request.end_date:
+                end_date_inclusive = search_request.end_date + timedelta(days=1)
+                base_params.append(("meal_time", f"lt.{end_date_inclusive.isoformat()}"))
+            if search_request.favorites_only is not None:
+                base_params.append(("favorite", f"eq.{search_request.favorites_only}"))
+
+            async with httpx.AsyncClient() as client:
+                all_meals = []
+                meal_ids_seen = set()
+
+                if search_query.strip() and search_query not in ["*", "**"]:
+                    # Search in name field
+                    name_params = base_params + [("name", f"ilike.*{search_query}*")]
+                    
+                    response = await client.get(
+                        f"{self.base_url}/rest/v1/meal_logs",
+                        headers={
+                            "apikey": self.api_key,
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        params=name_params,
+                    )
+
+                    if response.status_code == 200:
+                        name_meals = response.json()
+                        for meal in name_meals:
+                            if meal["id"] not in meal_ids_seen:
+                                all_meals.append(meal)
+                                meal_ids_seen.add(meal["id"])
+
+                    # Search in description field if we have space
+                    if len(all_meals) < search_request.page_size:
+                        desc_params = base_params + [("description", f"ilike.*{search_query}*")]
+                        
+                        response = await client.get(
+                            f"{self.base_url}/rest/v1/meal_logs",
+                            headers={
+                                "apikey": self.api_key,
+                                "Authorization": f"Bearer {self.api_key}",
+                                "Content-Type": "application/json",
+                            },
+                            params=desc_params,
+                        )
+
+                        if response.status_code == 200:
+                            desc_meals = response.json()
+                            for meal in desc_meals:
+                                if meal["id"] not in meal_ids_seen and len(all_meals) < search_request.page_size:
+                                    all_meals.append(meal)
+                                    meal_ids_seen.add(meal["id"])
+
+                else:
+                    # No search query, get all with filters
+                    response = await client.get(
+                        f"{self.base_url}/rest/v1/meal_logs",
+                        headers={
+                            "apikey": self.api_key,
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        params=base_params,
+                    )
+
+                    if response.status_code == 200:
+                        all_meals = response.json()
+
+                # Convert to LoggedMeal objects
+                meals = []
+                for meal in all_meals:
+                    logging_mode = meal.get("logging_mode", "manual")
+                    read_only = logging_mode in ["barcode", "scanned"]
+                    
+                    meals.append(
+                        LoggedMeal(
+                            id=meal["id"],
+                            user_id=meal["user_id"],
+                            name=meal["name"],
+                            description=meal.get("description"),
+                            protein=meal["protein"],
+                            carbs=meal["carbs"],
+                            fat=meal["fat"],
+                            calories=meal["calories"],
+                            meal_time=meal["meal_time"],
+                            created_at=meal["created_at"],
+                            notes=meal.get("notes"),
+                            meal_type=meal.get("meal_type"),
+                            logging_mode=logging_mode,
+                            photo_url=meal.get("photo_url"),
+                            serving_unit=meal.get("serving_unit", "grams"),
+                            amount=meal.get("amount", 1.0),
+                            read_only=read_only,
+                            favorite=meal.get("favorite", False),
+                        )
+                    )
+
+                return meals
+
+        except Exception as e:
+            logger.error(f"Error searching logged meals: {str(e)}")
+            return []
+
 
 meal_service = MealService()
+

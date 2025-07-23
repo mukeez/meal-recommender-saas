@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, status, HTTPException, Query
 from app.api.auth_guard import auth_guard
 from app.models.notification import (
     CreateNotificationRequest,
-    NotificationResponse,
+    PaginatedNotificationResponse,
     SendPushNotificationRequest,
     UpdateNotificationStatusRequest,
 )
@@ -19,7 +19,7 @@ router = APIRouter()
 
 @router.get(
     "/",
-    response_model=NotificationResponse,
+    response_model=PaginatedNotificationResponse,
     status_code=status.HTTP_200_OK,
     summary="Get user notifications",
     description="Retrieve all notifications for the current user.",
@@ -32,7 +32,7 @@ async def get_user_notifications(
     ),
     status: Optional[str] = Query(None, description="Filter by notification status"),
     type: Optional[str] = Query(None, description="Filter by notification type"),
-) -> NotificationResponse:
+) -> PaginatedNotificationResponse:
     """
     Retrieve a paginated list of notifications for the authenticated user.
 
@@ -44,7 +44,7 @@ async def get_user_notifications(
         type (Optional[str], optional): Filter notifications by type. Defaults to None.
 
     Returns:
-        NotificationResponse: A paginated response containing the user's notifications.
+        PaginatedNotificationResponse: A paginated response containing the user's notifications.
 
     Raises:
         HTTPException: If an error occurs while retrieving notifications.
