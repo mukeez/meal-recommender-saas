@@ -2,8 +2,21 @@ from datetime import datetime
 from re import sub
 from typing import Annotated, Optional
 from pydantic import BaseModel, Field, BeforeValidator
+from enum import Enum
 
 from app.utils.helper_functions import parse_datetime
+
+
+class NotificationSubtype(str, Enum):
+    """Enumeration for notification subtypes."""
+
+    START_OF_DAY = "start_of_day"
+    END_OF_DAY = "end_of_day"
+    BREAKFAST = "breakfast"
+    LUNCH = "lunch"
+    DINNER = "dinner"
+    MACRO_GOAL_COMPLETED = "macro_goal_completed"
+    TRIAL_EXPIRY = "trial_expiry"
 
 
 class Notification(BaseModel):
@@ -152,7 +165,9 @@ class PaginationInfo(BaseModel):
     total: Annotated[int, Field(..., description="Total number of items")]
     total_pages: Annotated[int, Field(..., description="Total number of pages")]
     has_next: Annotated[bool, Field(..., description="Whether there is a next page")]
-    has_previous: Annotated[bool, Field(..., description="Whether there is a previous page")]
+    has_previous: Annotated[
+        bool, Field(..., description="Whether there is a previous page")
+    ]
 
 
 class PaginatedNotificationResponse(BaseModel):
