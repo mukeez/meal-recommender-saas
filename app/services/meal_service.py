@@ -292,8 +292,6 @@ class MealService:
         Returns:
             PaginatedMealLogsResponse with meals and pagination info
         """
-        from app.models.meal import PaginatedMealLogsResponse
-        
         logger.info(f"Meal logs for user {user_id}: {start_date} to {end_date}, page={page}, page_size={page_size}")
 
         try:
@@ -399,6 +397,94 @@ class MealService:
             raise
         except Exception as e:
             logger.error(f"Unexpected error fetching meals: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error retrieving meals: {str(e)}",
+            )
+
+    async def get_meals_by_date_range_simple(
+        self, user_id: str, start_date: date, end_date: date
+    ) -> List[LoggedMeal]:
+        """Retrieve all meals by date range without pagination (for aggregations).
+
+        Args:
+            user_id: ID of the user
+            start_date: Start date for the range (inclusive)
+            end_date: End date for the range (inclusive)
+
+        Returns:
+            List of all meals in the date range
+        """
+        logger.info(f"Fetching all meals for user {user_id}: {start_date} to {end_date}")
+
+        try:
+            if not self.api_key:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Service configuration error"
+                )
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.base_url}/rest/v1/meal_logs",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params=[
+                        ("user_id", f"eq.{user_id}"),
+                        ("meal_time", f"gte.{start_date.isoformat()}"),
+                        ("meal_time", f"lt.{(end_date + timedelta(days=1)).isoformat()}"),
+                        ("order", "meal_time.desc"),
+                    ],
+                )
+
+                if response.status_code not in (200, 201, 204):
+                    logger.error(f"Failed to fetch meals: {response.text}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to retrieve meals: {response.text}",
+                    )
+
+                # Parse the meals
+                meals_data = response.json()
+                meals = []
+
+                for meal in meals_data:
+                    # Calculate read_only based on logging_mode
+                    logging_mode = meal.get("logging_mode", "manual")
+                    read_only = logging_mode in ["barcode", "scanned"]
+                    
+                    meals.append(
+                        LoggedMeal(
+                            id=meal["id"],
+                            user_id=meal["user_id"],
+                            name=meal["name"],
+                            description=meal.get("description"),
+                            protein=meal["protein"],
+                            carbs=meal["carbs"],
+                            fat=meal["fat"],
+                            calories=meal["calories"],
+                            meal_time=meal["meal_time"],
+                            created_at=meal["created_at"],
+                            notes=meal.get("notes"),
+                            meal_type=meal.get("meal_type"),
+                            logging_mode=logging_mode,
+                            photo_url=meal.get("photo_url"),
+                            serving_unit=meal.get("serving_unit", "grams"),
+                            amount=meal.get("amount", 1.0),
+                            read_only=read_only,
+                            favorite=meal.get("favorite", False),
+                        )
+                    )
+
+                logger.info(f"Retrieved {len(meals)} meals for date range")
+                return meals
+
+        except Exception as e:
+            logger.error(f"Unexpected error fetching meals by date range: {str(e)}")
+            traceback.print_exc()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error retrieving meals: {str(e)}",
@@ -718,7 +804,7 @@ class MealService:
         week_end = week_start + timedelta(days=6)
         
         # Fetch meals for the current week
-        meals = await self.get_meals_by_date_range(user_id, week_start, week_end)
+        meals = await self.get_meals_by_date_range_simple(user_id, week_start, week_end)
         
         # Group meals by weekday
         weekday_meals = {i: [] for i in range(7)}  # 0=Monday, 6=Sunday
@@ -826,7 +912,8 @@ class MealService:
         month_end = next_month - timedelta(days=1)
         
         # Fetch meals for the current month
-        meals = await self.get_meals_by_date_range(user_id, month_start, month_end)
+        meals = await self.get_meals_by_date_range_simple(user_id, month_start, month_end)
+
         
         # Calculate weeks in the month
         week_data = []
@@ -985,7 +1072,7 @@ class MealService:
         overall_end = months_data[-1]["end"]
         
         # Fetch all meals for the period
-        meals = await self.get_meals_by_date_range(user_id, overall_start, overall_end)
+        meals = await self.get_meals_by_date_range_simple(user_id, overall_start, overall_end)
         
         period_macros = []
         total_calories = total_protein = total_carbs = total_fat = 0

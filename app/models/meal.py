@@ -11,7 +11,7 @@ from typing_extensions import Annotated
 from pydantic import BaseModel, field_validator, Field, BeforeValidator
 from app.utils.helper_functions import parse_datetime
 from typing_extensions import Annotated
-from app.models.product import Product
+from app.models.product import Product, PaginationInfo
 from app.utils.constants import ServingUnit
 
 
@@ -460,25 +460,6 @@ class CalculateMacrosResponse(BaseModel):
     protein: float = Field(..., description="Calculated protein (grams)")
     carbs: float = Field(..., description="Calculated carbohydrates (grams)")
     fat: float = Field(..., description="Calculated fat (grams)")
-
-
-class PaginationInfo(BaseModel):
-    """Pagination information for paginated responses.
-
-    Attributes:
-        page: Current page number (1-based)
-        page_size: Number of items per page
-        total: Total number of items across all pages
-        total_pages: Total number of pages
-        has_next: Whether there are more pages after current
-        has_previous: Whether there are pages before current
-    """
-    page: int = Field(..., description="Current page number (1-based)")
-    page_size: int = Field(..., description="Number of items per page")
-    total: int = Field(..., description="Total number of items across all pages")
-    total_pages: int = Field(..., description="Total number of pages")
-    has_next: bool = Field(..., description="Whether there are more pages after current")
-    has_previous: bool = Field(..., description="Whether there are pages before current")
 
 
 class PaginatedMealSearchRequest(BaseModel):

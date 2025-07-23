@@ -32,6 +32,8 @@ from app.models.meal import (
 from app.services.meal_service import meal_service
 from app.services.meal_llm_service import meal_llm_service
 from app.services.restaurant_service import restaurant_service
+from app.utils.file_upload import validate_image_file
+
 import traceback
 
 
@@ -112,7 +114,7 @@ async def log_meal(
     amount: float = Form(1.0, description="Amount/quantity of the serving unit", ge=0),
     favorite: bool = Form(False, description="Whether to mark this meal as a favorite"),
     photo: Optional[UploadFile] = File(None, description="Meal photo (optional)"),
-    meal_time: Optional[datetime] = Form(datetime.now, description="Time of the meal (optional)"),
+    meal_time: Optional[datetime] = Form(None, description="Time of the meal (optional, defaults to current time)"),
     user=Depends(auth_guard)
 ) -> LoggedMeal:
     """Log a meal for the current user with automatic meal type classification.
@@ -130,6 +132,7 @@ async def log_meal(
         amount: Amount/quantity of the serving unit
         favorite: Whether to mark this meal as a favorite
         photo: Meal photo file (optional)
+        meal_time: Time of the meal (optional, defaults to current time)
         user: The authenticated user (injected by the auth_guard dependency)
 
     Returns:
@@ -141,9 +144,12 @@ async def log_meal(
     try:
         user_id = user.get("sub")
 
+        # Set meal_time to current time if not provided
+        if meal_time is None:
+            meal_time = datetime.now()
+
         # Validate photo if provided
         if photo:
-            from app.utils.file_upload import validate_image_file
             validate_image_file(photo.filename, photo.content_type)
 
         # Create the meal request object
@@ -307,9 +313,11 @@ async def get_progress(
         return progress_summary
 
     except HTTPException:
+        traceback.print_exc()
         raise
     except Exception as e:
         logger.error(f"Error retrieving progress data: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving progress data: {str(e)}",

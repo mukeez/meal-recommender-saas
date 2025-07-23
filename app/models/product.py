@@ -9,11 +9,6 @@ from typing_extensions import Annotated
 from pydantic import BaseModel, Field, BeforeValidator, ConfigDict
 from datetime import datetime
 
-# Import the PaginationInfo from meal models to avoid circular dependency
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from app.models.meal import PaginationInfo
-
 
 def parse_datetime(dt_str: Any) -> datetime | Any:
     """Parse a datetime string, handling timezone information.
@@ -35,6 +30,26 @@ def parse_datetime(dt_str: Any) -> datetime | Any:
         return datetime.fromisoformat(dt_str)
     except:
         return datetime.now()
+
+
+class PaginationInfo(BaseModel):
+    """Pagination information for paginated responses.
+
+    Attributes:
+        page: Current page number (1-based)
+        page_size: Number of items per page
+        total: Total number of items across all pages
+        total_pages: Total number of pages
+        has_next: Whether there are more pages after current
+        has_previous: Whether there are pages before current
+    """
+
+    page: int = Field(..., description="Current page number (1-based)")
+    page_size: int = Field(..., description="Number of items per page")
+    total: int = Field(..., description="Total number of items across all pages")
+    total_pages: int = Field(..., description="Total number of pages")
+    has_next: bool = Field(..., description="Whether there are more pages after current")
+    has_previous: bool = Field(..., description="Whether there are pages before current")
 
 
 class NutritionFacts(BaseModel):
@@ -334,5 +349,5 @@ class PaginatedProductNutritionResponse(BaseModel):
         search_query: The search term that was used
     """
     results: List[ProductWithNutrition] = Field(default_factory=list, description="Products with merged nutrition facts for current page")
-    pagination: "PaginationInfo" = Field(..., description="Pagination information")
+    pagination: PaginationInfo = Field(..., description="Pagination information")
     search_query: str = Field(..., description="The search term that was used")
