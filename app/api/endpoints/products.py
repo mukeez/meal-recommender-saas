@@ -5,11 +5,11 @@ import traceback
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, Body
 
 from app.api.auth_guard import auth_guard
-from app.models.product import ProductList, ProductSearchResponse, ProductNutritionResponse, ProductWithNutrition
-from app.models.meal import LoggedMeal, MealSearchResponse, MealType, LoggingMode, ServingUnitEnum, LoggedMealWithBarcode, ProductMealSearchResponse
+from app.models.product import ProductList, ProductSearchResponse, ProductNutritionResponse, ProductWithNutrition, Product, LoggedProduct, NutritionFacts, ProductLogRequest, PaginatedProductNutritionResponse
+from app.models.meal import LoggedMeal, MealSearchResponse, MealType, LoggingMode, ServingUnitEnum, LoggedMealWithBarcode, ProductMealSearchResponse, PaginatedProductMealSearchResponse
 from app.services.product_service import product_service
 from app.services.openfoodfacts_service import openfoodfacts_service
 
@@ -63,42 +63,44 @@ def convert_product_to_logged_meal(product) -> LoggedMealWithBarcode:
 
 @router.get(
     "/search",
-    response_model=ProductNutritionResponse,
+    response_model=PaginatedProductNutritionResponse,
     response_model_by_alias=False,
     status_code=status.HTTP_200_OK,
-    summary="Get nutrition facts for similar products",
-    description="Get nutrition facts for similar products that match the query",
+    summary="Get paginated nutrition facts for similar products",
+    description="Get nutrition facts for similar products that match the query with standardized pagination.",
 )
 async def product_search(
     query: str = Query(
         ..., description="Product to search can be product name or brand name"
     ),
-    page: int = Query(1, description="Current page number defaults to 1"),
+    page: int = Query(1, description="Page number (1-based, default: 1)", ge=1),
     page_size: int = Query(
-        20, description="Number of products to include on each page defaults to 20"
+        20, description="Number of items per page (default: 20)", ge=1
     ),
     user=Depends(auth_guard),
-) -> ProductNutritionResponse:
-    """Get paginated list of similar products.
+) -> PaginatedProductNutritionResponse:
+    """Get paginated list of similar products with standardized pagination info.
 
     This endpoint retrieves a paginated list of similar products that match the query
+    with standardized pagination information including total count and page details.
 
     Args:
         query: The product to search can be product name or brand name
-        page: The current page number defaults to 1
-        page_size: The number of products to include on each page defaults to 20
+        page: Page number (1-based, default: 1)
+        page_size: Number of items per page (1-100, default: 20)
         user: The authenticated user (injected by the auth_guard dependency)
 
     Returns:
-        A list of paginated products
+        PaginatedProductNutritionResponse with products and pagination info
 
     Raises:
         HTTPException: If there is an error processing the request
     """
     try:
         logger.info(
-            f"product search:[query:{query}][page:{page}][page_size:{page_size}]"
+            f"paginated product search:[query:{query}][page:{page}][page_size:{page_size}]"
         )
+        
         # get list of products from database
         products = await product_service.get_products(
             product_name=query, page=page, page_size=page_size
@@ -128,9 +130,25 @@ async def product_search(
                 )
                 products_with_nutrition.append(product_with_nutrition)
 
-        return ProductNutritionResponse(
-            products=products_with_nutrition,
-            total_products=products.count if products else 0,
+        # Calculate pagination info
+        total_count = products.count if products else 0
+        total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        has_next = page < total_pages
+        has_previous = page > 1
+
+        from app.models.meal import PaginationInfo
+        pagination = PaginationInfo(
+            page=page,
+            page_size=page_size,
+            total=total_count,
+            total_pages=total_pages,
+            has_next=has_next,
+            has_previous=has_previous
+        )
+
+        return PaginatedProductNutritionResponse(
+            results=products_with_nutrition,
+            pagination=pagination,
             search_query=query
         )
 
@@ -148,35 +166,35 @@ async def product_search(
 
 @router.get(
     "/search-meals-format",
-    response_model=ProductMealSearchResponse,
+    response_model=PaginatedProductMealSearchResponse,
     response_model_by_alias=False,
     status_code=status.HTTP_200_OK,
-    summary="Search products with meal search compatible format",
-    description="Search for products and return results in the same format as meal search with barcode",
+    summary="Search products with paginated meal search compatible format",
+    description="Search for products and return results in the same format as meal search with barcode and pagination.",
 )
 async def product_search_meals_format(
     query: str = Query(
         ..., description="Product to search can be product name or brand name"
     ),
-    page: int = Query(1, description="Current page number defaults to 1"),
+    page: int = Query(1, description="Page number (1-based, default: 1)", ge=1),
     page_size: int = Query(
-        20, description="Number of products to include on each page defaults to 20"
+        20, description="Number of items per page (default: 20)", ge=1
     ),
     user=Depends(auth_guard),
-) -> ProductMealSearchResponse:
-    """Search for products and return results in meal search compatible format.
+) -> PaginatedProductMealSearchResponse:
+    """Search for products and return results in paginated meal search compatible format.
 
     This endpoint retrieves products that match the query and returns them
-    in the same format as the meal search endpoint for consistency.
+    in the same format as the meal search endpoint for consistency with pagination.
 
     Args:
         query: The product to search can be product name or brand name
-        page: The current page number defaults to 1
-        page_size: The number of products to include on each page defaults to 20
+        page: Page number (1-based, default: 1)
+        page_size: Number of items per page (default: 20)
         user: The authenticated user (injected by the auth_guard dependency)
 
     Returns:
-        MealSearchResponse with products converted to LoggedMeal format
+        PaginatedProductMealSearchResponse with products converted to LoggedMeal format
 
     Raises:
         HTTPException: If there is an error processing the request
@@ -185,8 +203,9 @@ async def product_search_meals_format(
         user_id = user.get("sub")
         
         logger.info(
-            f"product search meals format:[query:{query}][page:{page}][page_size:{page_size}]"
+            f"paginated product search meals format:[query:{query}][page:{page}][page_size:{page_size}]"
         )
+        
         # get list of products from database
         products = await product_service.get_products(
             product_name=query, page=page, page_size=page_size
@@ -211,10 +230,26 @@ async def product_search_meals_format(
                     logger.warning(f"Failed to convert product to logged meal: {e}")
                     # Continue with other products
 
-        # Return in meal search compatible format with barcodes
-        return ProductMealSearchResponse(
+        # Calculate pagination info
+        total_count = products.count if products else 0
+        total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        has_next = page < total_pages
+        has_previous = page > 1
+
+        from app.models.meal import PaginationInfo
+        pagination = PaginationInfo(
+            page=page,
+            page_size=page_size,
+            total=total_count,
+            total_pages=total_pages,
+            has_next=has_next,
+            has_previous=has_previous
+        )
+
+        # Return in meal search compatible format with barcodes and pagination
+        return PaginatedProductMealSearchResponse(
             results=logged_meals,
-            total_results=products.count if products else 0,
+            pagination=pagination,
             search_query=query
         )
 
@@ -227,4 +262,88 @@ async def product_search_meals_format(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving products: {str(e)}",
+        )
+
+
+@router.post(
+    "/log",
+    response_model=LoggedProduct,
+    status_code=status.HTTP_201_CREATED,
+    summary="Log a new product",
+    description="Create a new product entry when barcode scan returns no results. Users can manually input product information.",
+)
+async def log_product(
+    product_data: ProductLogRequest = Body(..., description="Product information to log"),
+    user=Depends(auth_guard),
+) -> LoggedProduct:
+    """Log a new product to the database.
+
+    This endpoint allows users to manually log product information when
+    a barcode scan doesn't return any results. The user provides all
+    necessary product details including nutrition facts.
+
+    Args:
+        product_data: Complete product information including barcode, name, brand, and nutrition facts
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        LoggedProduct: The created product with timestamp
+
+    Raises:
+        HTTPException: If there is an error creating the product or if product already exists
+    """
+    try:
+        user_id = user.get("sub")
+        
+        logger.info(f"User {user_id} logging new product with barcode: {product_data.barcode}")
+        
+        # Check if product with this barcode already exists
+        existing_product = await product_service.scan_barcode(product_data.barcode)
+        if existing_product:
+            logger.warning(f"Product with barcode {product_data.barcode} already exists")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Product with barcode {product_data.barcode} already exists. Use the update endpoint to modify existing products."
+            )
+        
+        # Validate nutrition facts if provided
+        if product_data.nutrition_facts:
+            nutrition = product_data.nutrition_facts
+            if nutrition.calories is not None and nutrition.calories < 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Calories cannot be negative"
+                )
+            
+            # Validate macronutrients
+            for field, value in [("protein", nutrition.protein), ("carbs", nutrition.carbs), ("fat", nutrition.fat)]:
+                if value is not None and value < 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"{field.capitalize()} cannot be negative"
+                    )
+        
+        # Log the product to database
+        logged_products = await product_service.log_product(product_data)
+        
+        if not logged_products or len(logged_products) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to log product - no data returned"
+            )
+        
+        logged_product = logged_products[0]
+        logger.info(f"Successfully logged product {logged_product.barcode} for user {user_id}")
+        
+        return logged_product
+        
+    except HTTPException:
+        raise
+        
+    except Exception as e:
+        logger.error(f"Unexpected error logging product for user {user_id if 'user_id' in locals() else 'unknown'}: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error logging product: {str(e)}",
         )

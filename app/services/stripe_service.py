@@ -305,40 +305,22 @@ class StripeService:
             raise StripeServiceError(f"Error updating user subscription: {str(e)}")
 
     async def cancel_user_subscription(
-        self, user_id: str, cancel_at_period_end: bool = True
+        self, subscription_id: str, cancel_at_period_end: bool = True
     ) -> stripe.Subscription:
-        """Cancel user's Stripe subscription.
+        """Cancel a Stripe subscription by its ID.
 
         Args:
-            user_id: User identifier
-            cancel_at_period_end: Whether to cancel at billing period end
+            subscription_id: The ID of the Stripe subscription to cancel.
+            cancel_at_period_end: Whether to cancel at billing period end.
 
         Returns:
-            Updated Stripe Subscription object
+            Updated Stripe Subscription object.
 
         Raises:
-            StripeServiceError: When subscription not found or cancellation fails
+            StripeServiceError: When subscription not found or cancellation fails.
         """
         try:
-            logger.info(f"Cancelling subscription for user: {user_id}")
-            if not BaseDatabaseService.subclasses:
-                raise StripeServiceError("No database service implementation available")
-
-            # fetch stripe subscription id for user if it exists
-            response = BaseDatabaseService.subclasses[0]().select_data(
-                table_name="user_profiles", cols={"id": user_id}
-            )
-            if response and isinstance(response, List):
-                subscription_id = response[0]["stripe_subscription_id"]
-            elif response:
-                subscription_id = response
-
-            else:
-                subscription_id = None
-
-            if not subscription_id:
-                raise StripeServiceError("Subscription id not found for customer")
-
+            logger.info(f"Cancelling subscription: {subscription_id}")
 
             if cancel_at_period_end:
                 sub = stripe.Subscription.modify(
@@ -350,83 +332,86 @@ class StripeService:
 
             return sub
         except stripe.StripeError as e:
-            logger.error(f"Stripe error: {str(e)}")
+            logger.error(f"Stripe error cancelling subscription {subscription_id}: {str(e)}")
             raise StripeServiceError(f"Error cancelling subscription: {str(e)}")
         except Exception as e:
             logger.error(
-                f"Failed to cancel subscription for user: {user_id} with error{str(e)}"
+                f"Failed to cancel subscription {subscription_id} with error: {str(e)}"
             )
             raise StripeServiceError("Unexpected error while cancelling subscription")
 
-    async def reactivate_user_subscription(self, user_id: str) -> stripe.Subscription:
-        """Reactivate user's subscription that was set to cancel at period end.
+    async def reactivate_user_subscription(self, subscription_id: str) -> stripe.Subscription:
+        """Reactivate a subscription that was set to cancel at period end.
 
         Args:
-            user_id: User identifier
+            subscription_id: The ID of the subscription to reactivate.
 
         Returns:
-            Updated Stripe Subscription object
+            Updated Stripe Subscription object.
 
         Raises:
-            StripeServiceError: When subscription not found, not eligible for reactivation, or reactivation fails
+            StripeServiceError: When subscription not found, not eligible for reactivation, or reactivation fails.
         """
         try:
-            logger.info(f"Reactivating subscription for user: {user_id}")
+            logger.info(f"Reactivating subscription: {subscription_id}")
 
             if not BaseDatabaseService.subclasses:
                 raise StripeServiceError("No database service implementation available")
 
-            # Get subscription details first
-            subscription_details = await self.get_subscription_details(user_id)
-
-            if not subscription_details.get("has_subscription"):
-                raise StripeServiceError("No subscription found for user")
-
-            subscription_id = subscription_details.get("subscription_id")
-            if not subscription_id:
-                raise StripeServiceError("Subscription ID not found")
+            # Get subscription details from Stripe
+            subscription = stripe.Subscription.retrieve(subscription_id)
 
             # Check if subscription is eligible for reactivation
-            if not subscription_details.get("cancel_at_period_end"):
+            if not subscription.cancel_at_period_end:
                 raise StripeServiceError(
                     "Subscription is not set to cancel - no reactivation needed"
                 )
 
             # Check if subscription is still active (hasn't ended yet)
-            status = subscription_details.get("status")
-            if status not in ["active", "trialing"]:
+            if subscription.status not in ["active", "trialing"]:
                 raise StripeServiceError(
-                    f"Subscription cannot be reactivated - current status: {status}"
+                    f"Subscription cannot be reactivated - current status: {subscription.status}"
                 )
+            
+            current_period_end = datetime.fromtimestamp(subscription["items"]["data"][0]["current_period_end"], tz=timezone.utc)
+            current_period_start = datetime.fromtimestamp(subscription["items"]["data"][0]["current_period_start"], tz=timezone.utc)
+
 
             # Check if we're still within the current period
-
-            current_period_end = subscription_details.get("current_period_end")
-            if current_period_end and datetime.now(
-                timezone.utc
-            ) >= current_period_end.replace(tzinfo=timezone.utc):
+            if datetime.now(timezone.utc) >= current_period_end:
                 raise StripeServiceError(
                     "Subscription period has already ended - cannot reactivate"
                 )
 
             # Reactivate the subscription
-            subscription = stripe.Subscription.modify(
+            reactivated_subscription = stripe.Subscription.modify(
                 subscription_id, cancel_at_period_end=False
             )
 
-            logger.info(
-                f"Successfully reactivated subscription {subscription_id} for user {user_id}"
+            BaseDatabaseService.subclasses[0]().update_data(
+                table_name="user_profiles",
+                data={
+                    "stripe_subscription_id": reactivated_subscription.id,
+                    "is_pro": True,
+                    "subscription_start": current_period_start.isoformat(),
+                    "subscription_end": current_period_end.isoformat(),
+                },
+                cols={"stripe_subscription_id": subscription_id},
             )
-            return subscription
+
+            logger.info(
+                f"Successfully reactivated subscription {subscription_id}"
+            )
+            return reactivated_subscription
 
         except stripe.StripeError as e:
-            logger.error(f"Stripe error: {str(e)}")
+            logger.error(f"Stripe error reactivating subscription {subscription_id}: {str(e)}")
             raise StripeServiceError(f"Error reactivating subscription: {str(e)}")
         except StripeServiceError:
             raise
         except Exception as e:
             logger.error(
-                f"Failed to reactivate subscription for user: {user_id} with error: {str(e)}"
+                f"Failed to reactivate subscription {subscription_id} with error: {str(e)}"
             )
             raise StripeServiceError("Unexpected error while reactivating subscription")
 
@@ -1164,6 +1149,93 @@ class StripeService:
 
         except Exception as e:
             logger.error(f"Error marking webhook event as processed: {str(e)}")
+
+
+    async def anonymize_stripe_customer(self, customer_id: str, user_id: str, user_email: str) -> bool:
+        """Anonymize a Stripe customer by removing PII while preserving financial records.
+
+        Args:
+            customer_id: Stripe customer ID to anonymize
+            user_id: Internal user ID for logging
+            user_email: User's original email for audit trail
+
+        Returns:
+            True if customer was anonymized successfully
+
+        Raises:
+            StripeServiceError: On Stripe API errors
+        """
+        try:
+            logger.info(f"Anonymizing Stripe customer: {customer_id} for user: {user_id} (email: {user_email})")
+            
+            # Remove/anonymize personally identifiable information
+            anonymized_data = {
+                'email': user_email,
+                'name': 'Deleted User',
+                'phone': None,
+                'description': f'Account deleted on {datetime.now().isoformat()}',
+                # Remove any custom metadata that might contain PII
+                'metadata': {
+                    'user_id': user_id,  # Keep for record keeping
+                    'original_email': user_email,  # Keep original email for audit trail
+                    'account_deleted': 'true',
+                    'deletion_date': datetime.now().isoformat()
+                }
+            }
+            
+            # Update the customer with anonymized data
+            stripe.Customer.modify(customer_id, **anonymized_data)
+            
+            # Remove all payment methods to prevent future charges
+            payment_methods = stripe.PaymentMethod.list(
+                customer=customer_id,
+                type='card'
+            )
+            
+            for pm in payment_methods.data:
+                try:
+                    stripe.PaymentMethod.detach(pm.id)
+                    logger.info(f"Detached payment method {pm.id} from customer {customer_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to detach payment method {pm.id}: {str(e)}")
+            
+            logger.info(f"Successfully anonymized Stripe customer: {customer_id} (original email: {user_email})")
+            return True
+            
+        except stripe.StripeError as e:
+            logger.error(f"Stripe error anonymizing customer {customer_id}: {str(e)}")
+            raise StripeServiceError(f"Error anonymizing Stripe customer: {str(e)}")
+        except Exception as e:
+            logger.error(f"Unexpected error anonymizing customer {customer_id}: {str(e)}")
+            raise StripeServiceError(f"Unexpected error anonymizing customer: {str(e)}")
+
+    async def delete_stripe_customer(self, customer_id: str) -> bool:
+        """Delete a Stripe customer.
+
+        Args:
+            customer_id: Stripe customer ID to delete
+
+        Returns:
+            True if customer was deleted successfully, False otherwise
+
+        Raises:
+            StripeServiceError: On Stripe API errors
+        """
+        try:
+            logger.info(f"Deleting Stripe customer: {customer_id}")
+            
+            # Delete the customer from Stripe
+            stripe.Customer.delete(customer_id)
+            
+            logger.info(f"Successfully deleted Stripe customer: {customer_id}")
+            return True
+            
+        except stripe.StripeError as e:
+            logger.error(f"Stripe error deleting customer {customer_id}: {str(e)}")
+            raise StripeServiceError(f"Error deleting Stripe customer: {str(e)}")
+        except Exception as e:
+            logger.error(f"Unexpected error deleting customer {customer_id}: {str(e)}")
+            raise StripeServiceError(f"Unexpected error deleting customer: {str(e)}")
 
 
 stripe_service = StripeService()

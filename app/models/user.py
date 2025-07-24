@@ -171,3 +171,25 @@ class UpdateUserPreferencesRequest(BaseModel):
     carbs_target: Optional[float] = None
     fat_target: Optional[float] = None
     dietary_preference: Optional[str] = None
+
+
+class UserDeletionDetails(BaseModel):
+    """Details about what was deleted during user account deletion."""
+    profile_data_deleted: bool = Field(..., description="Whether user profile data was deleted")
+    auth_access_removed: bool = Field(..., description="Whether authentication access was removed") 
+    subscription_cancelled: bool = Field(..., description="Whether subscriptions were cancelled")
+    customer_deleted: bool = Field(..., description="Whether Stripe customer was deleted")
+    login_disabled: bool = Field(..., description="Whether login access was disabled")
+
+
+class UserDeletionResponse(BaseModel):
+    """Response model for user account deletion.
+    
+    Attributes:
+        message: Confirmation message about the deletion
+        details: Detailed breakdown of what was deleted
+        deletion_date: ISO timestamp of when the deletion occurred
+    """
+    message: str = Field(..., description="Confirmation message about the deletion")
+    details: UserDeletionDetails = Field(..., description="Detailed breakdown of what was deleted")
+    deletion_date: str = Field(..., description="ISO timestamp of when the deletion occurred")

@@ -32,6 +32,26 @@ def parse_datetime(dt_str: Any) -> datetime | Any:
         return datetime.now()
 
 
+class PaginationInfo(BaseModel):
+    """Pagination information for paginated responses.
+
+    Attributes:
+        page: Current page number (1-based)
+        page_size: Number of items per page
+        total: Total number of items across all pages
+        total_pages: Total number of pages
+        has_next: Whether there are more pages after current
+        has_previous: Whether there are pages before current
+    """
+
+    page: int = Field(..., description="Current page number (1-based)")
+    page_size: int = Field(..., description="Number of items per page")
+    total: int = Field(..., description="Total number of items across all pages")
+    total_pages: int = Field(..., description="Total number of pages")
+    has_next: bool = Field(..., description="Whether there are more pages after current")
+    has_previous: bool = Field(..., description="Whether there are pages before current")
+
+
 class NutritionFacts(BaseModel):
     """Represents the nutritional information of a product."""
 
@@ -156,6 +176,59 @@ class ProductUpdate(BaseModel):
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 
 
+class ProductLogRequest(BaseModel):
+    """Request model for logging a new product when barcode scan returns no results.
+    
+    This model represents the data structure expected when users manually
+    input product information after an unsuccessful barcode scan.
+    """
+    barcode: Annotated[
+        str,
+        Field(
+            ...,
+            alias="code",
+            description="The unique barcode or identifier of the product.",
+            min_length=1,
+        ),
+    ]
+    product_name: Annotated[
+        str, 
+        Field(
+            ..., 
+            description="The common or descriptive name of the product.",
+            min_length=1,
+        )
+    ]
+    brand_name: Annotated[
+        str,
+        Field(
+            ...,
+            alias="brands",
+            description="The name of the brand that manufactures the product.",
+            min_length=1,
+        ),
+    ]
+    ingredients: Annotated[
+        Optional[str],
+        Field(
+            None,
+            alias="ingredients_text",
+            description="A list or description of the ingredients contained in the product.",
+        ),
+    ]
+    nutrition_facts: Annotated[
+        NutritionFacts,
+        Field(..., description="Nutritional information of the product - required for logging."),
+    ]
+
+    model_config = ConfigDict(
+        validate_assignment=True, 
+        populate_by_name=True, 
+        from_attributes=True,
+        str_strip_whitespace=True,
+    )
+
+
 class LoggedProduct(Product):
     created_at: Annotated[
         datetime,
@@ -264,4 +337,17 @@ class ProductSearchResponse(BaseModel):
     """
     logged_meals: List[Product] = Field(default_factory=list, description="Matching products (treated as meals for unified response)")
     total_logged_meals: int = Field(0, description="Total count of products found")
+    search_query: str = Field(..., description="The search term that was used")
+
+
+class PaginatedProductNutritionResponse(BaseModel):
+    """Paginated response model for product search results with merged nutrition facts.
+
+    Attributes:
+        results: List of products with merged nutrition facts for current page
+        pagination: Pagination information
+        search_query: The search term that was used
+    """
+    results: List[ProductWithNutrition] = Field(default_factory=list, description="Products with merged nutrition facts for current page")
+    pagination: PaginationInfo = Field(..., description="Pagination information")
     search_query: str = Field(..., description="The search term that was used")
