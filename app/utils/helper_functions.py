@@ -1,7 +1,8 @@
+import random
+import string
 from datetime import datetime, date
 from typing import Any
 import json
-
 
 
 def remove_null_values(d: dict) -> dict:
@@ -40,6 +41,7 @@ def deduplicate_dict_list(data):
             deduplicated.append(d.copy())
     return deduplicated
 
+
 def parse_date(value):
     """Parse date string to date object."""
     if value is None:
@@ -51,3 +53,8 @@ def parse_date(value):
         return date.fromisoformat(value)
     except (ValueError, TypeError):
         raise ValueError(f"Invalid date format: {value}")
+
+
+def generate_random_string(length: int = 5) -> str:
+    characters = string.ascii_letters + string.digits
+    return "".join(random.choice(characters) for _ in range(length))
