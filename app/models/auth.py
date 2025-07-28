@@ -78,6 +78,9 @@ class SignupRequest(BaseModel):
     fcm_token: Optional[str] = Field(
         None, description="Firebase Cloud Messaging token for push notifications"
     )
+    referral_code: Optional[str] = Field(
+        None, description="Referral code for user signup"
+    )
 
     @field_validator('password')
     def validate_password_length(cls, value):
