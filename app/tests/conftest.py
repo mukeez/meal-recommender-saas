@@ -26,7 +26,6 @@ from app.tests.fixtures.referral_code import (
     mock_referral_code_service,
     mock_referral_tracking_service,
 )
-from app.tests.fixtures.referral_code import mock_referral_code_service
 from app.tests.constants.user import UserTestConstants
 import asyncio
 

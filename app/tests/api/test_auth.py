@@ -94,6 +94,77 @@ class TestAuthEndpoint:
         assert response.json() == expected_values
         mock_auth_httpx_client_post.assert_called()
 
+    async def test_user_signup_with_referral_code(
+        self,
+        authenticated_client,
+        mock_auth_httpx_client_post,
+        mock_user_service,
+        mock_referral_code_service,
+        mock_referral_tracking_service,
+    ):
+        """Integration test for user signup with referral code."""
+
+        supabase_response = {
+            "user": {"id": UserTestConstants.MOCK_USER_ID.value},
+            "session": {},
+        }
+
+        expected_values = {
+            "message": "User registered successfully. Please check your email for a verification code.",
+            "user": {
+                "id": UserTestConstants.MOCK_USER_ID.value,
+                "email": UserTestConstants.MOCK_USER_EMAIL.value,
+            },
+            "session": {},
+        }
+
+        mock_auth_httpx_client_post.return_value = httpx.Response(
+            201, json=supabase_response
+        )
+
+        mock_referral_code_service.is_referral_code_expired_or_invalid.return_value = (
+            False
+        )
+        mock_referral_code_service.get_referral_code.return_value = {
+            "generated_by": "influencer_123"
+        }
+
+        mock_user_service.create_profile.return_value = None
+        mock_user_service.create_default_preferences.return_value = None
+        mock_user_service.generate_email_verification_otp.return_value = "123456"
+        mock_user_service.send_verification_email.return_value = None
+
+        mock_referral_tracking_service.log_referral_tracking.return_value = {
+            "message": "Referral tracking logged successfully"
+        }
+
+        user_data = {
+            "email": UserTestConstants.MOCK_USER_EMAIL.value,
+            "password": UserTestConstants.MOCK_USER_PASSWORD.value,
+            "display_name": UserTestConstants.MOCK_USER_DISPLAY_NAME.value,
+            "referral_code": UserTestConstants.MOCK_REFERRAL_CODE.value,
+        }
+
+        response = authenticated_client.post(
+            f"{settings.API_V1_STR}/auth/signup", json=user_data
+        )
+
+        assert response.status_code == 201
+        assert response.json() == expected_values
+
+        mock_auth_httpx_client_post.assert_called()
+        mock_referral_code_service.is_referral_code_expired_or_invalid.assert_called_once_with(
+            UserTestConstants.MOCK_REFERRAL_CODE.value
+        )
+        mock_referral_code_service.get_referral_code.assert_called_once_with(
+            UserTestConstants.MOCK_REFERRAL_CODE.value
+        )
+        mock_user_service.create_profile.assert_called_once()
+        mock_user_service.create_default_preferences.assert_called_once_with(
+            UserTestConstants.MOCK_USER_ID.value
+        )
+        mock_referral_tracking_service.log_referral_tracking.assert_called_once()
+
     async def test_user_already_exists(
         self, authenticated_client, mock_auth_httpx_client_post
     ):

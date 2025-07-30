@@ -21,10 +21,7 @@ def mock_auth_httpx_client_put(mocker):
 @pytest.fixture(scope="function")
 def mock_user_service(mocker):
     """Fixture to patch and provide a mock for user_service."""
-    mock = mocker.patch(
-        "app.api.endpoints.auth.user_service",
-        autospec=True
-    )
+    mock = mocker.patch("app.api.endpoints.auth.user_service", autospec=True)
     mock.get_user_by_email = AsyncMock()
     mock.store_otp = AsyncMock()
     mock.get_otp = AsyncMock()
@@ -33,6 +30,31 @@ def mock_user_service(mocker):
     mock.update_password = AsyncMock()
     mock.invalidate_otp = AsyncMock()
     mock.invalidate_session_token = AsyncMock()
+    mock.create_profile = AsyncMock()
+    mock.create_default_preferences = AsyncMock()
+    mock.generate_email_verification_otp = AsyncMock()
+    mock.send_verification_email = AsyncMock()
+    return mock
+
+
+@pytest.fixture(scope="function")
+def mock_referral_code_service(mocker):
+    """Fixture to patch and provide a mock for referral_code_service."""
+    mock = mocker.patch("app.api.endpoints.auth.referral_code_service", autospec=True)
+    mock.is_referral_code_expired_or_invalid = AsyncMock()
+    mock.get_referral_code = AsyncMock()
+    mock.save_referral_instance = AsyncMock()
+    return mock
+
+
+@pytest.fixture(scope="function")
+def mock_referral_tracking_service(mocker):
+    """Fixture to patch and provide a mock for referral_tracking_service."""
+    mock = mocker.patch(
+        "app.api.endpoints.auth.referral_tracking_service", autospec=True
+    )
+    mock.log_referral_tracking = AsyncMock()
+    mock.get_influencer_tracking_stats = AsyncMock()
     return mock
 
 
