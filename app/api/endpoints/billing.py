@@ -290,6 +290,21 @@ async def stripe_webhook(
             await stripe_service.update_stripe_user_subscription(
                 customer=customer, subscription_data=subscription_data
             )
+
+            try:
+                customer_email = await stripe_service.get_customer_email(customer_id)
+                if customer_email:
+                    await mail_service.send_email(
+                        recipient=customer_email,
+                        subject="Subscription Renewed",
+                        template_name="subscription_renewed.html",
+                        context={},
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to send renewal email for customer {customer}: {str(e)}"
+                )
+
             return {"status": "success", "message": "Subscription renewed"}
 
         elif event["type"] == "invoice.payment_failed":
