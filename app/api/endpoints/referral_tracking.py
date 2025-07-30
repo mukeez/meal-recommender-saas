@@ -28,6 +28,8 @@ async def get_referral_tracking_stats(
             influencer_id
         )
         return tracking_stats
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(
             f"Error fetching referral tracking stats for influencer {influencer_id}: {str(e)}"
