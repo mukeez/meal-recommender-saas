@@ -2,6 +2,7 @@ import logging
 from supabase import create_client
 from fastapi import HTTPException, status
 from app.core.config import settings
+from app.models.referral_tracking import ReferralTrackingResponse
 
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,9 @@ class ReferralTrackingService:
                 detail=f"Error logging referral tracking: {str(e)}",
             )
 
-    async def get_influencer_tracking_stats(self, influencer_id: str) -> dict:
+    async def get_influencer_tracking_stats(
+        self, influencer_id: str
+    ) -> ReferralTrackingResponse:
         """Get referral tracking stats for an influencer."""
         try:
             response = (
@@ -77,10 +80,10 @@ class ReferralTrackingService:
                     }
                 )
 
-            return {
-                "total_users_referred": len(referred_users),
-                "referred_users": referred_users,
-            }
+            return ReferralTrackingResponse(
+                total_users_referred=len(referred_users),
+                referred_users=referred_users,
+            )
         except Exception as e:
             logger.error(f"Error fetching referral tracking stats: {str(e)}")
             raise HTTPException(
