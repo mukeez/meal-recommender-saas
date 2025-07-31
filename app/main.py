@@ -24,6 +24,7 @@ from app.api.endpoints import (
     products,
     notifications,
     contact,
+    referral_code,
 )
 from app.core.config import settings
 from app.tasks.macromeals_tasks import macromeals_tasks
@@ -213,6 +214,12 @@ app.include_router(
     contact.router,
     prefix=f"{settings.API_V1_STR}/contact",
     tags=["contact"],
+)
+
+app.include_router(
+    referral_code.router,
+    prefix=f"{settings.API_V1_STR}/referral-code",
+    tags=["referral codes"],
 )
 
 
