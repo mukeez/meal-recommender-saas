@@ -48,5 +48,60 @@ class ReferralCodeService:
                 detail=f"Error saving referral code: {str(e)}",
             )
 
+    async def is_referral_code_expired_or_invalid(self, referral_code: str) -> bool:
+        try:
+            response = (
+                self.client.table("referral_codes")
+                .select("expires_at")
+                .eq("referral_code", referral_code)
+                .execute()
+                .model_dump()
+            )
+            referral_data = response.get("data", [])
+            if not referral_data:
+                return True
+            expires_at = referral_data[0].get("expires_at")
+
+            if expires_at.endswith("+00"):
+                expires_at = expires_at[:-3] + "+00:00"
+            elif expires_at.endswith("-00"):
+                expires_at = expires_at[:-3] + "-00:00"
+
+            expires_datetime = datetime.fromisoformat(expires_at)
+            current_datetime = datetime.now(expires_datetime.tzinfo)
+
+            if expires_datetime < current_datetime:
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error checking referral code expiration: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error checking referral code expiration: {str(e)}",
+            )
+
+    async def get_referral_code(self, referral_code: str) -> dict:
+        try:
+            response = (
+                self.client.table("referral_codes")
+                .select("*")
+                .eq("referral_code", referral_code)
+                .execute()
+                .model_dump()
+            )
+            referral_data = response.get("data", [])
+            if not referral_data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Referral code not found",
+                )
+            return referral_data[0]
+        except Exception as e:
+            logger.error(f"Error fetching referral code: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error fetching referral code: {str(e)}",
+            )
+
 
 referral_code_service = ReferralCodeService()

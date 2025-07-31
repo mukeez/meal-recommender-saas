@@ -7,13 +7,15 @@ from fastapi import APIRouter, HTTPException, status, Request, Depends, Body
 from fastapi.templating import Jinja2Templates
 import httpx
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import random, hashlib
 
 from app.core.config import settings
 from app.models.user import UpdateUserProfileRequest
 from app.services.user_service import user_service, UserProfileData
 from app.services.mail_service import mail_service
+from app.services.referral_code_service import referral_code_service
+from app.services.referral_tracking_service import referral_tracking_service
 from app.models.auth import LoginRequest, LoginResponse, SignupRequest, SignUpResponse, VerifyOtpRequest, VerifyOtpResponse, ResetPasswordRequest, VerifyEmailRequest, VerifyEmailResponse, ResendVerificationRequest, ResendVerificationResponse, RefreshTokenRequest, RefreshTokenResponse, UserMetadata, LogoutResponse
 from app.api.auth_guard import auth_guard
 from typing import Dict
@@ -181,6 +183,30 @@ async def signup(payload: SignupRequest) -> SignUpResponse:
             detail="Error during user registration",
         )
 
+    referral_code = payload.referral_code
+    if referral_code:
+        referral_code_expired = (
+            await referral_code_service.is_referral_code_expired_or_invalid(
+                referral_code
+            )
+        )
+        if referral_code_expired:
+            logger.warning(
+                f"Referral code {referral_code} is expired or invalid for user {payload.email}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The referral code is expired or invalid.",
+            )
+        else:
+            logger.info(
+                f"Referral code {referral_code} is valid for user {payload.email}. Continuing..."
+            )
+            referral_code_instance = await referral_code_service.get_referral_code(
+                referral_code
+            )
+            influencer_id = referral_code_instance.get("generated_by")
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -270,6 +296,15 @@ async def signup(payload: SignupRequest) -> SignUpResponse:
 
         await user_service.create_default_preferences(user_id)
         logger.info(f"Created default preferences for user: {user_id}")
+
+        await referral_tracking_service.log_referral_tracking(
+            {
+                "referral_code": referral_code,
+                "influencer_id": influencer_id,
+                "referred_user_id": user_id,
+                "date_used": str(date.today()),
+            }
+        )
 
         # Generate and send email verification
         try:

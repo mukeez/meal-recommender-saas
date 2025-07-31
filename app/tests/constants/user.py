@@ -6,6 +6,7 @@ class UserTestConstants(Enum):
     MOCK_USER_EMAIL = "matrix@simulation.com"
     MOCK_USER_PASSWORD = "testPasswo@d"
     MOCK_USER_DISPLAY_NAME = "matrix"
+    MOCK_REFERRAL_CODE = "WUZ-1234"
     MOCK_CUSTOMER_ID = "cus_test_123"
     MOCK_USER_PROFILE_DATA = {
         "id": MOCK_USER_ID,
