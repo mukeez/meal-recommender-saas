@@ -160,11 +160,11 @@ async def stripe_webhook(
 
         elif event["type"] == "checkout.session.completed":
             session = event["data"]["object"]
-            user_id = await stripe_service.handle_checkout_completed(session)
             
             # Mark trial as used for checkout flow (if user has trial)
             metadata = session.get("metadata", {})
             has_trial = metadata.get("has_trial", "true").lower() == "true"
+            user_id = metadata.get("user_id", None)
             if user_id and has_trial:
                 try:
                     await user_service.mark_trial_as_used(user_id)
@@ -198,13 +198,16 @@ async def stripe_webhook(
             session = event["data"]["object"]
             customer_id = session["customer"]
             session_trial_end_date = session.get("trial_end")
+            current_period_start = datetime.fromtimestamp(session["items"]["data"][0]["current_period_start"]).isoformat()
+            current_period_end = datetime.fromtimestamp(session["items"]["data"][0]["current_period_end"]).isoformat()
+
             trial_end_date = datetime.fromtimestamp(session_trial_end_date).date() if session_trial_end_date else None
             metadata = session.get("metadata", {})
 
             # Update the user's subscription record in the database
             await stripe_service.update_stripe_user_subscription(
                 customer=customer_id,
-                subscription_data={"stripe_subscription_id": session.get("id"), "is_pro": True, "plan": metadata.get("plan"), "subscription_start": datetime.fromtimestamp(session.get("current_period_start")).isoformat() if session.get("current_period_start") else None, "subscription_end": datetime.fromtimestamp(session.get("current_period_end")).isoformat() if session.get("current_period_end") else None, "trial_end_date": trial_end_date.isoformat() if trial_end_date else None}
+                subscription_data={"stripe_subscription_id": session.get("id"), "is_pro": True, "plan": metadata.get("plan"), "subscription_start": current_period_start, "subscription_end": current_period_end, "trial_end_date": trial_end_date.isoformat() if trial_end_date else None}
                 
             )
             logger.info(f"Subscription details updated for user: {customer_id}")
@@ -275,6 +278,7 @@ async def stripe_webhook(
         elif event["type"] == "invoice.paid":
             session = event["data"]["object"]
             customer = session["customer"]
+            subscription_id = session["parent"]["subscription_details"]["subscription"]
             subscription_start = datetime.fromtimestamp(
                 session["lines"]["data"][0]["period"]["start"]
             ).isoformat()
@@ -282,6 +286,7 @@ async def stripe_webhook(
                 session["lines"]["data"][0]["period"]["end"]
             ).isoformat()
             subscription_data = {
+                "stripe_subscription_id": subscription_id,
                 "subscription_start": subscription_start,
                 "subscription_end": subscription_end,
                 "is_pro": True,
@@ -310,7 +315,7 @@ async def stripe_webhook(
         elif event["type"] == "invoice.payment_failed":
             invoice = event["data"]["object"]
             customer_id = invoice["customer"]
-            subscription_id = invoice["subscription"]
+            subscription_id = invoice["parent"]["subscription_details"]["subscription"]
             
             logger.warning(f"Payment failed for customer {customer_id}, subscription {subscription_id}")
             
@@ -359,37 +364,6 @@ async def stripe_webhook(
                         logger.info(f"Past due notification sent to {customer_email}")
                 except Exception as e:
                     logger.warning(f"Failed to send past due email for customer {customer_id}: {str(e)}")
-                
-            elif subscription_status == "canceled":
-                logger.info(f"Subscription canceled due to failed payments for customer {customer_id}")
-                
-                subscription_data = {
-                    "is_pro": False,
-                    "stripe_subscription_id": None,
-                    "subscription_start": None,
-                    "subscription_end": None,
-                    "trial_end_date": None,
-                    "plan": None
-                }
-                await stripe_service.update_stripe_user_subscription(
-                    customer=customer_id, subscription_data=subscription_data
-                )
-                
-                try:
-                    customer_email = await stripe_service.get_customer_email(customer_id)
-                    if customer_email:
-                        await mail_service.send_email(
-                            recipient=customer_email,
-                            subject="Subscription Canceled - MacroMeals",
-                            template_name="subscription_cancelled.html",
-                            context={
-                                "customer_email": customer_email,
-                                "reason": "payment_failure"
-                            }
-                        )
-                        logger.info(f"Cancellation notification sent to {customer_email}")
-                except Exception as e:
-                    logger.warning(f"Failed to send cancellation email for customer {customer_id}: {str(e)}")
                 
             return {"status": "success", "message": f"Subscription status updated: {subscription_status}"}
 
@@ -625,9 +599,11 @@ async def reactivate_subscription(
     The subscription will continue with its normal billing cycle after reactivation.
     """
     try:
+        user_id = user.get("sub")
         # Reactivate the subscription using the ID from the request
         subscription = await stripe_service.reactivate_user_subscription(
-            request.subscription_id
+            user_id=user_id,
+            subscription_id=request.subscription_id
         )
 
         return SubscriptionReactivationResponse(

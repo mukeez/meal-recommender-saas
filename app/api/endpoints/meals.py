@@ -261,7 +261,8 @@ async def get_daily_progress(
     """Calculate daily macro progress for the current user."""
     try:
         user_id = user.get("sub")
-
+        user_id = "52e5de09-dd05-46df-921a-75a8130c340f"
+        print("tototototo")
         daily_progress = await meal_service.get_daily_progress(user_id)
         return daily_progress
 

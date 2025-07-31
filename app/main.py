@@ -41,9 +41,6 @@ security_scheme = HTTPBearer()
 
 scheduler = BackgroundScheduler()
 
-# scheduled for midnight each day
-scheduler.add_job(macromeals_tasks.downgrade_users, CronTrigger(hour="0"))
-
 # scheduled for 8:00 AM each day
 scheduler.add_job(
     macromeals_tasks.schedule_start_of_day_meal_reminders, CronTrigger(hour="8")

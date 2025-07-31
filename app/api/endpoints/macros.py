@@ -115,13 +115,13 @@ async def macros_setup_endpoint(
             "weight_unit_preference": request.weight_unit_preference,
         }
 
-
+        
         if request.dob:
             user_data["dob"] = request.dob
 
-        await user_service.update_user_profile(
+        macros_service.save_user_profile(
             user_id=user_id,
-            user_data=UpdateUserProfileRequest(**user_data)
+            user_data=user_data
         )
 
         return macro_response

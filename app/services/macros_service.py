@@ -439,6 +439,30 @@ class MacrosService:
         except Exception as e:
             logger.error(f"Error retrieving user preferences: {str(e)}")
             raise MacrosServiceError(f"Error retrieving user preferences: {str(e)}")
+        
+    
+    def save_user_profile(
+        self, user_id: str, user_data: Dict[str, Any]
+    ) -> None:
+        """
+        Save or update user's profile data.
+
+        Args:
+            user_id: The user's unique identifier
+            user_data: Dictionary with user profile data to save    
+        Raises:
+            MacrosServiceError: If there's an error saving the profile
+        """
+        try:
+            # Update the user profile in the database
+            BaseDatabaseService.subclasses[0]().update_data(
+                table_name="user_profiles",
+                data=user_data,
+                cols={"id": user_id},
+            )
+        except Exception as e:
+            logger.error(f"Error saving user profile: {str(e)}")
+            raise MacrosServiceError(f"Error saving user profile: {str(e)}")
 
 
 macros_service = MacrosService()

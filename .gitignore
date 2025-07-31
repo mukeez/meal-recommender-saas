@@ -180,3 +180,7 @@ openapi.yaml
 .cursorignore
 
 secrets/
+
+*.csv
+*.parquet
+*.ipynb
