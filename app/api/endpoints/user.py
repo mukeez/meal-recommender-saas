@@ -197,9 +197,12 @@ async def update_fcm_token(
         A success message indicating the token was updated
     """
     try:
+        if "fcm_token" not in body:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only the FCM token parameter is required",
+            )
         fcm_token = body.get("fcm_token")
-        if not fcm_token:
-            raise HTTPException(status_code=400, detail="FCM token is required")
         user_id = user.get("sub")
         await user_service.update_fcm_token(user_id=user_id, fcm_token=fcm_token)
         return {"message": "FCM token updated successfully"}
