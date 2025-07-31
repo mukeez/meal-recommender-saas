@@ -128,7 +128,7 @@ class MacroMealsTasks:
 
                     successful_notifications += 1
                     logger.info(
-                        f"Successfully sent start of day reminder to user: {user_id}"
+                        f"Successfully sent start of day reminder to user: {user_id} - {settings.ENVIRONMENT}"
                     )
 
                 except Exception as user_error:
@@ -214,7 +214,7 @@ class MacroMealsTasks:
 
                     successful_notifications += 1
                     logger.info(
-                        f"Successfully sent end of day reminder to user: {user_id}"
+                        f"Successfully sent end of day reminder to user: {user_id} - {settings.ENVIRONMENT}"
                     )
 
                 except Exception as user_error:
@@ -297,7 +297,7 @@ class MacroMealsTasks:
 
                     successful_notifications += 1
                     logger.info(
-                        f"Successfully sent breakfast reminder to user: {user_id}"
+                        f"Successfully sent breakfast reminder to user: {user_id} - {settings.ENVIRONMENT}"
                     )
 
                 except Exception as user_error:
@@ -373,7 +373,9 @@ class MacroMealsTasks:
                     ).execute()
 
                     successful_notifications += 1
-                    logger.info(f"Successfully sent lunch reminder to user: {user_id}")
+                    logger.info(
+                        f"Successfully sent lunch reminder to user: {user_id} - {settings.ENVIRONMENT}"
+                    )
 
                 except Exception as user_error:
                     failed_notifications += 1
@@ -450,7 +452,9 @@ class MacroMealsTasks:
                     ).execute()
 
                     successful_notifications += 1
-                    logger.info(f"Successfully sent dinner reminder to user: {user_id}")
+                    logger.info(
+                        f"Successfully sent dinner reminder to user: {user_id} - {settings.ENVIRONMENT}"
+                    )
 
                 except Exception as user_error:
                     failed_notifications += 1
