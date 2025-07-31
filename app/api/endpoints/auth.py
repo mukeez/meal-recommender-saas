@@ -145,6 +145,7 @@ async def login(payload: LoginRequest) -> LoginResponse:
 
         fcm_token = payload.fcm_token
         if fcm_token:
+            await user_service.check_and_unset_fcm_token(fcm_token)
             await user_service.update_fcm_token(
                 user_id=response.json().get("user", {}).get("id"), fcm_token=fcm_token
             )

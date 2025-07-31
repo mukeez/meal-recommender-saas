@@ -547,6 +547,46 @@ class UserProfileService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to update FCM token",
             )
+    
+    async def check_and_unset_fcm_token(self, fcm_token: str) -> None:
+        try:
+            logger.info(f"Checking FCM token: {fcm_token}")
+
+            async with httpx.AsyncClient() as client:
+                response = await client.patch(
+                    f"{self.base_url}/rest/v1/user_profiles",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params={"fcm_token": f"eq.{fcm_token}"},
+                    json={"fcm_token": None},
+                )
+
+                if response.status_code not in (200, 201, 204):
+                    error_detail = "Failed to unset FCM token"
+                    try:
+                        error_data = response.json()
+                        if "message" in error_data:
+                            error_detail = error_data["message"]
+                    except Exception:
+                        pass
+
+                    logger.error(f"Unsetting FCM token failed: {error_detail}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to unset FCM token",
+                    )
+
+                logger.info(f"FCM token unset for token: {fcm_token}")
+        except Exception as e:
+            logger.error(f"Unexpected error unsetting FCM token {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to unset FCM token",
+            )
+
 
     async def mark_trial_as_used(self, user_id: str) -> None:
         """Mark the user's trial as used.
