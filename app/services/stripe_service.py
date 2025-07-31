@@ -158,7 +158,6 @@ class StripeService:
         self, payload: bytes, signature: str
     ) -> Dict[str, Any]:
         """Verify Stripe webhook signature.
-
         Args:
             payload: Raw webhook payload
             signature: Signature header from request
@@ -340,7 +339,7 @@ class StripeService:
             )
             raise StripeServiceError("Unexpected error while cancelling subscription")
 
-    async def reactivate_user_subscription(self, subscription_id: str) -> stripe.Subscription:
+    async def reactivate_user_subscription(self, user_id:str, subscription_id: str) -> stripe.Subscription:
         """Reactivate a subscription that was set to cancel at period end.
 
         Args:
@@ -396,7 +395,7 @@ class StripeService:
                     "subscription_start": current_period_start.isoformat(),
                     "subscription_end": current_period_end.isoformat(),
                 },
-                cols={"stripe_subscription_id": subscription_id},
+                cols={"id": user_id},
             )
 
             logger.info(

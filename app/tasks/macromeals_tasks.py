@@ -28,7 +28,7 @@ class MacroMealsTasks:
             logger.info("preparing to downgrade users with subscriptions ended")
             self.supabase_client.table("user_profiles").update({"is_pro": False}).eq(
                 "is_pro", True
-            ).lt("created_at", datetime.now().isoformat())
+            ).lt("trial_end_date", datetime.now().strftime("%Y-%m-%d"))
             logger.info("success")
         except Exception as e:
             logger.error(f"Failed to downgrade users with error: {e}")
