@@ -547,7 +547,7 @@ class UserProfileService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to update FCM token",
             )
-    
+
     async def check_and_unset_fcm_token(self, fcm_token: str) -> None:
         try:
             logger.info(f"Checking FCM token: {fcm_token}")
@@ -574,19 +574,9 @@ class UserProfileService:
                         pass
 
                     logger.error(f"Unsetting FCM token failed: {error_detail}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to unset FCM token",
-                    )
-
                 logger.info(f"FCM token unset for token: {fcm_token}")
         except Exception as e:
             logger.error(f"Unexpected error unsetting FCM token {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to unset FCM token",
-            )
-
 
     async def mark_trial_as_used(self, user_id: str) -> None:
         """Mark the user's trial as used.
