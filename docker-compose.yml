@@ -12,28 +12,28 @@ services:
       - ENV_FILE=/code/app/.env
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-    depends_on:
-      - redis
-      - celery_worker
+    # depends_on:
+    #   - redis
+    #   - celery_worker
     command: python app/main.py
 
-  celery_worker:
-    build: .
-    volumes:
-      - ./app:/code/app
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-    depends_on:
-      - redis
-    command: celery -A app.worker worker --loglevel=debug
+#   celery_worker:
+#     build: .
+#     volumes:
+#       - ./app:/code/app
+#     environment:
+#       - REDIS_HOST=redis
+#       - REDIS_PORT=6379
+#     depends_on:
+#       - redis
+#     command: celery -A app.worker worker --loglevel=debug
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
+#   redis:
+#     image: redis:7-alpine
+#     ports:
+#       - "6379:6379"
+#     volumes:
+#       - redis_data:/data
 
-volumes:
-  redis_data:
+# volumes:
+#   redis_data:
