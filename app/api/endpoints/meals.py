@@ -71,17 +71,8 @@ async def suggest_meals(
         # Extract user ID from the authenticated user
         user_id = user.get("sub")
 
-    
-
-        # get restaurants for the user's location
-        restaurants = await restaurant_service.find_restaurants_for_location(
-            location=meal_request.location,
-            latitude=meal_request.latitude,
-            longitude=meal_request.longitude,
-        )
-
         meal_suggestions = await meal_llm_service(
-            request=meal_request, restaurants=restaurants
+            request=meal_request, restaurants=[]
         ).get_meal_suggestions()
         return meal_suggestions
 

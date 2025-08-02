@@ -2,7 +2,6 @@ from typing import List, Dict, Any, Optional
 import logging
 from app.services.base_database_service import BaseDatabaseService
 from app.services.location_service import location_service
-from app.tasks.scraping_tasks import scrape_restaurants_task
 
 
 logger = logging.getLogger(__name__)
@@ -99,13 +98,13 @@ class RestaurantService:
                 latitude, longitude, search_radius)
             logger.info(f"Found {len(restaurants)} restaurants for location '{location}'")
 
-            if not restaurants:
-                # Launch background task for scraping
-                scrape_restaurants_task.delay(
-                    location_name=location,
-                    latitude=latitude,
-                    longitude=longitude
-                )
+            # if not restaurants:
+            #     # Launch background task for scraping
+            #     scrape_restaurants_task.delay(
+            #         location_name=location,
+            #         latitude=latitude,
+            #         longitude=longitude
+            #     )
 
             return restaurants if restaurants else []
         except Exception as e:
