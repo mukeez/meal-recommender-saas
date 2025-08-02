@@ -4,7 +4,7 @@ This module contains FastAPI routes for scanning barcodes and food images
 to retrieve nutritional information.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Body
+from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Body, Query
 import httpx
 import logging
 import base64
@@ -17,8 +17,10 @@ import google.generativeai as genai
 
 from app.api.auth_guard import auth_guard
 from app.core.config import settings
-from app.services.product_service import product_service
-from app.services.openfoodfacts_service import openfoodfacts_service
+from app.services.product_service import ProductService
+from app.services.openfoodfacts_service import OpenFoodFactsService
+from app.services.vector_search.vector_search_service import vector_search_service
+from app.services.image_preprocessing_service import ImagePreprocessingService
 from app.utils.constants import parse_gram_quantity, normalize_nutrition_to_per_gram, calculate_nutrition_for_amount
 import traceback
 
@@ -26,6 +28,11 @@ import traceback
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Initialize services
+product_service = ProductService()
+openfoodfacts_service = OpenFoodFactsService()
+image_preprocessing_service = ImagePreprocessingService()
 
 
 # Models
@@ -59,55 +66,31 @@ class FoodItem(BaseModel):
     fat_per_gram: float
 
 
-def normalize_food_item_data(nutrition_facts: dict) -> FoodItem:
-    """Normalize nutrition facts data to consistent per-gram format.
-    
-    Args:
-        nutrition_facts: Dictionary containing nutrition data in either old format (with quantity) 
-                        or new format (with amount and serving_unit)
-        
-    Returns:
-        FoodItem with normalized data and per-gram values
+class SimilarDish(BaseModel):
+    """Similar dish found through vector search.
+    Attributes:
+        dish_name: Name of the similar dish
+        country: Optional country of origin
+        description: Optional description of the dish
+        similarity: Similarity score (0.0 to 1.0)
+        calories: Estimated calories in grams
+        protein: Estimated protein in grams
+        carbs: Estimated carbs in grams
+        fat: Estimated fat in grams
+        serving_unit: Always "grams"
+        amount: Amount in grams, default is 100g for nutritional estimates
     """
-    # Handle both old format (quantity) and new format (amount + serving_unit)
-    if "amount" in nutrition_facts and "serving_unit" in nutrition_facts:
-        # New format - amount is already numeric
-        gram_amount = float(nutrition_facts["amount"])
-        serving_unit = nutrition_facts.get("serving_unit", "grams")
-    elif "quantity" in nutrition_facts:
-        # Old format - parse quantity string to get gram amount
-        quantity_str = nutrition_facts.get("quantity", "100g")
-        gram_amount = parse_gram_quantity(quantity_str)
-        serving_unit = "grams"
-    else:
-        # Fallback
-        gram_amount = 100.0
-        serving_unit = "grams"
-    
-    # Get nutrition values for the specified amount
-    calories = float(nutrition_facts.get("calories", 0))
-    protein = float(nutrition_facts.get("protein", 0))
-    carbs = float(nutrition_facts.get("carbs", 0))
-    fat = float(nutrition_facts.get("fat", 0))
-    
-    # Calculate per-gram values
-    calories_per_gram, protein_per_gram, carbs_per_gram, fat_per_gram = normalize_nutrition_to_per_gram(
-        calories, protein, carbs, fat, gram_amount
-    )
-    
-    return FoodItem(
-        name=nutrition_facts.get("name", "Unknown Food"),
-        amount=gram_amount,
-        serving_unit=serving_unit,
-        calories=calories,
-        protein=protein,
-        carbs=carbs,
-        fat=fat,
-        calories_per_gram=calories_per_gram,
-        protein_per_gram=protein_per_gram,
-        carbs_per_gram=carbs_per_gram,
-        fat_per_gram=fat_per_gram
-    )
+    id: Optional[int] = Field(None, description="Unique identifier for the dish")
+    dish_name: str = Field(..., description="Name of the similar dish")
+    country: Optional[str] = Field(None, description="Country of origin")
+    description: Optional[str] = Field(None, description="Dish description")
+    similarity: float = Field(..., description="Similarity score (0.0 to 1.0)")
+    calories: Optional[float] = Field(None, description="Estimated calories in grams")
+    protein: Optional[float] = Field(None, description="Estimated protein in grams")
+    carbs: Optional[float] = Field(None, description="Estimated carbs in grams")
+    fat: Optional[float] = Field(None, description="Estimated fat in grams")
+    serving_unit: str = Field("grams", description="Serving unit, always 'grams'")
+    amount: float = Field(100.0, description="Amount in grams, default is 100g for nutritional estimates")
 
 
 class ScanResponse(BaseModel):
@@ -118,6 +101,15 @@ class ScanResponse(BaseModel):
     """
 
     items: List[FoodItem]
+
+
+class EnhancedScanResponse(BaseModel):
+    """Enhanced response model for scan endpoints with vector search results."""
+
+    items: List[FoodItem] = Field(..., description="Nutritional analysis from AI")
+    similar_dishes: List[SimilarDish] = Field(default_factory=list, description="Similar dishes from vector search")
+    search_method: str = Field(..., description="Method used: 'vector_search', 'llm_fallback', or 'both'")
+    message: Optional[str] = Field(None, description="Additional information about the search process")
 
 
 class ScanToMealRequest(BaseModel):
@@ -293,31 +285,44 @@ async def call_gemini_vision(encoded_image: str, prompt: str) -> dict:
 
 @router.post(
     "/image",
-    response_model=ScanResponse,
+    response_model=EnhancedScanResponse,
     status_code=status.HTTP_200_OK,
-    summary="Analyze food image for nutritional information",
-    description="Upload a food image and get nutritional information using vision AI.",
+    summary="Analyze food image with vector search and AI fallback",
+    description="Upload a food image and get nutritional information using vector search with Replicate embeddings, falling back to vision AI when needed.",
 )
 async def scan_image(
-    image: UploadFile = File(...), user=Depends(auth_guard)
-) -> ScanResponse:
-    """Analyze a food image to estimate nutritional content.
+    image: UploadFile = File(...), 
+    similarity_threshold: float = Query(0.75, ge=0.0, le=1.0, description="Minimum similarity score for vector search"),
+    country_filter: Optional[str] = Query(None, description="Filter results by country"),
+    max_results: int = Query(3, ge=1, le=10, description="Maximum number of similar dishes to return"),
+    user=Depends(auth_guard)
+) -> EnhancedScanResponse:
+    """Analyze a food image using vector search with Replicate embeddings as primary method.
+
+    This endpoint first attempts to find similar dishes using Replicate embeddings
+    and vector search. If no matches are found above the threshold, it falls back
+    to LLM-based nutritional analysis.
 
     Args:
         image: Uploaded food image
+        similarity_threshold: Minimum similarity score for vector search (0.0 to 1.0)
+        country_filter: Optional country to filter results by
+        max_results: Maximum number of similar dishes to return
         user: Authenticated user (from auth_guard dependency)
 
     Returns:
-        Estimated nutritional information for food items in the image
+        Enhanced response with both vector search results and nutritional analysis
 
     Raises:
         HTTPException: If the image analysis fails
     """
     try:
         logger.info(
-            f"Received image upload: filename={image.filename}, content_type={image.content_type}"
+            f"Received image scan: filename={image.filename}, "
+            f"similarity_threshold={similarity_threshold}, country_filter={country_filter}"
         )
 
+        # Read and validate image
         try:
             contents = await image.read()
             logger.info(f"Successfully read image file, size={len(contents)} bytes")
@@ -325,36 +330,134 @@ async def scan_image(
             logger.error(f"Error reading image file: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Error reading uploaded file",
+                detail="Error reading uploaded file",
             )
 
         if not contents or len(contents) == 0:
             logger.error("Uploaded file is empty")
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty"
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Uploaded file is empty"
             )
 
+        # Validate image format
         try:
-
             img = Image.open(io.BytesIO(contents))
             img_format = img.format
             logger.info(f"Image format detected: {img_format}, size: {img.size}")
         except Exception as e:
             logger.error(f"Error validating image format: {str(e)}")
-            logger.error("This may not be a valid image file")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid image format"
+            )
+
+        logger.info("Preprocessing image for better analysis quality")
+        try:
+            preprocessed_image_bytes = image_preprocessing_service.preprocess_image(contents)
+            
+            if preprocessed_image_bytes is None:
+                logger.warning("Image preprocessing failed, using original image")
+                processed_contents = contents
+            else:
+                logger.info(f"Image preprocessing successful: {len(contents)} -> {len(preprocessed_image_bytes)} bytes")
+                processed_contents = preprocessed_image_bytes
+                
+        except Exception as e:
+            logger.warning(f"Image preprocessing error: {str(e)}, using original image")
+            processed_contents = contents
+
+        similar_dishes = []
+        search_method = "llm_fallback"  # Default fallback
+        message = None
 
         try:
-            encoded_image = base64.b64encode(contents).decode("utf-8")
-            logger.info(
-                f"Successfully base64 encoded image, encoded_size={len(encoded_image)}"
-            )
-        except Exception as e:
-            logger.error(f"Error encoding image to base64: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error processing image",
-            )
+            logger.info("Attempting vector search using Replicate embeddings...")
+            
+            if country_filter:
+                similar_dishes_raw = await vector_search_service.search_similar_dishes_by_country(
+                    image_bytes=processed_contents,
+                    country=country_filter,
+                    similarity_threshold=0.70,  # Use 0.70 threshold directly
+                    match_count=max_results
+                )
+            else:
+                similar_dishes_raw = await vector_search_service.search_similar_dishes(
+                    image_bytes=processed_contents,
+                    similarity_threshold=0.70,  # Use 0.70 threshold directly
+                    match_count=max_results
+                )
 
+
+
+            # Convert to SimilarDish objects
+            for dish_data in similar_dishes_raw:
+                similar_dish = SimilarDish(
+                    id= dish_data.get('id'),
+                    dish_name=dish_data.get('dish_name', 'Unknown Dish'),
+                    country=dish_data.get('country'),
+                    description=dish_data.get('description'),
+                    similarity=float(dish_data.get('similarity', 0.0)),
+                    calories=dish_data.get("nutritional_info", {}).get("calories"),
+                    protein=dish_data.get("nutritional_info", {}).get("protein"),
+                    carbs=dish_data.get("nutritional_info", {}).get("carbs"),
+                    fat=dish_data.get("nutritional_info", {}).get("fats"),
+                    serving_unit=dish_data.get("nutritional_info", {}).get("serving_unit", "grams"),
+                    amount=dish_data.get("nutritional_info", {}).get("amount", 100.0)  # Default to 100g
+                )
+                similar_dishes.append(similar_dish)
+
+            
+            if similar_dishes_raw:
+                # Sort by similarity score and pick the highest
+                similar_dishes.sort(key=lambda x: x.similarity, reverse=True)
+                best_match = similar_dishes[0]
+
+                logger.info(f"Best match:{best_match}")
+
+                if best_match >= 0.85:
+                
+                    logger.info(f"Found high confidence match: {best_match.dish_name} (similarity: {best_match.similarity:.3f})")
+                    
+                    
+                        
+                    # Create nutrition data based on the best match
+                    nutrition_data = {
+                        "name": best_match.dish_name,
+                        "calories": best_match.calories,
+                        "protein": best_match.protein,
+                        "carbs": best_match.carbs,
+                        "fat": best_match.fat,
+                        "amount": best_match.amount,
+                        "serving_unit": best_match.serving_unit,
+                    }
+                    
+                    food_item = normalize_food_item_data(nutrition_data)
+                    
+                    logger.info(f"Returning vector search result: {food_item.name} with {food_item.calories} calories")
+                    
+                    return EnhancedScanResponse(
+                        items=[food_item],
+                        similar_dishes=similar_dishes,
+                        search_method="vector_search",
+                        message=f"High confidence match found: {best_match.dish_name} (similarity: {best_match.similarity:.3f})"
+                    )
+            
+            
+            # If no results found with 0.70+ threshold
+            logger.info("No dishes found with similarity >= 0.85")
+            message = "No similar dishes found above 0.70 threshold, using AI nutritional analysis"
+            
+        except Exception as e:
+            logger.warning(f"Vector search failed: {str(e)}")
+            message = "Vector search unavailable, using AI nutritional analysis"
+
+        logger.info("Performing LLM-based nutritional analysis...")
+        
+        # Encode preprocessed image for LLM (use preprocessed image for better results)
+        encoded_image = base64.b64encode(processed_contents).decode("utf-8")
+        
+        # Check API keys
         openai_api_key = settings.OPENAI_API_KEY
         if not openai_api_key:
             logger.error("OpenAI API key not configured")
@@ -366,7 +469,13 @@ async def scan_image(
         model_name = "gpt-4o-mini"
         logger.info(f"Using vision model: {model_name}")
 
-        prompt = """Identify this image as a complete meal or dish. Do not break it down into individual components.
+        # Enhanced prompt that considers vector search results
+        if similar_dishes:
+            dish_context = f"Note: Vector search found similar dishes: {', '.join([d.dish_name for d in similar_dishes[:3]])}. "
+        else:
+            dish_context = ""
+
+        prompt = f"""{dish_context}Identify this image as a complete meal or dish. Do not break it down into individual components.
 
 Provide a single, descriptive name for the entire meal as it appears in the image. If there are multiple components, describe them as one unified dish (e.g., "Jollof rice with grilled chicken and plantains" rather than separate items).
 
@@ -382,9 +491,9 @@ For the complete meal shown, provide:
 IMPORTANT: Treat this as ONE complete meal. All nutritional values should be for the entire serving visible in the image.
 
 Format your response as a valid JSON object with this structure:
-{
+{{
   "items": [
-    {
+    {{
       "name": "Complete descriptive meal name",
       "amount": number,
       "serving_unit": "grams", 
@@ -392,9 +501,9 @@ Format your response as a valid JSON object with this structure:
       "protein": number,
       "carbs": number,
       "fat": number
-    }
+    }}
   ]
-}
+}}
 """
 
         # Prepare the request payload
@@ -484,7 +593,6 @@ Format your response as a valid JSON object with this structure:
             logger.debug(f"AI response content: {ai_response}")
 
             # Parse the JSON response
-
             response_data = json.loads(ai_response)
             logger.info("Successfully parsed JSON from AI response")
 
@@ -565,11 +673,11 @@ Format your response as a valid JSON object with this structure:
                         # Fallback
                         nutrition_data["amount"] = 100.0
                         nutrition_data["serving_unit"] = "grams"
+                    
                     food_item = normalize_food_item_data(nutrition_data)
-
                     food_items.append(food_item)
                     logger.info(f"Successfully processed food item: {food_item.name}")
-
+                    
                 except Exception as e:
                     logger.warning(f"Error processing food item {i+1}: {str(e)}")
                     # Continue processing other items instead of failing completely
@@ -582,7 +690,14 @@ Format your response as a valid JSON object with this structure:
                 )
 
             logger.info(f"Successfully processed {len(food_items)} food items")
-            return ScanResponse(items=food_items)
+            
+            # Return enhanced response with both vector search and LLM results
+            return EnhancedScanResponse(
+                items=food_items,
+                similar_dishes=similar_dishes,
+                search_method=search_method,
+                message=message or f"Successfully analyzed image using {search_method}"
+            )
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON parse error: {str(e)}")
@@ -601,7 +716,6 @@ Format your response as a valid JSON object with this structure:
         except Exception as e:
             logger.error(f"Error processing API response: {str(e)}")
             import traceback
-
             logger.error(f"Traceback: {traceback.format_exc()}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -614,7 +728,6 @@ Format your response as a valid JSON object with this structure:
     except Exception as e:
         logger.error(f"Unexpected error in scan_image endpoint: {str(e)}")
         import traceback
-
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -678,3 +791,54 @@ async def convert_scan_to_meal(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error converting scan data: {str(e)}",
         )
+
+
+def normalize_food_item_data(nutrition_facts: dict) -> FoodItem:
+    """Normalize nutrition facts data to consistent per-gram format.
+    
+    Args:
+        nutrition_facts: Dictionary containing nutrition data in either old format (with quantity) 
+                        or new format (with amount and serving_unit)
+        
+    Returns:
+        FoodItem with normalized data and per-gram values
+    """
+    # Handle both old format (quantity) and new format (amount + serving_unit)
+    if "amount" in nutrition_facts and "serving_unit" in nutrition_facts:
+        # New format - amount is already numeric
+        gram_amount = float(nutrition_facts["amount"])
+        serving_unit = nutrition_facts.get("serving_unit", "grams")
+    elif "quantity" in nutrition_facts:
+        # Old format - parse quantity string to get gram amount
+        quantity_str = nutrition_facts.get("quantity", "100g")
+        gram_amount = parse_gram_quantity(quantity_str)
+        serving_unit = "grams"
+    else:
+        # Fallback
+        gram_amount = 100.0
+        serving_unit = "grams"
+    
+    # Get nutrition values for the specified amount
+    calories = float(nutrition_facts.get("calories", 0))
+    protein = float(nutrition_facts.get("protein", 0))
+    carbs = float(nutrition_facts.get("carbs", 0))
+    fat = float(nutrition_facts.get("fat", 0))
+    
+    # Calculate per-gram values
+    calories_per_gram, protein_per_gram, carbs_per_gram, fat_per_gram = normalize_nutrition_to_per_gram(
+        calories, protein, carbs, fat, gram_amount
+    )
+    
+    return FoodItem(
+        name=nutrition_facts.get("name", "Unknown Food"),
+        amount=gram_amount,
+        serving_unit=serving_unit,
+        calories=calories,
+        protein=protein,
+        carbs=carbs,
+        fat=fat,
+        calories_per_gram=calories_per_gram,
+        protein_per_gram=protein_per_gram,
+        carbs_per_gram=carbs_per_gram,
+        fat_per_gram=fat_per_gram
+    )
