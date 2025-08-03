@@ -111,7 +111,7 @@ class MealLLMService(BaseLLMService):
                             or processing the response
         """
         try:
-            system_prompt = """You are a nutrition expert and restaurant knowledge specialist. Provide accurate, concise meal suggestions based on the user's macro requirements. You **must** suggest between 5-8 meal options, ensuring they are from the specified restaurants or locations. """
+            system_prompt = """You are a nutrition expert. Based on the user's macro requirements, suggest 5-8 accurate, easy-to-make, and concise meal options """
 
             if self.restaurants:
                 temperature = 0.5
