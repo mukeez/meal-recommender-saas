@@ -506,9 +506,9 @@ class MacroMealsTasks:
                     )
                     continue
                 if not (
-                    protein >= protein_target
-                    and carbs >= carbs_target
-                    and fat >= fat_target
+                    protein >= 100
+                    and carbs >= 100
+                    and fat >= 100
                 ):
                     continue
                 token = user.get("user_profiles", {}).get("fcm_token")
