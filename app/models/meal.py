@@ -73,6 +73,19 @@ class MealSuggestionRequest(BaseModel):
             raise ValueError("Macro values must be positive")
         return value
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "calories": 2000,
+                "protein": 150,
+                "carbs": 200,
+                "fat": 80,
+                "dietary_restrictions": ["gluten-free"],
+                "dietary_preference": "vegetarian",
+            }
+        }
+    }
+
 
 class Restaurant(BaseModel):
     """Restaurant information.
@@ -132,6 +145,60 @@ class MealSuggestionResponse(BaseModel):
     """
 
     meals: List[MealSuggestion]
+
+
+class RecipeSuggestionRequest(BaseModel):
+    """Request model for personalized recipe suggestions."""
+
+    calories: Annotated[float, Field(..., description="Target calories in kcal")]
+    protein: Annotated[float, Field(..., description="Target protein in grams")]
+    carbs: Annotated[float, Field(..., description="Target carbohydrates in grams")]
+    fat: Annotated[float, Field(..., description="Target fat in grams")]
+    dietary_restrictions: Optional[List[str]] = Field(
+        None, description="List of dietary restrictions (e.g., vegan, gluten-free, etc.)"
+    )
+    dietary_preference: Optional[str] = Field(
+        None, description="vegan, keto, etc. If not provided"
+    )
+
+    @field_validator("calories", "protein", "carbs", "fat")
+    def validate_positive(cls, value: float) -> float:
+        """Validate that nutrient values are positive."""
+        if value < 0:
+            raise ValueError("Macro values must be positive")
+        return value
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "calories": 2000,
+                "protein": 150,
+                "carbs": 200,
+                "fat": 80,
+                "dietary_restrictions": ["gluten-free"],
+                "dietary_preference": "vegetarian",
+            }
+        }
+    }
+
+
+class RecipeSuggestion(BaseModel):
+    """Response model for a single recipe suggestion."""
+
+    name: str = Field(..., description="Name of the dish")
+    description: Optional[str] = Field(None, description="Brief description of the dish")
+    ingredients: List[str] = Field(..., description="List of ingredients for the recipe")
+    recipe: List[str] = Field(..., description="Step-by-step cooking instructions")
+    protein: float = Field(..., description="Protein content in grams")
+    carbs: float = Field(..., description="Carbohydrate content in grams")
+    fat: float = Field(..., description="Fat content in grams")
+    calories: float = Field(..., description="Total calorie count")
+
+
+class RecipeSuggestionResponse(BaseModel):
+    """Response model for a list of recipe suggestions."""
+
+    suggestions: List[RecipeSuggestion]
 
 
 class MealType(str, Enum):
