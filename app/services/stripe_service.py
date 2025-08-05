@@ -374,6 +374,7 @@ class StripeService:
             
             current_period_end = datetime.fromtimestamp(subscription["items"]["data"][0]["current_period_end"], tz=timezone.utc)
             current_period_start = datetime.fromtimestamp(subscription["items"]["data"][0]["current_period_start"], tz=timezone.utc)
+            trial_end = datetime.fromtimestamp(subscription["trial_end"], tz=timezone.utc) if subscription.trial_end else None  
 
 
             # Check if we're still within the current period
@@ -394,6 +395,7 @@ class StripeService:
                     "is_pro": True,
                     "subscription_start": current_period_start.isoformat(),
                     "subscription_end": current_period_end.isoformat(),
+                    "trial_end_date": trial_end.isoformat() if trial_end else None,
                 },
                 cols={"id": user_id},
             )

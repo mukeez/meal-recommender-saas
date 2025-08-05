@@ -415,7 +415,7 @@ async def scan_image(
 
                 logger.info(f"Best match:{best_match}")
 
-                if best_match >= 0.85:
+                if best_match.similarity >= 0.85:
                 
                     logger.info(f"Found high confidence match: {best_match.dish_name} (similarity: {best_match.similarity:.3f})")
                     

@@ -104,9 +104,9 @@ class Product(BaseModel):
         str, Field(..., description="The common or descriptive name of the product.")
     ]
     brand_name: Annotated[
-        str,
+        Optional[str],
         Field(
-            ...,
+            None,
             alias="brands",
             description="The name of the brand that manufactures the product.",
         ),
@@ -192,9 +192,9 @@ class ProductLogRequest(BaseModel):
         ),
     ]
     product_name: Annotated[
-        str, 
+        Optional[str], 
         Field(
-            ..., 
+            None, 
             description="The common or descriptive name of the product.",
             min_length=1,
         )
@@ -289,9 +289,9 @@ class ProductWithNutrition(BaseModel):
         str, Field(..., description="The common or descriptive name of the product.")
     ]
     brand_name: Annotated[
-        str,
+        Optional[str],
         Field(
-            ...,
+            None,
             alias="brands",
             description="The name of the brand that manufactures the product.",
         ),
