@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request, Form, Up
 from typing import List
 from datetime import date, timedelta, datetime
 from typing import Optional
+from pydantic import BaseModel, Field
 
 from app.api.auth_guard import auth_guard
 from app.models.meal import (
@@ -28,9 +29,14 @@ from app.models.meal import (
     PaginatedMealSearchResponse,
     PaginatedMealLogsResponse,
     PaginatedFavoriteMealsResponse,
+    RecipeSuggestionRequest,
+    RecipeSuggestionResponse,
 )
+
+
 from app.services.meal_service import meal_service
 from app.services.meal_llm_service import meal_llm_service
+from app.services.recipe_llm_service import recipe_llm_service
 from app.services.restaurant_service import restaurant_service
 from app.utils.file_upload import validate_image_file
 
@@ -715,6 +721,49 @@ async def get_meal_history(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving meal history: {str(e)}",
+        )
+
+
+@router.post(
+    "/suggest-recipes",
+    response_model=RecipeSuggestionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get recipe suggestions based on macro requirements",
+    description="Get personalized recipe suggestions based on macro requirements. Returns a list of recipe suggestions.",
+)
+async def suggest_recipes(
+    recipe_request: RecipeSuggestionRequest, user=Depends(auth_guard)
+) -> RecipeSuggestionResponse:
+    """Get personalized recipe suggestions based on macro requirements.
+
+    This endpoint takes the user's macro requirements and returns
+    a list of recipe suggestions.
+
+    Args:
+        recipe_request: The recipe suggestion request with macro targets
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        A response object containing a list of recipe suggestions
+
+    Raises:
+        HTTPException: If there is an error processing the request
+    """
+    try:
+        # Extract user ID from the authenticated user
+        user_id = user.get("sub")
+
+        recipe_suggestions = await recipe_llm_service(
+            request=recipe_request
+        ).get_recipe_suggestions()
+        return recipe_suggestions
+
+    except Exception as e:
+        logger.error(f"Error generating recipe suggestions for user:{user_id}: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating recipe suggestions",
         )
 
 
