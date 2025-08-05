@@ -21,6 +21,7 @@ from app.services.product_service import ProductService
 from app.services.openfoodfacts_service import OpenFoodFactsService
 from app.services.vector_search.vector_search_service import vector_search_service
 from app.services.image_preprocessing_service import ImagePreprocessingService
+from app.services.scan_llm_service import scan_llm_service, LLMServiceError
 from app.utils.constants import parse_gram_quantity, normalize_nutrition_to_per_gram, calculate_nutrition_for_amount
 import traceback
 
@@ -108,8 +109,10 @@ class EnhancedScanResponse(BaseModel):
 
     items: List[FoodItem] = Field(..., description="Nutritional analysis from AI")
     similar_dishes: List[SimilarDish] = Field(default_factory=list, description="Similar dishes from vector search")
+    detected_ingredients: List[str] = Field(default_factory=list, description="Individual ingredients detected in the meal")
     search_method: str = Field(..., description="Method used: 'vector_search', 'llm_fallback', or 'both'")
     message: Optional[str] = Field(None, description="Additional information about the search process")
+    confidence_explanation: Optional[str] = Field(None, description="Explanation of why vector search was used or not")
 
 
 class ScanToMealRequest(BaseModel):
@@ -412,41 +415,13 @@ async def scan_image(
                 # Sort by similarity score and pick the highest
                 similar_dishes.sort(key=lambda x: x.similarity, reverse=True)
                 best_match = similar_dishes[0]
+                logger.info(f"Best match from vector search: {best_match.dish_name} (similarity: {best_match.similarity:.3f})")
 
-                logger.info(f"Best match:{best_match}")
-
-                if best_match.similarity >= 0.85:
-                
-                    logger.info(f"Found high confidence match: {best_match.dish_name} (similarity: {best_match.similarity:.3f})")
-                    
-                    
-                        
-                    # Create nutrition data based on the best match
-                    nutrition_data = {
-                        "name": best_match.dish_name,
-                        "calories": best_match.calories,
-                        "protein": best_match.protein,
-                        "carbs": best_match.carbs,
-                        "fat": best_match.fat,
-                        "amount": best_match.amount,
-                        "serving_unit": best_match.serving_unit,
-                    }
-                    
-                    food_item = normalize_food_item_data(nutrition_data)
-                    
-                    logger.info(f"Returning vector search result: {food_item.name} with {food_item.calories} calories")
-                    
-                    return EnhancedScanResponse(
-                        items=[food_item],
-                        similar_dishes=similar_dishes,
-                        search_method="vector_search",
-                        message=f"High confidence match found: {best_match.dish_name} (similarity: {best_match.similarity:.3f})"
-                    )
-            
-            
-            # If no results found with 0.70+ threshold
-            logger.info("No dishes found with similarity >= 0.85")
-            message = "No similar dishes found above 0.70 threshold, using AI nutritional analysis"
+                if best_match.similarity < 0.7:
+                    message = "No similar dishes found above 0.70 threshold, using AI nutritional analysis"
+            else:
+                logger.info("No dishes found via vector search.")
+                message = "No similar dishes found, using AI nutritional analysis"
             
         except Exception as e:
             logger.warning(f"Vector search failed: {str(e)}")
@@ -469,26 +444,34 @@ async def scan_image(
         model_name = "gpt-4o-mini"
         logger.info(f"Using vision model: {model_name}")
 
-        # Enhanced prompt that considers vector search results
-        if similar_dishes:
-            dish_context = f"Note: Vector search found similar dishes: {', '.join([d.dish_name for d in similar_dishes[:3]])}. "
-        else:
-            dish_context = ""
+        # Enhanced prompt that considers vector search results and detects ingredients
+        if similar_dishes and similar_dishes[0].similarity >= 0.85:
+            # Very High confidence vector match - use as foundation
+            best_match = similar_dishes[0]
+            prompt = f"""VERY HIGH CONFIDENCE MATCH FOUND: {best_match.dish_name} (confidence: {best_match.similarity:.3f})
 
-        prompt = f"""{dish_context}Identify this image as a complete meal or dish. Do not break it down into individual components.
+Use this as your nutritional foundation, but analyze the image to:
+1. Detect ALL individual ingredients visible in this meal
+2. Verify if the image matches the foundation dish
+3. Identify any additional ingredients not typical for {best_match.dish_name}
 
-Provide a single, descriptive name for the entire meal as it appears in the image. If there are multiple components, describe them as one unified dish (e.g., "Jollof rice with grilled chicken and plantains" rather than separate items).
+Base nutritional values on {best_match.dish_name} but adjust for visible portions and additional ingredients.
 
-For the complete meal shown, provide:
-1. Descriptive name of the entire meal/dish (be as descriptive as possible)
-2. Estimated total weight of the entire serving shown (as a numeric value in grams)
+Analyze this complete meal image and provide:
+1. Descriptive name of the entire meal/dish (consider the foundation match but adjust if needed)
+2. Estimated total weight of the entire serving
 3. Serving unit (Always use "grams")  
-4. Total estimated calories for the entire serving shown
-5. Total estimated protein for the entire serving shown
-6. Total estimated carbs for the entire serving shown
-7. Total estimated fat for the entire serving shown
+4. Total estimated calories for the entire serving shown (use foundation as base)
+5. Total estimated protein for the entire serving shown (use foundation as base)
+6. Total estimated carbs for the entire serving shown (use foundation as base)
+7. Total estimated fat for the entire serving shown (use foundation as base)
+8. List of ALL individual ingredients that make up this meal (as an array of strings)
 
-IMPORTANT: Treat this as ONE complete meal. All nutritional values should be for the entire serving visible in the image.
+IMPORTANT: 
+- Treat this as ONE complete meal with total nutritional values
+- Use the foundation dish ({best_match.dish_name}) as your nutritional baseline
+- Detect individual ingredients that compose the meal
+- Adjust nutrition if you see significant differences from the foundation
 
 Format your response as a valid JSON object with this structure:
 {{
@@ -502,100 +485,113 @@ Format your response as a valid JSON object with this structure:
       "carbs": number,
       "fat": number
     }}
-  ]
+  ],
+  "detected_ingredients": ["ingredient1", "ingredient2", "ingredient3"]
 }}
 """
+            confidence_explanation = f"Very high confidence match found for {best_match.dish_name} ({best_match.similarity:.1%} similarity). Used as nutritional foundation and detected individual ingredients."
+        elif similar_dishes:
+            # Low/Medium confidence matches - use as reference only
+            dish_context = f"Note: Vector search found similar dishes: {', '.join([d.dish_name for d in similar_dishes[:3]])} but with confidence below 0.85. The AI will make the final judgement. "
+            prompt = f"""{dish_context}Analyze this complete meal image independently to:
 
-        # Prepare the request payload
-        request_payload = {
-            "model": model_name,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{encoded_image}"
-                            },
-                        },
-                    ],
-                }
-            ],
-            "response_format": {"type": "json_object"},
-            "max_tokens": 1000,
-        }
+1. Identify the main dish/meal name
+2. Detect ALL individual ingredients that make up this meal
+3. Provide nutritional analysis for the complete serving
 
-        logger.info("Prepared OpenAI API request payload")
+For the complete meal shown, provide:
+1. Descriptive name of the entire meal/dish (be as descriptive as possible)
+2. Estimated total weight of the entire serving shown (as a numeric value in grams)
+3. Serving unit (Always use "grams")  
+4. Total estimated calories for the entire serving shown
+5. Total estimated protein for the entire serving shown
+6. Total estimated carbs for the entire serving shown
+7. Total estimated fat for the entire serving shown
+8. List of ALL individual ingredients that make up this meal (as an array of strings)
 
-        # Call OpenAI API with the image (primary), fallback to Gemini if it fails
+IMPORTANT: 
+- Treat this as ONE complete meal with total nutritional values
+- Detect individual ingredients that compose the meal
+- Provide independent nutritional analysis
+
+Format your response as a valid JSON object with this structure:
+{{
+  "items": [
+    {{
+      "name": "Complete descriptive meal name",
+      "amount": number,
+      "serving_unit": "grams", 
+      "calories": number,
+      "protein": number,
+      "carbs": number,
+      "fat": number
+    }}
+  ],
+  "detected_ingredients": ["ingredient1", "ingredient2", "ingredient3"]
+}}
+"""
+            confidence_explanation = f"Vector search found similar dishes but with confidence below 85%. Performed independent LLM analysis with ingredient detection, using search results as context."
+        else:
+            prompt = """Analyze this complete meal image to:
+
+1. Identify the main dish/meal name
+2. Detect ALL individual ingredients that make up this meal
+3. Provide nutritional analysis for the complete serving
+
+For the complete meal shown, provide:
+1. Descriptive name of the entire meal/dish (be as descriptive as possible)
+2. Estimated total weight of the entire serving shown (as a numeric value in grams)
+3. Serving unit (Always use "grams")  
+4. Total estimated calories for the entire serving shown
+5. Total estimated protein for the entire serving shown
+6. Total estimated carbs for the entire serving shown
+7. Total estimated fat for the entire serving shown
+8. List of ALL individual ingredients that make up this meal (as an array of strings)
+
+IMPORTANT: 
+- Treat this as ONE complete meal with total nutritional values
+- Detect individual ingredients that compose the meal
+
+Format your response as a valid JSON object with this structure:
+{{
+  "items": [
+    {{
+      "name": "Complete descriptive meal name",
+      "amount": number,
+      "serving_unit": "grams", 
+      "calories": number,
+      "protein": number,
+      "carbs": number,
+      "fat": number
+    }}
+  ],
+  "detected_ingredients": ["ingredient1", "ingredient2", "ingredient3"]
+}}
+"""
+            confidence_explanation = "No similar dishes found in vector search. Performed full LLM analysis with ingredient detection."
+
         try:
-            logger.info("Sending request to OpenAI API...")
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {openai_api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=request_payload,
-                    timeout=60.0,  # Extended timeout for image processing
+            logger.info("Sending request to ScanLLMService for image analysis...")
+            response_data = await scan_llm_service.analyze_image(
+                encoded_image=encoded_image,
+                prompt=prompt
+            )
+            logger.info("Successfully received response from ScanLLMService")
+
+        except LLMServiceError as e:
+            logger.error(f"LLM service error: {e}")
+            if "timed out" in str(e).lower() or "timeout" in str(e).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail="Vision analysis timed out. Please try again with a simpler image.",
                 )
-
-                logger.info(
-                    f"Received response from OpenAI API: status_code={response.status_code}"
-                )
-
-                if response.status_code != 200:
-                    logger.error(f"OpenAI API error: {response.status_code}")
-                    logger.error(f"Response content: {response.text}")
-                    raise Exception(f"OpenAI API returned status {response.status_code}")
-
-                data = response.json()
-                logger.info("Successfully parsed JSON response from OpenAI API")
-
-        except Exception as openai_error:
-            logger.warning(f"OpenAI Vision failed: {str(openai_error)}")
-            logger.info("Trying Gemini Vision as fallback...")
-            
-            try:
-                # Try Gemini as fallback
-                response_data = await call_gemini_vision(encoded_image, prompt)
-                # Skip to processing since we have the response data directly
-                data = {"choices": [{"message": {"content": json.dumps(response_data)}}]}
-                logger.info("Successfully received response from Gemini fallback")
-                
-            except Exception as gemini_error:
-                logger.error(f"Both OpenAI and Gemini failed. OpenAI: {str(openai_error)}, Gemini: {str(gemini_error)}")
-                
-                # Return appropriate error based on the primary failure
-                if "timed out" in str(openai_error).lower() or "timeout" in str(openai_error).lower():
-                    raise HTTPException(
-                        status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                        detail="Vision analysis timed out. Please try again with a simpler image.",
-                    )
-                elif "connect" in str(openai_error).lower() or "network" in str(openai_error).lower():
-                    raise HTTPException(
-                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                        detail="Error connecting to vision service",
-                    )
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Vision analysis failed",
-                    )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
 
         # Extract and parse the AI response
         try:
-            ai_response = data["choices"][0]["message"]["content"]
-            logger.info("Successfully extracted content from API response")
-            logger.debug(f"AI response content: {ai_response}")
-
-            # Parse the JSON response
-            response_data = json.loads(ai_response)
-            logger.info("Successfully parsed JSON from AI response")
-
             if "items" not in response_data or not isinstance(
                 response_data["items"], list
             ):
@@ -682,33 +678,43 @@ Format your response as a valid JSON object with this structure:
                     logger.warning(f"Error processing food item {i+1}: {str(e)}")
                     # Continue processing other items instead of failing completely
 
-            if not food_items:
-                logger.warning("No food items were successfully parsed")
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Could not identify any food items in the image",
-                )
-
+            # Extract detected ingredients from the response
+            detected_ingredients = response_data.get("detected_ingredients", [])
+            if not isinstance(detected_ingredients, list):
+                logger.warning(f"Invalid detected_ingredients format: {detected_ingredients}")
+                detected_ingredients = []
+            
             logger.info(f"Successfully processed {len(food_items)} food items")
+            logger.info(f"Detected {len(detected_ingredients)} ingredients: {detected_ingredients}")
+            
+            # Determine search method based on what was used
+            if similar_dishes and similar_dishes[0].similarity >= 0.7:
+                search_method = "both"  # Vector search + LLM refinement
+            elif similar_dishes:
+                search_method = "llm_fallback"  # LLM with vector context
+            else:
+                search_method = "llm_fallback"  # Pure LLM analysis
             
             # Return enhanced response with both vector search and LLM results
             return EnhancedScanResponse(
                 items=food_items,
                 similar_dishes=similar_dishes,
+                detected_ingredients=detected_ingredients,
                 search_method=search_method,
-                message=message or f"Successfully analyzed image using {search_method}"
+                message=message or f"Successfully analyzed image using {search_method}",
+                confidence_explanation=confidence_explanation
             )
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON parse error: {str(e)}")
-            logger.error(f"Raw response that failed parsing: {ai_response}")
+            logger.error(f"Raw response that failed parsing: {response_data}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error parsing response from vision API",
             )
         except KeyError as e:
             logger.error(f"Missing key in API response: {str(e)}")
-            logger.error(f"API response structure: {data}")
+            logger.error(f"API response structure: {response_data}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Unexpected response structure from vision API: {str(e)}",
