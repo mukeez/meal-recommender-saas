@@ -94,12 +94,19 @@ class MealSuggestion(BaseModel):
         description: Brief description of the meal
         macros: Estimated macro nutrients
         restaurant: Source restaurant information
+        match_score: Match score (0-100%) reflecting alignment with user's macro requirements and dietary preferences
     """
 
     name: str
     description: str
     macros: MacroNutrients
     restaurant: Restaurant
+    match_score: int = Field(
+        ..., 
+        ge=0, 
+        le=100, 
+        description="Match score (0-100%) reflecting alignment with user's macro requirements and dietary preferences. Lower scores for meals that ignore dietary restrictions or have significant macro overages/shortages."
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -111,6 +118,7 @@ class MealSuggestion(BaseModel):
                     "name": "Healthy Bites",
                     "location": "123 Main St, Finchley",
                 },
+                "match_score": 85
             }
         }
     }

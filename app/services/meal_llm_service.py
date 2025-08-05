@@ -177,12 +177,19 @@ class MealLLMService(BaseLLMService):
                     2. Brief description
                     3. Estimated macros (calories, protein, carbs, fat) — note these can be approximate
                     4. Restaurant name and location
+                    5. Match score (0-100%) - Calculate this based on:
+                       - How closely the meal's macros align with the target macros (higher score for closer matches)
+                       - Adherence to dietary restrictions (meals that violate restrictions should receive very low scores 0-30%)
+                       - Compatibility with dietary preferences (meals that align well should get higher scores)
+                       - Account for macro overages and shortages (significant overages or shortages should reduce the score)
+                       - Perfect matches should score 90-100%, good matches 70-89%, fair matches 50-69%, poor matches 30-49%, incompatible meals 0-29%
 
                     Format your response as a JSON object with a "meals" property containing an array of meal objects. Each meal object should include:
                     - name (string)
                     - description (string)
                     - macros (object) with numeric values for "calories", "protein", "carbs", "fat"
-                    - restaurant (object) with "name" and "location" properties"""
+                    - restaurant (object) with "name" and "location" properties
+                    - match_score (integer from 0-100)"""
         
         if self.restaurants:
             prompt += """
@@ -192,6 +199,7 @@ class MealLLMService(BaseLLMService):
                     Only suggest restaurants that exist in {request.location}."""
         
         prompt += f"""
+                    
                     Example format (do not use these values, please suggest real meals (between 5 and 8 meals) and check if these name and location exist near {request.location} else do not return in json):
                     ```json
                     {{
@@ -208,7 +216,8 @@ class MealLLMService(BaseLLMService):
                         "restaurant": {{
                             "name": "Lorem Ipsum",
                             "location": "123 Main St, Finchley, N3 3EB"
-                        }}
+                        }},
+                        "match_score": 85
                         }}
                     ]
                     }}
