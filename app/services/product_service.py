@@ -267,5 +267,16 @@ class ProductService:
                 detail=f"Error deleting product: {str(e)}",
             )
 
+    async def log_feedback(self, feedback_data: dict) -> dict:
+        try:
+            self.client.table("product_feedback").insert(feedback_data).execute()
+            return {"data": "Feedback logged successfully"}
+        except Exception as e:
+            logger.error(f"Error logging feedback: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error logging feedback",
+            )
+
 
 product_service = ProductService()

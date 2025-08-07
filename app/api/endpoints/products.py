@@ -347,3 +347,37 @@ async def log_product(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error logging product: {str(e)}",
         )
+
+
+@router.post(
+    "/feedback",
+    response_model=dict,
+    status_code=status.HTTP_200_OK,
+    summary="Submit product feedback",
+    description="Submit feedback for a product.",
+)
+async def log_product_feedback(payload: dict, user=Depends(auth_guard)):
+    """Log feedback for a specific product.
+
+    Args:
+        payload: The feedback payload containing product name and feedback type
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        A response object indicating the result of the feedback logging
+
+    Raises:
+        HTTPException: If there is an error processing the request
+    """
+    try:
+        user_id = user.get("sub")
+        payload["user_id"] = user_id
+        await product_service.log_feedback(payload)
+        return {"message": "Feedback submitted successfully"}
+    except Exception as e:
+        logger.error(f"Error logging product feedback for user:{user_id}: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error logging product feedback",
+        )
