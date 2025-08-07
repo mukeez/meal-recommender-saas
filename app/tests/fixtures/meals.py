@@ -95,25 +95,32 @@ def mock_meal_delete(mocker):
 
 
 @pytest.fixture(scope="function")
+def mock_meal_log_feedback(mocker):
+    """Fixture to patch and provide a mock for meal_service.log_feedback."""
+    mock = mocker.patch(
+        "app.api.endpoints.meals.meal_service.log_feedback",
+        new_callable=AsyncMock,
+    )
+    return mock
+
+
+@pytest.fixture(scope="function")
 def mock_meal_suggestion_response():
     """Fixture providing a mock MealSuggestionResponse model instance."""
-    from app.models.meal import MealSuggestionResponse, MealSuggestion, MacroNutrients, Restaurant
+    from app.models.meal import (
+        MealSuggestionResponse,
+        MealSuggestion,
+        MacroNutrients,
+        Restaurant,
+    )
 
     return MealSuggestionResponse(
         meals=[
             MealSuggestion(
                 name="Grilled Chicken Salad",
                 description="Fresh salad with grilled chicken breast",
-                macros=MacroNutrients(
-                    calories=450,
-                    protein=35,
-                    carbs=30,
-                    fat=15
-                ),
-                restaurant=Restaurant(
-                    name="Healthy Bites",
-                    location="123 Main St"
-                )
+                macros=MacroNutrients(calories=450, protein=35, carbs=30, fat=15),
+                restaurant=Restaurant(name="Healthy Bites", location="123 Main St"),
             )
         ]
     )
@@ -133,5 +140,5 @@ def mock_logged_meal():
         protein=35,
         carbs=50,
         fat=15,
-        timestamp="2025-05-31T12:00:00Z"
+        timestamp="2025-05-31T12:00:00Z",
     )
