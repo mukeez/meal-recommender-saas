@@ -36,6 +36,16 @@ def mock_openfoodfacts_search(mocker):
 
 
 @pytest.fixture(scope="function")
+def mock_product_log_feedback(mocker):
+    """Fixture to patch and provide a mock for product_service.log_feedback."""
+    mock = mocker.patch(
+        "app.api.endpoints.products.product_service.log_feedback",
+        new_callable=AsyncMock,
+    )
+    return mock
+
+
+@pytest.fixture(scope="function")
 def mock_products_model():
     """Fixture providing a mock LoggedProducts model instance."""
     from app.models.product import ProductList, Product

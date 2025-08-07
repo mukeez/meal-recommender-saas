@@ -1,6 +1,7 @@
 import pytest
 from app.core.config import settings
 from app.tests.constants.products import MOCK_PRODUCT_SEARCH_DATA
+from app.tests.constants.user import UserTestConstants
 
 
 @pytest.mark.asyncio
@@ -57,3 +58,28 @@ class TestProductEndpoint:
         )
 
         mock_product_upsert_product.assert_called_once()
+
+    async def test_log_product_feedback_success(
+        self, authenticated_client, mock_product_log_feedback
+    ):
+        """Integration test for successful product feedback logging."""
+
+        mock_product_log_feedback.return_value = None
+
+        feedback_payload = {
+            "product_name": "Organic Quinoa",
+            "feedback_type": "thumbs_down",
+        }
+
+        response = authenticated_client.post(
+            f"{settings.API_V1_STR}/products/feedback", json=feedback_payload
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Feedback submitted successfully"}
+
+        mock_product_log_feedback.assert_called_once()
+        call_args = mock_product_log_feedback.call_args[0][0]
+        assert call_args["product_name"] == "Organic Quinoa"
+        assert call_args["feedback_type"] == "thumbs_down"
+        assert call_args["user_id"] == UserTestConstants.MOCK_USER_ID.value
