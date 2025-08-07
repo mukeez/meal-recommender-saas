@@ -8,6 +8,7 @@ from typing import Optional, List, Any, Union
 from typing_extensions import Annotated
 from pydantic import BaseModel, Field, BeforeValidator, ConfigDict
 from datetime import datetime
+from enum import Enum
 
 
 def parse_datetime(dt_str: Any) -> datetime | Any:
@@ -351,3 +352,23 @@ class PaginatedProductNutritionResponse(BaseModel):
     results: List[ProductWithNutrition] = Field(default_factory=list, description="Products with merged nutrition facts for current page")
     pagination: PaginationInfo = Field(..., description="Pagination information")
     search_query: str = Field(..., description="The search term that was used")
+
+
+class FeedbackType(str, Enum):
+    THUMBS_UP = "thumbs_up"
+    THUMBS_DOWN = "thumbs_down"
+
+
+class ProductFeedback(BaseModel):
+    id: Annotated[str, Field(..., description="Unique identifier for the feedback")]
+    created_at: Annotated[
+        datetime,
+        Field(False, description="Timestamp when the feedback was created"),
+        BeforeValidator(parse_datetime),
+    ]
+    product_name: Annotated[str, Field(..., description="Name of the product")]
+    feedback: Annotated[FeedbackType, Field(..., description="Feedback type")]
+    user_id: Annotated[str, Field(..., description="Unique identifier for the user")]
+    metadata: Annotated[
+        dict, Field(..., description="Additional metadata about the feedback")
+    ]
