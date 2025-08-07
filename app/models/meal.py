@@ -604,3 +604,23 @@ class PaginatedProductMealSearchResponse(BaseModel):
     results: List[LoggedMealWithBarcode] = Field(default_factory=list, description="Products converted to meal format with barcodes for current page")
     pagination: PaginationInfo = Field(..., description="Pagination information")
     search_query: str = Field(..., description="The search term that was used")
+
+
+class FeedbackType(str, Enum):
+    THUMBS_UP = "thumbs_up"
+    THUMBS_DOWN = "thumbs_down"
+
+
+class MealFeedback(BaseModel):
+    id: Annotated[str, Field(..., description="Unique identifier for the feedback")]
+    created_at: Annotated[
+        datetime,
+        Field(False, description="Timestamp when the feedback was created"),
+        BeforeValidator(parse_datetime),
+    ]
+    meal_name: Annotated[str, Field(..., description="Name of the meal")]
+    feedback: Annotated[FeedbackType, Field(..., description="Feedback type")]
+    user_id: Annotated[str, Field(..., description="Unique identifier for the user")]
+    metadata: Annotated[
+        dict, Field(..., description="Additional metadata about the feedback")
+    ]

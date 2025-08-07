@@ -1826,5 +1826,26 @@ class MealService:
             return []
 
 
+    async def log_feedback(self, feedback_data: dict) -> dict:
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.post(
+                    f"{self.base_url}/rest/v1/meal_feedback",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=feedback_data,
+                )
+                return {"data": "Feedback logged successfully"}
+        except Exception as e:
+            logger.error(f"Error logging feedback: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error logging feedback",
+            )
+
+
 meal_service = MealService()
 
