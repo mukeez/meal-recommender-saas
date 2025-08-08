@@ -119,6 +119,15 @@ class ScanResponse(BaseModel):
 
     items: List[FoodItem]
 
+class EnhancedScanResponse(BaseModel):
+    """Enhanced response model for scan endpoints with additional context.
+    
+    Attributes:
+        items: List of food items with nutritional information
+        detected_ingredients: List of individual ingredients detected in the meal
+    """
+    items: List[FoodItem]
+    detected_ingredients: List[str] = Field(default_factory=list, description="Individual ingredients detected in the meal")
 
 class ScanToMealRequest(BaseModel):
     """Request model for converting scan data to meal logging format.
@@ -294,14 +303,14 @@ async def call_gemini_vision(encoded_image: str, prompt: str) -> dict:
 
 @router.post(
     "/image",
-    response_model=ScanResponse,
+    response_model=EnhancedScanResponse,
     status_code=status.HTTP_200_OK,
     summary="Analyze food image for nutritional information",
     description="Upload a food image and get nutritional information using vision AI.",
 )
 async def scan_image(
     image: UploadFile = File(...), user=Depends(auth_guard)
-) -> ScanResponse:
+) -> EnhancedScanResponse:
     """Analyze a food image to estimate nutritional content.
 
     Args:
@@ -379,13 +388,16 @@ For the complete meal shown, provide:
 5. Total estimated protein for the entire serving shown
 6. Total estimated carbs for the entire serving shown
 7. Total estimated fat for the entire serving shown
+8. List of ALL individual ingredients that make up this meal (as an array of strings)
 
-IMPORTANT: Treat this as ONE complete meal. All nutritional values should be for the entire serving visible in the image.
+IMPORTANT: 
+- Treat this as ONE complete meal with total nutritional values
+- Detect individual ingredients that compose the meal
 
 Format your response as a valid JSON object with this structure:
-{
+{{
   "items": [
-    {
+    {{
       "name": "Complete descriptive meal name",
       "amount": number,
       "serving_unit": "grams", 
@@ -393,9 +405,10 @@ Format your response as a valid JSON object with this structure:
       "protein": number,
       "carbs": number,
       "fat": number
-    }
-  ]
-}
+    }}
+  ],
+  "detected_ingredients": ["ingredient1", "ingredient2", "ingredient3"]
+}}
 """
 
         # Prepare the request payload
@@ -583,7 +596,8 @@ Format your response as a valid JSON object with this structure:
                 )
 
             logger.info(f"Successfully processed {len(food_items)} food items")
-            return ScanResponse(items=food_items)
+            detected_ingredients = response_data.get("detected_ingredients", [])
+            return EnhancedScanResponse(items=food_items, detected_ingredients=detected_ingredients)
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON parse error: {str(e)}")
