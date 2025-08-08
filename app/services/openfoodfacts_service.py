@@ -207,7 +207,7 @@ class OpenFoodFactsService(BaseLLMService):
         """
 
         return f"""
-            For the food item with the brand name: {product.brand_name}, product_name: {product.product_name} and the following ingredients: {product.ingredients}, please provide the following information:
+            For the food item with the brand_name: {product.brand_name}, product_name: {product.product_name} and the following ingredients: {product.ingredients}, please provide the following information:
             1. **Name of the Food**: (As it would typically be recognized)
             2. **Estimated Amount:** (Provide as a numeric value representing a typical serving size in grams, e.g., 100, 250, 30)
             3. **Serving Unit:** (Always use "grams" for consistency)
@@ -302,9 +302,16 @@ class OpenFoodFactsService(BaseLLMService):
             # Convert serving quantity to grams if needed
             serving_grams = convert_to_standard_grams(serving_quantity, serving_quantity_unit)
             
+            brand_name = api_result.get("brands", None)
+            product_name = api_result.get("product_name", None)
+            
+            if brand_name and product_name:
+                name = f"{brand_name} - {product_name}"
+            else:
+                name = brand_name or product_name or "Unknown Product"
             # Create the nutrition facts with serving data
             nutrition_facts = NutritionFacts(
-                name=api_result.get("product_name", "Unknown Product"),
+                name=name,
                 calories=int(calories_serving),
                 protein=protein_serving,
                 carbs=carbs_serving, 

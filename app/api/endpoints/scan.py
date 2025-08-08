@@ -192,26 +192,27 @@ async def scan_barcode(
             product = await openfoodfacts_service.scan_barcode(barcode=barcode)
             # insert product into database
             await product_service.log_product(product)
-            # return ai generated nutrition facts with normalization
-            if product.gpt_nutrition_facts is not None:
-                food_item = normalize_food_item_data(product.gpt_nutrition_facts.model_dump())
-                return ScanResponse(items=[food_item])
-            else:
+        
+            merged_nutrition = product.nutrition_facts or product.gpt_nutrition_facts
+            if not merged_nutrition:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="No nutrition information available for this product"
-                )
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No nutrition information available for this product"
+            )
+
+            food_item = normalize_food_item_data(merged_nutrition.model_dump())
+            return ScanResponse(items=[food_item])
+            
 
         # return verified nutrition facts with normalization
-        if product[0].nutrition_facts is not None:
-            food_item = normalize_food_item_data(product[0].nutrition_facts.model_dump())
-        elif product[0].gpt_nutrition_facts is not None:
-            food_item = normalize_food_item_data(product[0].gpt_nutrition_facts.model_dump())
-        else:
+        merged_nutrition = product[0].nutrition_facts or product[0].gpt_nutrition_facts
+        if not merged_nutrition:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No nutrition information available for this product"
             )
+        food_item = normalize_food_item_data(merged_nutrition.model_dump())
+        logger.info(f"Successfully scanned barcode: {barcode} - Found product: {food_item.name}")
         return ScanResponse(items=[food_item])
 
     except HTTPException:

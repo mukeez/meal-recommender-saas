@@ -98,6 +98,7 @@ class UserPreferences(BaseModel):
     Attributes:
         user_id: Reference to user profile ID
         dietary_restrictions: List of dietary restrictions (e.g., "vegetarian")
+        dietary_preference: User's dietary preference (e.g., "balanced", "vegan", "keto")
         favorite_cuisines: List of favorite cuisine types
         disliked_ingredients: List of ingredients the user dislikes
         calorie_target: Daily calorie target in kcal
@@ -110,6 +111,7 @@ class UserPreferences(BaseModel):
     """
     user_id: str
     dietary_restrictions: List[str] = Field(default_factory=list)
+    dietary_preference: Optional[str] = None
     favorite_cuisines: List[str] = Field(default_factory=list)
     disliked_ingredients: List[str] = Field(default_factory=list)
     calorie_target: float = 0.0
