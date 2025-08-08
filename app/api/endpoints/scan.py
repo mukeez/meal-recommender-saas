@@ -5,12 +5,11 @@ to retrieve nutritional information.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Body, Query
-import httpx
+import asyncio
 import logging
 import base64
 import json
-from typing import List, Optional
-from pydantic import BaseModel, Field
+from typing import Optional
 from PIL import Image
 import io
 import google.generativeai as genai
@@ -22,7 +21,18 @@ from app.services.openfoodfacts_service import OpenFoodFactsService
 from app.services.vector_search.vector_search_service import vector_search_service
 from app.services.image_preprocessing_service import ImagePreprocessingService
 from app.services.scan_llm_service import scan_llm_service, LLMServiceError
-from app.utils.constants import parse_gram_quantity, normalize_nutrition_to_per_gram, calculate_nutrition_for_amount
+from app.services.food_identification_service import food_identification_service
+from app.services.indigenous_judge_service import indigenous_judge_service
+from app.utils.constants import calculate_nutrition_for_amount
+from app.models.scan import (
+    FoodItem,
+    SimilarDish,
+    IndigenousClassification,
+    ScanResponse,
+    EnhancedScanResponse,
+    ScanToMealRequest,
+    ScanToMealResponse
+)
 import traceback
 
 # Configure logging
@@ -34,127 +44,6 @@ router = APIRouter()
 product_service = ProductService()
 openfoodfacts_service = OpenFoodFactsService()
 image_preprocessing_service = ImagePreprocessingService()
-
-
-# Models
-class FoodItem(BaseModel):
-    """Food item with nutritional information.
-
-    Attributes:
-        name: Name of the food item
-        amount: Amount/serving size as numeric value
-        serving_unit: Unit of measurement (always "grams")
-        calories: Calories in kcal
-        protein: Protein in grams
-        carbs: Carbohydrates in grams
-        fat: Fat in grams
-        calories_per_gram: Calories per gram for easy calculation
-        protein_per_gram: Protein per gram for easy calculation
-        carbs_per_gram: Carbs per gram for easy calculation
-        fat_per_gram: Fat per gram for easy calculation
-    """
-
-    name: str
-    amount: float
-    serving_unit: str = "grams"
-    calories: float
-    protein: float
-    carbs: float
-    fat: float
-    calories_per_gram: float
-    protein_per_gram: float
-    carbs_per_gram: float
-    fat_per_gram: float
-
-
-class SimilarDish(BaseModel):
-    """Similar dish found through vector search.
-    Attributes:
-        dish_name: Name of the similar dish
-        country: Optional country of origin
-        description: Optional description of the dish
-        similarity: Similarity score (0.0 to 1.0)
-        calories: Estimated calories in grams
-        protein: Estimated protein in grams
-        carbs: Estimated carbs in grams
-        fat: Estimated fat in grams
-        serving_unit: Always "grams"
-        amount: Amount in grams, default is 100g for nutritional estimates
-    """
-    id: Optional[int] = Field(None, description="Unique identifier for the dish")
-    dish_name: str = Field(..., description="Name of the similar dish")
-    country: Optional[str] = Field(None, description="Country of origin")
-    description: Optional[str] = Field(None, description="Dish description")
-    similarity: float = Field(..., description="Similarity score (0.0 to 1.0)")
-    calories: Optional[float] = Field(None, description="Estimated calories in grams")
-    protein: Optional[float] = Field(None, description="Estimated protein in grams")
-    carbs: Optional[float] = Field(None, description="Estimated carbs in grams")
-    fat: Optional[float] = Field(None, description="Estimated fat in grams")
-    serving_unit: str = Field("grams", description="Serving unit, always 'grams'")
-    amount: float = Field(100.0, description="Amount in grams, default is 100g for nutritional estimates")
-
-
-class ScanResponse(BaseModel):
-    """Response model for scan endpoints.
-
-    Attributes:
-        items: List of food items with nutritional information
-    """
-
-    items: List[FoodItem]
-
-
-class EnhancedScanResponse(BaseModel):
-    """Enhanced response model for scan endpoints with vector search results."""
-
-    items: List[FoodItem] = Field(..., description="Nutritional analysis from AI")
-    similar_dishes: List[SimilarDish] = Field(default_factory=list, description="Similar dishes from vector search")
-    detected_ingredients: List[str] = Field(default_factory=list, description="Individual ingredients detected in the meal")
-    search_method: str = Field(..., description="Method used: 'vector_search', 'llm_fallback', or 'both'")
-    message: Optional[str] = Field(None, description="Additional information about the search process")
-    confidence_explanation: Optional[str] = Field(None, description="Explanation of why vector search was used or not")
-
-
-class ScanToMealRequest(BaseModel):
-    """Request model for converting scan data to meal logging format.
-    
-    Attributes:
-        food_item: The scanned food item data
-        desired_amount: The amount the user wants to log (in grams)
-        notes: Optional notes for the meal
-        favorite: Whether to mark as favorite
-    """
-    food_item: FoodItem
-    desired_amount: float = Field(..., gt=0, description="Desired amount in grams")
-    notes: Optional[str] = Field(None, description="Optional notes for the meal")
-    favorite: bool = Field(False, description="Whether to mark as favorite")
-
-
-class ScanToMealResponse(BaseModel):
-    """Response model for converted meal data.
-    
-    Attributes:
-        name: Meal name
-        calories: Calculated calories for desired amount
-        protein: Calculated protein for desired amount  
-        carbs: Calculated carbs for desired amount
-        fat: Calculated fat for desired amount
-        serving_unit: Always "grams"
-        amount: Desired amount in grams
-        notes: Optional notes
-        favorite: Whether marked as favorite
-        logging_mode: Set to "scanned"
-    """
-    name: str
-    calories: float
-    protein: float
-    carbs: float
-    fat: float
-    serving_unit: str = "grams"
-    amount: float
-    notes: Optional[str] = None
-    favorite: bool = False
-    logging_mode: str = "scanned"
 
 
 @router.post(
@@ -382,13 +271,13 @@ async def scan_image(
                 similar_dishes_raw = await vector_search_service.search_similar_dishes_by_country(
                     image_bytes=processed_contents,
                     country=country_filter,
-                    similarity_threshold=0.70,  # Use 0.70 threshold directly
+                    similarity_threshold=0.70,  # Use 0.70 threshold
                     match_count=max_results
                 )
             else:
                 similar_dishes_raw = await vector_search_service.search_similar_dishes(
                     image_bytes=processed_contents,
-                    similarity_threshold=0.70,  # Use 0.70 threshold directly
+                    similarity_threshold=0.70,  # Use 0.70 threshold 
                     match_count=max_results
                 )
 
@@ -441,143 +330,143 @@ async def scan_image(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error processing image",
             )
-
-        model_name = "gpt-4o-mini"
-        logger.info(f"Using vision model: {model_name}")
-
-        # Enhanced prompt that considers vector search results and detects ingredients
-        if similar_dishes and similar_dishes[0].similarity >= 0.85:
-            # Very High confidence vector match - use as foundation
+        
+        
+        logger.info("Starting 3-stage approach: Stage 1 (Vector) completed, running Stage 2 & 3")
+        
+        # Convert similar_dishes to proper format for indigenous judge
+        vector_results_for_judge = []
+        for dish in similar_dishes:
+            vector_results_for_judge.append({
+                'dish_name': dish.dish_name,
+                'country': dish.country,
+                'description': dish.description,
+                'similarity': dish.similarity
+            })
+        
+        food_id_task = asyncio.create_task(
+            food_identification_service.identify_food(encoded_image)
+        )
+        
+        
+        logger.info("Running indigenous classification for all images to ensure comprehensive coverage")
+        # Get food_id result first, then run indigenous judge
+        food_identification_result = await food_id_task
+        
+        indigenous_classification = await indigenous_judge_service.judge_indigenous_classification(
+            encoded_image=encoded_image,
+            vector_search_results=vector_results_for_judge,
+            food_identification=food_identification_result
+        )
+        
+        # Now create a focused nutritional analysis prompt based on our 3-stage results
+        logger.info("Creating focused nutritional analysis prompt using 3-stage results...")
+        
+        # Build context from our 3-stage analysis
+        analysis_context = ""
+        
+        # Add vector search context if available
+        if similar_dishes and similar_dishes[0].similarity >= 0.8:
             best_match = similar_dishes[0]
-            prompt = f"""VERY HIGH CONFIDENCE MATCH FOUND: {best_match.dish_name} (confidence: {best_match.similarity:.3f})
-
-Use this as your nutritional foundation, but analyze the image to:
-1. Detect ALL individual ingredients visible in this meal
-2. Verify if the image matches the foundation dish
-3. Identify any additional ingredients not typical for {best_match.dish_name}
-
-Base nutritional values on {best_match.dish_name} but adjust for visible portions and additional ingredients.
-
-Analyze this complete meal image and provide:
-1. Descriptive name of the entire meal/dish (consider the foundation match but adjust if needed)
-2. Estimated total weight of the entire serving
-3. Serving unit (Always use "grams")  
-4. Total estimated calories for the entire serving shown (use foundation as base)
-5. Total estimated protein for the entire serving shown (use foundation as base)
-6. Total estimated carbs for the entire serving shown (use foundation as base)
-7. Total estimated fat for the entire serving shown (use foundation as base)
-8. List of ALL individual ingredients that make up this meal (as an array of strings)
-
-IMPORTANT: 
-- Treat this as ONE complete meal with total nutritional values
-- Use the foundation dish ({best_match.dish_name}) as your nutritional baseline
-- Detect individual ingredients that compose the meal
-- Adjust nutrition if you see significant differences from the foundation
-
-Format your response as a valid JSON object with this structure:
-{{
-  "items": [
-    {{
-      "name": "Complete descriptive meal name",
-      "amount": number,
-      "serving_unit": "grams", 
-      "calories": number,
-      "protein": number,
-      "carbs": number,
-      "fat": number
-    }}
-  ],
-  "detected_ingredients": ["ingredient1", "ingredient2", "ingredient3"]
-}}
-"""
-            confidence_explanation = f"Very high confidence match found for {best_match.dish_name} ({best_match.similarity:.1%} similarity). Used as nutritional foundation and detected individual ingredients."
+            analysis_context += f"HIGH CONFIDENCE VECTOR MATCH: {best_match.dish_name} (similarity: {best_match.similarity:.2f})\n"
+            analysis_context += f"Country: {best_match.country or 'Unknown'}\n"
+            if best_match.description:
+                analysis_context += f"Description: {best_match.description}\n"
         elif similar_dishes:
-            # Low/Medium confidence matches - use as reference only
-            dish_context = f"Note: Vector search found similar dishes: {', '.join([d.dish_name for d in similar_dishes[:3]])} but with confidence below 0.85. The AI will make the final judgement. "
-            prompt = f"""{dish_context}Analyze this complete meal image independently to:
-
-1. Identify the main dish/meal name
-2. Detect ALL individual ingredients that make up this meal
-3. Provide nutritional analysis for the complete serving
-
-For the complete meal shown, provide:
-1. Descriptive name of the entire meal/dish (be as descriptive as possible)
-2. Estimated total weight of the entire serving shown (as a numeric value in grams)
-3. Serving unit (Always use "grams")  
-4. Total estimated calories for the entire serving shown
-5. Total estimated protein for the entire serving shown
-6. Total estimated carbs for the entire serving shown
-7. Total estimated fat for the entire serving shown
-8. List of ALL individual ingredients that make up this meal (as an array of strings)
-
-IMPORTANT: 
-- Treat this as ONE complete meal with total nutritional values
-- Detect individual ingredients that compose the meal
-- Provide independent nutritional analysis
-
-Format your response as a valid JSON object with this structure:
-{{
-  "items": [
-    {{
-      "name": "Complete descriptive meal name",
-      "amount": number,
-      "serving_unit": "grams", 
-      "calories": number,
-      "protein": number,
-      "carbs": number,
-      "fat": number
-    }}
-  ],
-  "detected_ingredients": ["ingredient1", "ingredient2", "ingredient3"]
-}}
-"""
-            confidence_explanation = f"Vector search found similar dishes but with confidence below 85%. Performed independent LLM analysis with ingredient detection, using search results as context."
+            analysis_context += f"VECTOR MATCHES FOUND: {', '.join([d.dish_name for d in similar_dishes[:2]])} but lower confidence\n"
         else:
-            prompt = """Analyze this complete meal image to:
+            analysis_context += "NO VECTOR MATCHES FOUND\n"
+        
+        # Add food identification context
+        analysis_context += f"\nFOOD IDENTIFICATION: {food_identification_result.get('identified_food', 'Unknown')}\n"
+        analysis_context += f"Category: {food_identification_result.get('food_category', 'Unknown')}\n"
+        analysis_context += f"Visible Ingredients: {', '.join(food_identification_result.get('visible_ingredients', []))}\n"
+        
+        # Add indigenous classification context if available
+        if indigenous_classification:
+            analysis_context += f"\nINDIGENOUS CLASSIFICATION: {'Yes' if indigenous_classification.get('is_indigenous') else 'No'}\n"
+            analysis_context += f"Confidence: {indigenous_classification.get('confidence', 0):.2f}\n"
+            if indigenous_classification.get('country_of_origin'):
+                analysis_context += f"Origin: {indigenous_classification.get('country_of_origin')}\n"
+        
+        # Determine the authoritative dish name based on our 3-stage analysis
+        authoritative_dish_name = None
+        
+        # Indigenous classification has final authority over naming
+        if indigenous_classification:
+            if indigenous_classification.get("is_indigenous"):
+                # If confirmed indigenous, prioritize vector match if high confidence
+                if similar_dishes and similar_dishes[0].similarity >= 0.8:
+                    authoritative_dish_name = similar_dishes[0].dish_name
+                    logger.info(f"Indigenous dish confirmed - using vector match name: {authoritative_dish_name}")
+                elif food_identification_result.get('identified_food') and food_identification_result.get('identified_food') != 'Unknown':
+                    authoritative_dish_name = food_identification_result.get('identified_food')
+                    logger.info(f"Indigenous dish confirmed - using food identification name: {authoritative_dish_name}")
+            else:
+                # If NOT indigenous, always use neutral food identification (ignore vector matches)
+                if food_identification_result.get('identified_food') and food_identification_result.get('identified_food') != 'Unknown':
+                    authoritative_dish_name = food_identification_result.get('identified_food')
+                    logger.info(f"NON-indigenous dish confirmed - using neutral food ID name: {authoritative_dish_name}")
+                else:
+                    authoritative_dish_name = "Unknown Food"
+                    logger.info("NON-indigenous dish confirmed but no food ID available")
+        else:
+            # No indigenous classification - use original priority system
+            # Priority 1: High confidence vector match
+            if similar_dishes and similar_dishes[0].similarity >= 0.8:
+                authoritative_dish_name = similar_dishes[0].dish_name
+                logger.info(f"Using vector match name: {authoritative_dish_name}")
+            # Priority 2: Food identification service result  
+            elif food_identification_result.get('identified_food') and food_identification_result.get('identified_food') != 'Unknown':
+                authoritative_dish_name = food_identification_result.get('identified_food')
+                logger.info(f"Using food identification name: {authoritative_dish_name}")
+        
+        # Create a focused nutritional analysis prompt
+        prompt = f"""You are a nutrition expert. Analyze this food image and provide nutritional information.
 
-1. Identify the main dish/meal name
-2. Detect ALL individual ingredients that make up this meal
-3. Provide nutritional analysis for the complete serving
+CONTEXT FROM ANALYSIS:
+{analysis_context}
 
-For the complete meal shown, provide:
-1. Descriptive name of the entire meal/dish (be as descriptive as possible)
-2. Estimated total weight of the entire serving shown (as a numeric value in grams)
-3. Serving unit (Always use "grams")  
-4. Total estimated calories for the entire serving shown
-5. Total estimated protein for the entire serving shown
-6. Total estimated carbs for the entire serving shown
-7. Total estimated fat for the entire serving shown
-8. List of ALL individual ingredients that make up this meal (as an array of strings)
+IMPORTANT NAMING INSTRUCTION:
+- The dish has been expertly identified as: "{authoritative_dish_name or 'Unknown Food'}"
+- You MUST use this exact name in your response
+- Do NOT create your own dish name or add cultural specificity unless confirmed by expert analysis
+- Focus ONLY on nutritional analysis, not dish identification
 
-IMPORTANT: 
-- Treat this as ONE complete meal with total nutritional values
-- Detect individual ingredients that compose the meal
+Based on the image and the analysis context above, provide nutritional information for the complete serving shown:
 
-Format your response as a valid JSON object with this structure:
+Requirements:
+1. Use the EXACT dish name provided above: "{authoritative_dish_name or 'Unknown Food'}"
+2. Use the analysis context to inform your nutritional estimates
+3. If there's a high confidence vector match, use it as a baseline but adjust for what you see
+4. Focus on the actual serving size visible in the image
+5. Detect all visible ingredients in the meal
+
+Provide your analysis in this exact JSON format:
 {{
   "items": [
     {{
-      "name": "Complete descriptive meal name",
-      "amount": number,
-      "serving_unit": "grams", 
-      "calories": number,
-      "protein": number,
-      "carbs": number,
-      "fat": number
+      "name": "{authoritative_dish_name or 'Unknown Food'}",
+      "amount": estimated_weight_in_grams,
+      "serving_unit": "grams",
+      "calories": total_calories_for_serving,
+      "protein": total_protein_in_grams,
+      "carbs": total_carbs_in_grams,
+      "fat": total_fat_in_grams
     }}
   ],
   "detected_ingredients": ["ingredient1", "ingredient2", "ingredient3"]
 }}
-"""
-            confidence_explanation = "No similar dishes found in vector search. Performed full LLM analysis with ingredient detection."
+
+CRITICAL: Use the exact dish name "{authoritative_dish_name or 'Unknown Food'}" - do not modify it or add cultural context unless the expert analysis confirmed it as indigenous."""
 
         try:
-            logger.info("Sending request to ScanLLMService for image analysis...")
+            logger.info("Sending focused nutritional analysis request...")
             response_data = await scan_llm_service.analyze_image(
                 encoded_image=encoded_image,
                 prompt=prompt
             )
-            logger.info("Successfully received response from ScanLLMService")
+            logger.info("Successfully received nutritional analysis response")
 
         except LLMServiceError as e:
             logger.error(f"LLM service error: {e}")
@@ -696,6 +585,36 @@ Format your response as a valid JSON object with this structure:
             else:
                 search_method = "llm_fallback"  # Pure LLM analysis
             
+            # Generate confidence explanation based on 3-stage results
+            confidence_explanation = ""
+            if similar_dishes and similar_dishes[0].similarity >= 0.8:
+                confidence_explanation = f"High confidence vector match found for {similar_dishes[0].dish_name} ({similar_dishes[0].similarity:.1%} similarity). Used 3-stage analysis with vector foundation."
+            elif similar_dishes:
+                confidence_explanation = f"Vector matches found but with moderate confidence. Used 3-stage analysis for comprehensive evaluation."
+            else:
+                confidence_explanation = "No vector matches found. Used 3-stage analysis with neutral food identification and indigenous classification."
+            
+            # Add indigenous classification context to explanation
+            if indigenous_classification:
+                if indigenous_classification.get("is_indigenous"):
+                    confidence_explanation += f" Indigenous classification: {indigenous_classification.get('country_of_origin', 'Traditional')} dish identified."
+                else:
+                    confidence_explanation += " Non-indigenous dish confirmed through expert analysis."
+            
+            # Prepare indigenous classification for response
+            indigenous_classification_response = None
+            if indigenous_classification:
+                indigenous_classification_response = IndigenousClassification(
+                    is_indigenous=indigenous_classification.get("is_indigenous", False),
+                    confidence=indigenous_classification.get("confidence", 0.0),
+                    country_of_origin=indigenous_classification.get("country_of_origin"),
+                    dish_classification=indigenous_classification.get("dish_classification", "Unknown"),
+                    reasoning=indigenous_classification.get("reasoning", "No classification performed")
+                )
+                
+                logger.info(f"Indigenous classification result: {indigenous_classification_response.is_indigenous} "
+                           f"({indigenous_classification_response.confidence:.2f} confidence)")
+            
             # Return enhanced response with both vector search and LLM results
             return EnhancedScanResponse(
                 items=food_items,
@@ -703,7 +622,8 @@ Format your response as a valid JSON object with this structure:
                 detected_ingredients=detected_ingredients,
                 search_method=search_method,
                 message=message or f"Successfully analyzed image using {search_method}",
-                confidence_explanation=confidence_explanation
+                confidence_explanation=confidence_explanation,
+                indigenous_classification=indigenous_classification_response
             )
 
         except json.JSONDecodeError as e:
@@ -767,85 +687,114 @@ async def convert_scan_to_meal(
         Meal data formatted for logging with calculated nutrition values
 
     Raises:
-        HTTPException: If there is an error processing the conversion
+        HTTPException: If conversion fails
     """
     try:
+        logger.info(f"Converting scan data to meal format for amount: {request.desired_amount}g")
+        
         # Calculate nutrition for the desired amount
-        total_calories, total_protein, total_carbs, total_fat = calculate_nutrition_for_amount(
+        calories, protein, carbs, fat = calculate_nutrition_for_amount(
             request.food_item.calories_per_gram,
             request.food_item.protein_per_gram,
             request.food_item.carbs_per_gram,
             request.food_item.fat_per_gram,
             request.desired_amount
         )
-
+        
         return ScanToMealResponse(
             name=request.food_item.name,
-            calories=round(total_calories, 1),
-            protein=round(total_protein, 2),
-            carbs=round(total_carbs, 2),
-            fat=round(total_fat, 2),
+            calories=calories,
+            protein=protein,
+            carbs=carbs,
+            fat=fat,
             serving_unit="grams",
             amount=request.desired_amount,
             notes=request.notes,
             favorite=request.favorite,
             logging_mode="scanned"
         )
-
+        
     except Exception as e:
-        logger.error(f"Error converting scan data to meal format: {str(e)}")
+        logger.error(f"Error converting scan to meal: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error converting scan data: {str(e)}",
+            detail="Error converting scan data to meal format"
         )
 
 
 def normalize_food_item_data(nutrition_facts: dict) -> FoodItem:
-    """Normalize nutrition facts data to consistent per-gram format.
-    
+    """Normalize food item data from various sources to a consistent FoodItem model.
+
+    This function takes raw nutrition facts from different sources (e.g., Nutritionix, OpenFoodFacts)
+    and normalizes the data to match the FoodItem model used in the application.
+
     Args:
-        nutrition_facts: Dictionary containing nutrition data in either old format (with quantity) 
-                        or new format (with amount and serving_unit)
-        
+        nutrition_facts: The raw nutrition facts data as a dictionary
+
     Returns:
-        FoodItem with normalized data and per-gram values
+        A normalized FoodItem instance
+
+    Raises:
+        ValueError: If required fields are missing or invalid
     """
-    # Handle both old format (quantity) and new format (amount + serving_unit)
-    if "amount" in nutrition_facts and "serving_unit" in nutrition_facts:
-        # New format - amount is already numeric
-        gram_amount = float(nutrition_facts["amount"])
+    try:
+        # Extract and convert fields with error handling
+        name = nutrition_facts.get("name", "Unknown Food")
+        
+        # Handle both new format (amount + serving_unit) and old format (quantity) for backwards compatibility
+        amount = nutrition_facts.get("amount")
         serving_unit = nutrition_facts.get("serving_unit", "grams")
-    elif "quantity" in nutrition_facts:
-        # Old format - parse quantity string to get gram amount
-        quantity_str = nutrition_facts.get("quantity", "100g")
-        gram_amount = parse_gram_quantity(quantity_str)
-        serving_unit = "grams"
-    else:
-        # Fallback
-        gram_amount = 100.0
-        serving_unit = "grams"
-    
-    # Get nutrition values for the specified amount
-    calories = float(nutrition_facts.get("calories", 0))
-    protein = float(nutrition_facts.get("protein", 0))
-    carbs = float(nutrition_facts.get("carbs", 0))
-    fat = float(nutrition_facts.get("fat", 0))
-    
-    # Calculate per-gram values
-    calories_per_gram, protein_per_gram, carbs_per_gram, fat_per_gram = normalize_nutrition_to_per_gram(
-        calories, protein, carbs, fat, gram_amount
-    )
-    
-    return FoodItem(
-        name=nutrition_facts.get("name", "Unknown Food"),
-        amount=gram_amount,
-        serving_unit=serving_unit,
-        calories=calories,
-        protein=protein,
-        carbs=carbs,
-        fat=fat,
-        calories_per_gram=calories_per_gram,
-        protein_per_gram=protein_per_gram,
-        carbs_per_gram=carbs_per_gram,
-        fat_per_gram=fat_per_gram
-    )
+        quantity = nutrition_facts.get("quantity")  # Fallback for old format
+
+        # Convert numerical fields with error handling
+        try:
+            calories = float(nutrition_facts.get("calories", 0))
+        except (TypeError, ValueError):
+            logger.warning(f"Invalid calories value: {nutrition_facts.get('calories')}")
+            calories = 0
+
+        try:
+            protein = float(nutrition_facts.get("protein", 0))
+        except (TypeError, ValueError):
+            logger.warning(f"Invalid protein value: {nutrition_facts.get('protein')}")
+            protein = 0
+
+        try:
+            carbs = float(nutrition_facts.get("carbs", 0))
+        except (TypeError, ValueError):
+            logger.warning(f"Invalid carbs value: {nutrition_facts.get('carbs')}")
+            carbs = 0
+
+        try:
+            fat = float(nutrition_facts.get("fat", 0))
+        except (TypeError, ValueError):
+            logger.warning(f"Invalid fat value: {nutrition_facts.get('fat')}")
+            fat = 0
+
+        # Create FoodItem instance
+        food_item = FoodItem(
+            name=name,
+            amount=amount if amount is not None else 100.0,  # Default to 100g if not provided
+            serving_unit=serving_unit,
+            calories=calories,
+            protein=protein,
+            carbs=carbs,
+            fat=fat,
+            calories_per_gram=calories / (amount if amount > 0 else 1),
+            protein_per_gram=protein / (amount if amount > 0 else 1),
+            carbs_per_gram=carbs / (amount if amount > 0 else 1),
+            fat_per_gram=fat / (amount if amount > 0 else 1),
+        )
+
+        logger.info(f"Normalized food item: {food_item.name}, amount: {food_item.amount}{food_item.serving_unit}, "
+                    f"calories: {food_item.calories}, protein: {food_item.protein}, "
+                    f"carbs: {food_item.carbs}, fat: {food_item.fat}")
+
+        return food_item
+
+    except Exception as e:
+        logger.error(f"Error normalizing food item data: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error normalizing food item data"
+        )
