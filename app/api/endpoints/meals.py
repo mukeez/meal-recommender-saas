@@ -78,7 +78,7 @@ async def suggest_meals(
         user_id = user.get("sub")
 
         meal_suggestions = await meal_llm_service(
-            request=meal_request, restaurants=[]
+            request=meal_request, user_id=user_id, restaurants=[]
         ).get_meal_suggestions()
         return meal_suggestions
 
@@ -754,7 +754,7 @@ async def suggest_recipes(
         user_id = user.get("sub")
 
         recipe_suggestions = await recipe_llm_service(
-            request=recipe_request
+            request=recipe_request, user_id=user_id
         ).get_recipe_suggestions()
         return recipe_suggestions
 
