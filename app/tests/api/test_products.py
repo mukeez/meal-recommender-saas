@@ -68,8 +68,10 @@ class TestProductEndpoint:
 
         feedback_payload = {
             "product_name": "Organic Quinoa",
-            "feedback_type": "thumbs_down",
-            "barcode": "1234"
+            "feedback": "thumbs_down",
+            "barcode": "1234",
+            "user_id": UserTestConstants.MOCK_USER_ID.value,
+            "metadata": {},
         }
 
         response = authenticated_client.post(
@@ -82,5 +84,5 @@ class TestProductEndpoint:
         mock_product_log_feedback.assert_called_once()
         call_args = mock_product_log_feedback.call_args[0][0]
         assert call_args["product_name"] == "Organic Quinoa"
-        assert call_args["feedback_type"] == "thumbs_down"
+        assert call_args["feedback"] == "thumbs_down"
         assert call_args["user_id"] == UserTestConstants.MOCK_USER_ID.value

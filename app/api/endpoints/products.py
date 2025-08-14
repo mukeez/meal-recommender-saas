@@ -8,7 +8,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Depends, Query, Body
 
 from app.api.auth_guard import auth_guard
-from app.models.product import ProductList, ProductSearchResponse, ProductNutritionResponse, ProductWithNutrition, Product, LoggedProduct, NutritionFacts, ProductLogRequest, PaginatedProductNutritionResponse
+from app.models.product import ProductFeedbackRequest, ProductList, ProductSearchResponse, ProductNutritionResponse, ProductWithNutrition, Product, LoggedProduct, NutritionFacts, ProductLogRequest, PaginatedProductNutritionResponse
 from app.models.meal import LoggedMeal, MealSearchResponse, MealType, LoggingMode, ServingUnitEnum, LoggedMealWithBarcode, ProductMealSearchResponse, PaginatedProductMealSearchResponse
 from app.services.product_service import product_service
 from app.services.openfoodfacts_service import openfoodfacts_service
@@ -356,7 +356,7 @@ async def log_product(
     summary="Submit product feedback",
     description="Submit feedback for a product.",
 )
-async def log_product_feedback(payload: dict, user=Depends(auth_guard)):
+async def log_product_feedback(feedback: ProductFeedbackRequest, user=Depends(auth_guard)):
     """Log feedback for a specific product.
 
     Args:
@@ -370,9 +370,11 @@ async def log_product_feedback(payload: dict, user=Depends(auth_guard)):
         HTTPException: If there is an error processing the request
     """
     try:
+        feedback_data = feedback.model_dump()
         user_id = user.get("sub")
-        payload["user_id"] = user_id
-        await product_service.log_feedback(payload)
+
+        feedback_data["user_id"] = user_id
+        await product_service.log_feedback(feedback_data)
         return {"message": "Feedback submitted successfully"}
     except Exception as e:
         logger.error(f"Error logging product feedback for user:{user_id}: {str(e)}")

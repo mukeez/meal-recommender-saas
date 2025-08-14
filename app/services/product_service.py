@@ -11,7 +11,7 @@ from supabase import create_client
 import json
 
 from app.core.config import settings
-from app.models.product import Product, LoggedProduct, ProductList, ProductUpdate
+from app.models.product import Product, LoggedProduct, ProductFeedback, ProductFeedbackRequest, ProductList, ProductUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -267,7 +267,7 @@ class ProductService:
                 detail=f"Error deleting product: {str(e)}",
             )
 
-    async def log_feedback(self, feedback_data: dict) -> dict:
+    async def log_feedback(self, feedback_data: ProductFeedbackRequest) -> dict:
         try:
             self.client.table("product_feedback").insert(feedback_data).execute()
             return {"data": "Feedback logged successfully"}
