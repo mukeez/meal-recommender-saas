@@ -5,6 +5,7 @@ to retrieve nutritional information.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Body, Query
+import uuid
 import httpx
 import logging
 import base64
@@ -24,6 +25,8 @@ from app.services.image_preprocessing_service import ImagePreprocessingService
 from app.services.scan_llm_service import scan_llm_service, LLMServiceError
 from app.utils.constants import parse_gram_quantity, normalize_nutrition_to_per_gram, calculate_nutrition_for_amount
 import traceback
+
+from app.utils.file_upload import upload_file_to_bucket
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -113,6 +116,7 @@ class EnhancedScanResponse(BaseModel):
     search_method: str = Field(..., description="Method used: 'vector_search', 'llm_fallback', or 'both'")
     message: Optional[str] = Field(None, description="Additional information about the search process")
     confidence_explanation: Optional[str] = Field(None, description="Explanation of why vector search was used or not")
+    scanned_image: Optional[str] = Field(None, description="URL of the scanned image if available")
 
 
 class ScanToMealRequest(BaseModel):
@@ -354,6 +358,25 @@ async def scan_image(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid image format"
             )
+
+        logger.info("Uploading scanned image to S3...")
+        try:
+            env_map = {
+                "development": "dev",
+                "production": "prod"
+            }
+            env = env_map.get(settings.ENVIRONMENT)
+            file_extension = f".{img.format.lower()}" if img.format else ".jpg"
+            file_path = f"{env}/scans/{uuid.uuid4()}{file_extension}"
+            scanned_image = await upload_file_to_bucket(
+                file_content=contents,
+                file_path=file_path,
+                content_type=image.content_type or "image/jpeg",
+                )
+            logger.info(f"Successfully uploaded scanned image: {scanned_image}")
+        except Exception as e:
+            logger.error(f"Error uploading image to S3: {str(e)}")
+            scanned_image = None
 
         logger.info("Preprocessing image for better analysis quality")
         try:
@@ -694,7 +717,7 @@ Format your response as a valid JSON object with this structure:
                 search_method = "llm_fallback"  # LLM with vector context
             else:
                 search_method = "llm_fallback"  # Pure LLM analysis
-            
+
             # Return enhanced response with both vector search and LLM results
             return EnhancedScanResponse(
                 items=food_items,
@@ -702,7 +725,8 @@ Format your response as a valid JSON object with this structure:
                 detected_ingredients=detected_ingredients,
                 search_method=search_method,
                 message=message or f"Successfully analyzed image using {search_method}",
-                confidence_explanation=confidence_explanation
+                confidence_explanation=confidence_explanation,
+                scanned_image=scanned_image
             )
 
         except json.JSONDecodeError as e:
