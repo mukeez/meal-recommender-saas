@@ -606,3 +606,34 @@ class TestMealsEndpoint:
         assert call_args["meal_name"] == "Grilled Chicken Salad"
         assert call_args["feedback_type"] == "thumbs_up"
         assert call_args["user_id"] == UserTestConstants.MOCK_USER_ID.value
+
+    async def test_log_meal_feedback_success(
+        self, authenticated_client, mock_meal_log_feedback
+    ):
+        """Integration test for successful meal feedback logging."""
+
+        mock_meal_log_feedback.return_value = None
+
+        feedback_payload = {
+            "meal_name": "Grilled Chicken Salad",
+            "feedback": "thumbs_up",
+            "meal_image": "http://example.com/scanned_image.jpg",
+            "user_id": UserTestConstants.MOCK_USER_ID.value,
+            "metadata": {}
+        }
+
+        response = authenticated_client.post(
+            f"{settings.API_V1_STR}/meals/feedback", json=feedback_payload
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Feedback submitted successfully"}
+
+        mock_meal_log_feedback.assert_called_once()
+
+        call_args = mock_meal_log_feedback.call_args[0][0]
+        assert call_args["meal_name"] == "Grilled Chicken Salad"
+        assert call_args["feedback"] == "thumbs_up"
+        assert call_args["meal_image"] == "http://example.com/scanned_image.jpg"
+        assert call_args["user_id"] == UserTestConstants.MOCK_USER_ID.value
+        assert call_args["metadata"] == {}
