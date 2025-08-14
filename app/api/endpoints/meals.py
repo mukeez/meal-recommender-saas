@@ -14,6 +14,7 @@ from app.api.auth_guard import auth_guard
 from app.models.meal import (
     LogMealRequest,
     LoggedMeal,
+    MealFeedbackRequest,
     MealSuggestionRequest,
     MealSuggestionResponse,
     DailyProgressResponse,
@@ -774,7 +775,7 @@ async def suggest_recipes(
     summary="Submit meal feedback",
     description="Submit feedback for a specific meal.",
 )
-async def log_meal_feedback(payload: dict, user=Depends(auth_guard)):
+async def log_meal_feedback(feedback: MealFeedbackRequest, user=Depends(auth_guard)):
     """Log feedback for a specific meal.
 
     Args:
@@ -789,8 +790,11 @@ async def log_meal_feedback(payload: dict, user=Depends(auth_guard)):
     """
     try:
         user_id = user.get("sub")
-        payload["user_id"] = user_id
-        await meal_service.log_feedback(payload)
+
+        feedback_data = feedback.model_dump()
+        feedback_data["user_id"] = user_id
+
+        await meal_service.log_feedback(feedback_data)
         return {"message": "Feedback submitted successfully"}
     except Exception as e:
         logger.error(f"Error logging meal feedback for user:{user_id}: {str(e)}")

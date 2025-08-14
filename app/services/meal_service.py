@@ -14,6 +14,7 @@ from fastapi import HTTPException, status
 
 from app.core.config import settings
 from app.models.meal import (
+    MealFeedbackRequest,
     MealType,
     LogMealRequest,
     LoggedMeal,
@@ -1826,7 +1827,7 @@ class MealService:
             return []
 
 
-    async def log_feedback(self, feedback_data: dict) -> dict:
+    async def log_feedback(self, feedback_data: MealFeedbackRequest) -> dict:
         try:
             async with httpx.AsyncClient() as client:
                 await client.post(
