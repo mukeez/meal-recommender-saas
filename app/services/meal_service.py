@@ -14,6 +14,7 @@ from fastapi import HTTPException, status
 
 from app.core.config import settings
 from app.models.meal import (
+    MealFeedbackRequest,
     MealType,
     LogMealRequest,
     LoggedMeal,
@@ -1824,6 +1825,27 @@ class MealService:
         except Exception as e:
             logger.error(f"Error searching logged meals: {str(e)}")
             return []
+
+
+    async def log_feedback(self, feedback_data: MealFeedbackRequest) -> dict:
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.post(
+                    f"{self.base_url}/rest/v1/meal_feedback",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=feedback_data,
+                )
+                return {"data": "Feedback logged successfully"}
+        except Exception as e:
+            logger.error(f"Error logging feedback: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error logging feedback",
+            )
 
 
 meal_service = MealService()

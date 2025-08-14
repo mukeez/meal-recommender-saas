@@ -14,6 +14,7 @@ from app.api.auth_guard import auth_guard
 from app.models.meal import (
     LogMealRequest,
     LoggedMeal,
+    MealFeedbackRequest,
     MealSuggestionRequest,
     MealSuggestionResponse,
     DailyProgressResponse,
@@ -767,3 +768,38 @@ async def suggest_recipes(
         )
 
 
+@router.post(
+    "/feedback",
+    response_model=dict,
+    status_code=status.HTTP_200_OK,
+    summary="Submit meal feedback",
+    description="Submit feedback for a specific meal.",
+)
+async def log_meal_feedback(feedback: MealFeedbackRequest, user=Depends(auth_guard)):
+    """Log feedback for a specific meal.
+
+    Args:
+        payload: The feedback payload containing meal name and feedback type
+        user: The authenticated user (injected by the auth_guard dependency)
+
+    Returns:
+        A response object indicating the result of the feedback logging
+
+    Raises:
+        HTTPException: If there is an error processing the request
+    """
+    try:
+        user_id = user.get("sub")
+
+        feedback_data = feedback.model_dump()
+        feedback_data["user_id"] = user_id
+
+        await meal_service.log_feedback(feedback_data)
+        return {"message": "Feedback submitted successfully"}
+    except Exception as e:
+        logger.error(f"Error logging meal feedback for user:{user_id}: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error logging meal feedback",
+        )
