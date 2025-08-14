@@ -69,6 +69,7 @@ class TestProductEndpoint:
         feedback_payload = {
             "product_name": "Organic Quinoa",
             "feedback_type": "thumbs_down",
+            "barcode": "1234"
         }
 
         response = authenticated_client.post(
