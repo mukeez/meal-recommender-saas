@@ -131,6 +131,7 @@ class EnhancedScanResponse(BaseModel):
     """
     items: List[FoodItem]
     detected_ingredients: List[str] = Field(default_factory=list, description="Individual ingredients detected in the meal")
+    scanned_image: Optional[str] = Field(None, description="URL of the scanned image if available")
 
 class ScanToMealRequest(BaseModel):
     """Request model for converting scan data to meal logging format.
@@ -348,7 +349,6 @@ async def scan_image(
             )
 
         try:
-
             img = Image.open(io.BytesIO(contents))
             img_format = img.format
             logger.info(f"Image format detected: {img_format}, size: {img.size}")
@@ -367,6 +367,25 @@ async def scan_image(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error processing image",
             )
+        
+        logger.info("Uploading scanned image to S3...")
+        try:
+            env_map = {
+                "development": "dev",
+                "production": "prod"
+            }
+            env = env_map.get(settings.ENVIRONMENT)
+            file_extension = f".{img.format.lower()}" if img.format else ".jpg"
+            file_path = f"{env}/scans/{uuid.uuid4()}{file_extension}"
+            scanned_image = await upload_file_to_bucket(
+                file_content=contents,
+                file_path=file_path,
+                content_type=image.content_type or "image/jpeg",
+                )
+            logger.info(f"Successfully uploaded scanned image: {scanned_image}")
+        except Exception as e:
+            logger.error(f"Error uploading image to S3: {str(e)}")
+            scanned_image = None
 
         openai_api_key = settings.OPENAI_API_KEY
         if not openai_api_key:
@@ -600,7 +619,7 @@ Format your response as a valid JSON object with this structure:
 
             logger.info(f"Successfully processed {len(food_items)} food items")
             detected_ingredients = response_data.get("detected_ingredients", [])
-            return EnhancedScanResponse(items=food_items, detected_ingredients=detected_ingredients)
+            return EnhancedScanResponse(items=food_items, detected_ingredients=detected_ingredients, scanned_image=scanned_image    )
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON parse error: {str(e)}")
