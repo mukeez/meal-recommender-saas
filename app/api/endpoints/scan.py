@@ -5,6 +5,7 @@ to retrieve nutritional information.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Body
+import uuid
 import httpx
 import logging
 import base64
@@ -21,6 +22,8 @@ from app.services.product_service import product_service
 from app.services.openfoodfacts_service import openfoodfacts_service
 from app.utils.constants import parse_gram_quantity, normalize_nutrition_to_per_gram, calculate_nutrition_for_amount
 import traceback
+
+from app.utils.file_upload import upload_file_to_bucket
 
 # Configure logging
 logger = logging.getLogger(__name__)
