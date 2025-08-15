@@ -200,7 +200,7 @@ async def product_search_meals_format(
         HTTPException: If there is an error processing the request
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
         
         logger.info(
             f"paginated product search meals format:[query:{query}][page:{page}][page_size:{page_size}]"
@@ -293,7 +293,7 @@ async def log_product(
         HTTPException: If there is an error creating the product or if product already exists
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
         
         logger.info(f"User {user_id} logging new product with barcode: {product_data.barcode}")
         
@@ -371,7 +371,7 @@ async def log_product_feedback(feedback: ProductFeedbackRequest, user=Depends(au
     """
     try:
         feedback_data = feedback.model_dump()
-        user_id = user.get("sub")
+        user_id = user.get("id")
 
         feedback_data["user_id"] = user_id
         await product_service.log_feedback(feedback_data)

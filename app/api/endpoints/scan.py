@@ -335,6 +335,8 @@ async def scan_image(
         )
 
         try:
+            user_id = user.get("id")
+            user_email = user.get("email")
             contents = await image.read()
             logger.info(f"Successfully read image file, size={len(contents)} bytes")
         except Exception as e:
@@ -392,7 +394,7 @@ async def scan_image(
         try:
             logger.info("Analyzing image with ScanLLMService...")
             response_data = await scan_llm_service.analyze_image(
-                encoded_image=encoded_image
+                encoded_image=encoded_image, user_id=user_email
             )
             logger.info("Successfully received analysis from ScanLLMService")
 

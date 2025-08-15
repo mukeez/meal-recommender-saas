@@ -674,7 +674,7 @@ async def logout(request: Request, user=Depends(auth_guard)) -> LogoutResponse:
         HTTPException: If the logout process fails
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
         
         logger.info(f"Logout requested for user: {user_id}")
 

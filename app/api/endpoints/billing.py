@@ -63,7 +63,7 @@ async def create_checkout_session(
     request: CheckoutSessionRequest, user=Depends(auth_guard)
 ) -> CheckoutSessionResponse:
     try:
-        if request.user_id != user.get("sub"):
+        if request.user_id != user.get("id"):
             logger.warning(f"User ID mismatch: {request.user_id} vs {user.get('sub')}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -398,7 +398,7 @@ async def cancel_subscription(
     - **cancel_at_period_end**: If True, the subscription remains active until the current billing period ends. If False, it is cancelled immediately.
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
 
         # Proceed with cancellation
         sub = await stripe_service.cancel_user_subscription(
@@ -445,7 +445,7 @@ async def create_setup_intent(
     """
     Creates a SetupIntent to collect payment method for a customer.
     """
-    user_id = user["sub"]
+    user_id = user.get("id")
 
     if request.user_id != user_id:
         logger.warning(f"User ID mismatch: {request.user_id} vs {user.get('sub')}")
@@ -514,7 +514,7 @@ async def create_setup_intent(
 async def create_customer_portal_session(
     request: Request, user=Depends(auth_guard)
 ) -> BillingPortalResponse:
-    user_id = user.get("sub")
+    user_id = user.get("id")
 
     customer_id = await stripe_service.get_stripe_customer(user_id=user_id)
 
@@ -557,7 +557,7 @@ async def get_subscription_details(
     - Cancellation status
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
         
         # Get detailed subscription information from Stripe
         subscription_details = await stripe_service.get_subscription_details(user_id)
@@ -599,7 +599,7 @@ async def reactivate_subscription(
     The subscription will continue with its normal billing cycle after reactivation.
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
         # Reactivate the subscription using the ID from the request
         subscription = await stripe_service.reactivate_user_subscription(
             user_id=user_id,

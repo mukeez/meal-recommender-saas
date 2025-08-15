@@ -38,7 +38,7 @@ async def macros_setup_endpoint(
 ) -> MacroCalculatorResponse:
     """Calculate daily macronutrient targets with weight change projections."""
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
 
         if request.manual_macros:
             response = MacroCalculatorResponse(**request.manual_macros.model_dump())
@@ -166,7 +166,7 @@ async def adjust_macro_distribution(
         HTTPException: If the requested distribution is not possible or causes errors
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
         macro_response = macros_service.adjust_macro_distribution(
             protein=request.protein,
             carbs=request.carbs,

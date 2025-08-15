@@ -59,7 +59,8 @@ async def get_user_profile(user=Depends(auth_guard)) -> UserProfile:
         The user profile information
     """
     try:
-        profile = await user_service.get_user_profile(user_id=user.get("sub"))
+
+        profile = await user_service.get_user_profile(user_id=user.get("id"))
         return profile
     except HTTPException:
         # re-raise httpexceptions without modification
@@ -120,7 +121,7 @@ async def update_user_profile(
         The user profile information
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
         
         # Convert string values to enums where applicable
         sex_enum = Sex(sex) if sex else None
@@ -203,7 +204,7 @@ async def update_fcm_token(
                 detail="Only the FCM token parameter is required",
             )
         fcm_token = body.get("fcm_token")
-        user_id = user.get("sub")
+        user_id = user.get("id")
         await user_service.update_fcm_token(user_id=user_id, fcm_token=fcm_token)
         return {"message": "FCM token updated successfully"}
     except HTTPException:
@@ -231,7 +232,7 @@ async def get_user_preferences(user=Depends(auth_guard)):
         UserPreferences object with current preferences
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
 
         if not settings.SUPABASE_SERVICE_ROLE_KEY:
             raise HTTPException(
@@ -299,7 +300,7 @@ async def update_user_preferences(
         Updated UserPreferences object
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
 
         update_data = {
             k: v
@@ -382,7 +383,7 @@ async def delete_user_account(user=Depends(auth_guard)) -> UserDeletionResponse:
         HTTPException: If the deletion process fails
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
         
         logger.info(f"Account deletion requested for user: {user_id}")
         
