@@ -48,7 +48,7 @@ async def auth_guard(request: Request):
             )
             
         request.state.user = user
-        return user
+        return profile
         
     except HTTPException:
         raise

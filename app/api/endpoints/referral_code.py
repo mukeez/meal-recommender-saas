@@ -21,7 +21,7 @@ async def generate_referral_code(
     Generate a new referral code for the user.
     """
     try:
-        referral_code = await referral_code_service.save_referral_instance(user["sub"])
+        referral_code = await referral_code_service.save_referral_instance(user.get("id"))
         return {
             "data": referral_code,
             "message": "Referral code generated successfully.",

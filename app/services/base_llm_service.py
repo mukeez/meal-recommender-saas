@@ -21,9 +21,9 @@ if settings.HELICONE_API_KEY:
     }
     litellm.success_callback = ["helicone"]
 
-    logger("Helicone API key found, Helicone integration enabled")
-    logger(f"Gemini model: {settings.GEMINI_MODEL_NAME}")
-    logger(f"OpenAI model: {settings.MODEL_NAME}")
+    logger.info("Helicone API key found, Helicone integration enabled")
+    logger.info(f"Gemini model: {settings.GEMINI_MODEL_NAME}")
+    logger.info(f"OpenAI model: {settings.MODEL_NAME}")
 
 # Configure the model list for the router
 model_list = [
@@ -122,6 +122,7 @@ class BaseLLMService:
 
 
         if user_id:
+            logger.info(f"Setting Helicone user ID for request tracking:{user_id}")
             litellm.metadata["Helicone-User-Id"] = user_id
 
         try:

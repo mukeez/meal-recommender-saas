@@ -76,10 +76,11 @@ async def suggest_meals(
     """
     try:
         # Extract user ID from the authenticated user
-        user_id = user.get("sub")
+        user_id = user.get("id")
+        user_email = user.get("email")
 
         meal_suggestions = await meal_llm_service(
-            request=meal_request, user_id=user_id, restaurants=[]
+            request=meal_request, user_id=user_email, restaurants=[]
         ).get_meal_suggestions()
         return meal_suggestions
 
@@ -140,7 +141,7 @@ async def log_meal(
         HTTPException: If there is an error logging the meal
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
 
         # Set meal_time to current time if not provided
         if meal_time is None:
@@ -234,7 +235,7 @@ async def get_today_meals(
         HTTPException: If there is an error retrieving meals
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
 
         today_meals = await meal_service.get_meals_for_today(user_id)
         return today_meals
@@ -258,7 +259,7 @@ async def get_daily_progress(
 ) -> DailyProgressResponse:
     """Calculate daily macro progress for the current user."""
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
         daily_progress = await meal_service.get_daily_progress(user_id)
         return daily_progress
 
@@ -298,7 +299,7 @@ async def get_progress(
         HTTPException: If there is an error retrieving the progress data
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
 
         # Set default period if none provided
         if not period:
@@ -342,6 +343,7 @@ async def update_meal(
     amount: Optional[float] = Form(None, description="Amount/quantity of the serving unit", ge=0),
     favorite: Optional[bool] = Form(None, description="Whether to mark this meal as a favorite"),
     photo: Optional[UploadFile] = File(None, description="New meal photo (optional)"),
+    meal_time: Optional[datetime] = Form(None, description="Time of the meal (optional)"),
     user=Depends(auth_guard),
 ) -> UpdateMealResponse:
     """Update an existing logged meal for the current user.
@@ -369,7 +371,7 @@ async def update_meal(
         HTTPException: If there is an error updating the meal
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
 
         # Validate photo if provided
         if photo:
@@ -405,6 +407,8 @@ async def update_meal(
             update_data["amount"] = amount
         if favorite is not None:
             update_data["favorite"] = favorite
+        if meal_time is not None:
+            update_data["meal_time"] = meal_time
 
         meal_data = UpdateMealRequest(**update_data)
 
@@ -473,7 +477,7 @@ async def delete_meal(
         HTTPException: If the meal is not found or cannot be deleted
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
         deleted_meal_id = await meal_service.delete_meal(user_id, meal_id)
         return DeleteMealResponse(
             message="Meal deleted successfully", meal_id=deleted_meal_id
@@ -524,7 +528,7 @@ async def search_meals(
         HTTPException: If there is an error processing the search
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
 
         # Validate pagination parameters
         if page < 1:
@@ -598,7 +602,7 @@ async def get_favorite_meals(
         HTTPException: If there is an error retrieving favorite meals
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
 
         # Validate pagination parameters
         if page < 1:
@@ -660,7 +664,7 @@ async def get_meal_history(
         HTTPException: If the request is invalid or an error occurs.
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
 
         # Validate pagination parameters
         if page < 1:
@@ -752,10 +756,11 @@ async def suggest_recipes(
     """
     try:
         # Extract user ID from the authenticated user
-        user_id = user.get("sub")
+        user_id = user.get("id")
+        user_email = user.get("email")
 
         recipe_suggestions = await recipe_llm_service(
-            request=recipe_request, user_id=user_id
+            request=recipe_request, user_id=user_email
         ).get_recipe_suggestions()
         return recipe_suggestions
 
@@ -789,7 +794,7 @@ async def log_meal_feedback(feedback: MealFeedbackRequest, user=Depends(auth_gua
         HTTPException: If there is an error processing the request
     """
     try:
-        user_id = user.get("sub")
+        user_id = user.get("id")
 
         feedback_data = feedback.model_dump()
         feedback_data["user_id"] = user_id

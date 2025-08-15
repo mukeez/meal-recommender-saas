@@ -63,7 +63,7 @@ Format your response as a valid JSON object with this structure:
         """
         return json.loads(content)
 
-    async def analyze_image(self, encoded_image: str) -> dict:
+    async def analyze_image(self, encoded_image: str, user_id: str = None) -> dict:
         """
         Analyze a food image using a vision model.
 
@@ -83,6 +83,7 @@ Format your response as a valid JSON object with this structure:
                 request=None, # Prompt is now built-in
                 encoded_image=encoded_image,
                 max_tokens=1000,
+                user_id=user_id,
             )
             
             logger.info("Successfully received response from Vision API")

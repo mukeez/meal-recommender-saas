@@ -51,7 +51,7 @@ async def get_user_notifications(
     """
     try:
         notifications = await notification_service.get_notifications(
-            user_id=user["sub"],
+            user_id=user.get("id"),
             page=page,
             page_size=page_size,
             status=status,
@@ -93,7 +93,7 @@ async def log_notification(
     """
     try:
         notification_data = notification.model_dump()
-        notification_data["user_id"] = user["sub"]
+        notification_data["user_id"] = user.get("id")
         await notification_service.log_notification(notification_data)
         return {"message": "Notification logged successfully"}
     except HTTPException:
@@ -131,7 +131,7 @@ async def update_notification_status(
     """
     try:
         await notification_service.mark_notification_as_read(
-            user_id=user["sub"], notification_id=notification_id, status_=body.status
+            user_id=user.get("id"), notification_id=notification_id, status_=body.status
         )
         return {"message": "Notification status updated successfully"}
     except HTTPException:
