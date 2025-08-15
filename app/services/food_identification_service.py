@@ -6,7 +6,7 @@ Used as Stage 2 in the 3-stage indigenous dish detection pipeline.
 
 import logging
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any
 from app.services.base_llm_service import BaseLLMService, LLMServiceError
 
 logger = logging.getLogger(__name__)
@@ -15,17 +15,15 @@ logger = logging.getLogger(__name__)
 class FoodIdentificationService(BaseLLMService):
     """Service for neutral food identification without indigenous bias."""
 
-    async def identify_food(self, encoded_image: str) -> Dict[str, Any]:
+    def __init__(self):
+        super().__init__()
+        self.model = "gpt-4o-mini"
+
+    def _build_prompt(self, request: Any) -> str:
         """
-        Identify food in image without indigenous classification bias.
-        
-        Args:
-            encoded_image: Base64 encoded image string
-            
-        Returns:
-            Dictionary containing food identification results
+        Construct the prompt string.
         """
-        prompt = """Analyze this food image and provide neutral food identification.
+        return """Analyze this food image and provide neutral food identification.
 
 Focus on:
 1. What food items you can see
@@ -48,38 +46,39 @@ Provide your analysis in the following JSON format:
     "observations": "Additional objective observations about the food"
 }"""
 
+    def _parse_response(self, content: str) -> Any:
+        """
+        Parse raw AI output into structured objects.
+        """
+        return json.loads(content)
+
+    async def identify_food(self, encoded_image: str, user_id: str = None) -> Dict[str, Any]:
+        """
+        Identify food in image without indigenous classification bias.
+        
+        Args:
+            encoded_image: Base64 encoded image string
+            user_id: Optional user ID for tracking and rate limiting.
+            
+        Returns:
+            Dictionary containing food identification results
+        """
         try:
             logger.info("Performing neutral food identification...")
             
-            # Use the same vision model as scan service
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{encoded_image}"
-                                },
-                            },
-                        ],
-                    }
-                ],
-                response_format={"type": "json_object"},
+            result = await self.generate_response(
+                system_prompt="You are a neutral food identification assistant.",
+                request=None, # Prompt is fixed, so request is not used here
+                encoded_image=encoded_image,
                 max_tokens=800,
                 temperature=0.3,
+                user_id=user_id,
             )
-            
-            ai_response = response.choices[0].message.content
-            result = json.loads(ai_response)
             
             logger.info(f"Food identification completed: {result.get('identified_food', 'Unknown')}")
             return result
 
-        except Exception as e:
+        except (LLMServiceError, json.JSONDecodeError) as e:
             logger.error(f"Error in food identification: {str(e)}")
             # Return fallback result
             return {

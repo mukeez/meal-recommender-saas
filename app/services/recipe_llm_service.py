@@ -25,10 +25,10 @@ class RecipeLLMService(BaseLLMService):
             request: The recipe suggestion request containing user preferences
             user_id: The user ID to fetch dietary preferences from database
         """
+        super().__init__()
         self.request = request
         self.user_id = user_id
         self.user_preferences = None
-        super().__init__()
 
     async def _fetch_user_preferences(self) -> Dict[str, Any]:
         """Fetch user dietary preferences from the database.
@@ -44,69 +44,16 @@ class RecipeLLMService(BaseLLMService):
             logger.warning(f"Could not fetch user preferences for user {self.user_id}: {str(e)}")
             return {}
 
-    async def _send_request(
-        self, system_prompt, prompt, max_tokens=2000, temperature=0.5
-    ):
+    def _parse_response(self, content: str) -> RecipeSuggestionResponse:
         """
-        Send a request to the AI service with Gemini fallback for recipe suggestions.
-        Args:
-            system_prompt: The system prompt to set the context for the AI.
-            prompt: The user input to generate a response for.
-            max_tokens: Maximum number of tokens in the response.
-            temperature: Sampling temperature for response variability.
-        Returns:
-            The parsed response from the AI service.
+        Parse raw AI output into a RecipeSuggestionResponse object.
         """
         try:
-            logger.info("Sending structured request to OpenAI API for recipes...")
-            response = self.client.responses.parse(
-                    model=settings.MODEL_NAME,
-                    input=[
-                        {
-                            "role": "system",
-                            "content": system_prompt
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    text_format=RecipeSuggestionResponse)
-            logger.info("Successfully received structured response from OpenAI API for recipes")
-            return response.output_parsed
-            
-        except openai.OpenAIError as openai_error:
-            should_fallback = False
-            error_str = str(openai_error).lower()
-            
-            if any(keyword in error_str for keyword in [
-                'server error', '500', '502', '503', '504', '429', 
-                'service unavailable', 'internal server error', 
-                'rate limit', 'overloaded'
-            ]):
-                should_fallback = True
-                logger.warning(f"OpenAI server error detected: {openai_error}")
-            
-            if should_fallback and self.gemini_client:
-                logger.info("Attempting Gemini fallback for recipe suggestions...")
-                try:
-                    gemini_response = await self._send_gemini_request(
-                        system_prompt=system_prompt,
-                        prompt=prompt,
-                        max_tokens=max_tokens,
-                        temperature=temperature
-                    )
-                    
-                    import json
-                    gemini_data = json.loads(gemini_response)
-                    parsed_response = RecipeSuggestionResponse(**gemini_data)
-                    
-                    logger.info("Successfully received and parsed response from Gemini fallback for recipes")
-                    return parsed_response
-                    
-                except Exception as gemini_error:
-                    logger.error(f"Gemini fallback for recipes also failed: {gemini_error}")
-                    raise LLMServiceError(f"OpenAI API error: {openai_error} (Gemini fallback also failed: {gemini_error})")
-            
-            logger.error(f"OpenAI API error (no fallback attempted for recipes): {openai_error}")
-            raise LLMServiceError(f"OpenAI API error: {openai_error}")
+            data = json.loads(content)
+            return RecipeSuggestionResponse(**data)
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.error(f"Failed to parse recipe suggestion response: {e}")
+            raise LLMServiceError(f"Failed to parse recipe suggestion response: {e}")
 
     async def get_recipe_suggestions(self) -> RecipeSuggestionResponse:
         """Get recipe suggestions from OpenAI API.
@@ -122,15 +69,16 @@ class RecipeLLMService(BaseLLMService):
             system_prompt = "You are a helpful assistant that suggests recipes based on user's dietary needs."
             
             suggestions = await self.generate_response(
-                system_prompt=system_prompt, request=self.request, temperature=0.5, should_parse=False
+                system_prompt=system_prompt,
+                request=self.request,
+                temperature=0.5,
+                user_id=self.user_id,
             )
             return suggestions
-        except openai.OpenAIError as e:
-            raise LLMServiceError(f"OpenAI API error: {str(e)}")
-        except json.JSONDecodeError:
-            raise LLMServiceError("Failed to parse AI response as JSON")
+        except LLMServiceError as e:
+            raise e
         except Exception as e:
-            raise LLMServiceError(f"Unexpected error: {str(e)}")
+            raise LLMServiceError(f"Unexpected error in get_recipe_suggestions: {str(e)}")
 
     async def _build_prompt(self, request: RecipeSuggestionRequest) -> str:
         """Build a prompt for the OpenAI API.
@@ -201,6 +149,7 @@ class RecipeLLMService(BaseLLMService):
         raw = await self._send_request(
             system_prompt=system_prompt,
             prompt=prompt,
+            max_tokens=max_tokens,
             temperature=temperature,
         )
         if not should_parse:
