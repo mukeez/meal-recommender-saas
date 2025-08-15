@@ -41,6 +41,7 @@ class Settings:
             raise ValueError("GEMINI_API_KEY environment variable is not set")
 
         self.MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4")
+        self.GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini/gemini-1.5-flash")
 
 
         # Nutritionix API Settings
@@ -77,6 +78,9 @@ class Settings:
         # Email Settings
         self.EMAIL_SENDER = os.environ.get("EMAIL_SENDER", "support@macromealsapp.com")
         self.EMAIL_SENDER_NAME = os.environ.get("EMAIL_SENDER_NAME", "MacroMeals")
+
+        # Helicone Settings
+        self.HELICONE_API_KEY = os.getenv("HELICONE_API_KEY")
 
 
 

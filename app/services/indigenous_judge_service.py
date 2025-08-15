@@ -19,29 +19,21 @@ class IndigenousJudgeService(BaseLLMService):
     # Indigenous countries supported
     INDIGENOUS_COUNTRIES = ["Ghana", "Nigeria", "Jamaica"]
 
-    async def judge_indigenous_classification(
-        self,
-        encoded_image: str,
-        vector_search_results: List[Dict[str, Any]],
-        food_identification: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def __init__(self):
+        super().__init__()
+        self.model = "gpt-4o-mini"
+
+    def _build_prompt(self, request: Dict[str, Any]) -> str:
         """
-        Judge whether a dish is indigenous based on multiple evidence sources.
-        
-        Args:
-            encoded_image: Base64 encoded image string
-            vector_search_results: Results from vector database search
-            food_identification: Results from neutral food identification
-            
-        Returns:
-            Dictionary containing indigenous classification decision
+        Construct the prompt string.
         """
+        vector_search_results = request["vector_search_results"]
+        food_identification = request["food_identification"]
         
-        # Prepare context for the judge
         vector_context = self._format_vector_context(vector_search_results)
         food_id_context = self._format_food_identification_context(food_identification)
         
-        prompt = f"""You are an expert food culturist specializing in traditional dishes from Ghana, Nigeria, and Jamaica.
+        return f"""You are an expert food culturist specializing in traditional dishes from Ghana, Nigeria, and Jamaica.
 
 Your task is to determine if the food in this image is an indigenous/traditional dish from one of these countries.
 
@@ -88,39 +80,55 @@ Provide your decision in this JSON format:
     "recommendation": "Classify as indigenous/non-indigenous because..."
 }}"""
 
+    def _parse_response(self, content: str) -> Dict[str, Any]:
+        """
+        Parse raw AI output into structured objects.
+        """
+        return json.loads(content)
+
+    async def judge_indigenous_classification(
+        self,
+        encoded_image: str,
+        vector_search_results: List[Dict[str, Any]],
+        food_identification: Dict[str, Any],
+        user_id: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Judge whether a dish is indigenous based on multiple evidence sources.
+        
+        Args:
+            encoded_image: Base64 encoded image string
+            vector_search_results: Results from vector database search
+            food_identification: Results from neutral food identification
+            user_id: Optional user ID for tracking and rate limiting.
+            
+        Returns:
+            Dictionary containing indigenous classification decision
+        """
+        
+        request_data = {
+            "vector_search_results": vector_search_results,
+            "food_identification": food_identification,
+        }
+
         try:
             logger.info("Performing indigenous classification judgment...")
             
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{encoded_image}"
-                                },
-                            },
-                        ],
-                    }
-                ],
-                response_format={"type": "json_object"},
+            result = await self.generate_response(
+                system_prompt="You are an expert food culturist judge.",
+                request=request_data,
+                encoded_image=encoded_image,
                 max_tokens=1000,
-                temperature=0.2,  # Lower temperature for consistent judgment
+                temperature=0.2,
+                user_id=user_id,
             )
-            
-            ai_response = response.choices[0].message.content
-            result = json.loads(ai_response)
             
             logger.info(f"Indigenous classification: {result.get('is_indigenous', False)} "
                        f"(confidence: {result.get('confidence', 0):.2f})")
             
             return result
 
-        except Exception as e:
+        except (LLMServiceError, json.JSONDecodeError) as e:
             logger.error(f"Error in indigenous classification: {str(e)}")
             # Return conservative fallback (non-indigenous)
             return {

@@ -20,6 +20,8 @@ from app.api.auth_guard import auth_guard
 from app.core.config import settings
 from app.services.product_service import product_service
 from app.services.openfoodfacts_service import openfoodfacts_service
+from app.services.scan_llm_service import scan_llm_service
+from app.services.base_llm_service import LLMServiceError
 from app.utils.constants import parse_gram_quantity, normalize_nutrition_to_per_gram, calculate_nutrition_for_amount
 import traceback
 
@@ -387,143 +389,35 @@ async def scan_image(
             logger.error(f"Error uploading image to S3: {str(e)}")
             scanned_image = None
 
-        openai_api_key = settings.OPENAI_API_KEY
-        if not openai_api_key:
-            logger.error("OpenAI API key not configured")
+        try:
+            logger.info("Analyzing image with ScanLLMService...")
+            response_data = await scan_llm_service.analyze_image(
+                encoded_image=encoded_image
+            )
+            logger.info("Successfully received analysis from ScanLLMService")
+
+        except LLMServiceError as e:
+            logger.error(f"LLMServiceError during image analysis: {str(e)}")
+            # Check for specific timeout or connection errors if the service surfaces them
+            if "timed out" in str(e).lower() or "timeout" in str(e).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail="Vision analysis timed out. Please try again with a simpler image.",
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Vision analysis failed: {str(e)}",
+                )
+        except Exception as e:
+            logger.error(f"Unexpected error during image analysis: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error processing image",
+                detail="An unexpected error occurred during image analysis.",
             )
-
-        model_name = "gpt-4o-mini"
-        logger.info(f"Using vision model: {model_name}")
-
-        prompt = """Identify this image as a complete meal or dish. Do not break it down into individual components.
-
-Provide a single, descriptive name for the entire meal as it appears in the image. If there are multiple components, describe them as one unified dish (e.g., "Jollof rice with grilled chicken and plantains" rather than separate items).
-
-For the complete meal shown, provide:
-1. Descriptive name of the entire meal/dish (be as descriptive as possible)
-2. Estimated total weight of the entire serving shown (as a numeric value in grams)
-3. Serving unit (Always use "grams")  
-4. Total estimated calories for the entire serving shown
-5. Total estimated protein for the entire serving shown
-6. Total estimated carbs for the entire serving shown
-7. Total estimated fat for the entire serving shown
-8. List of ALL individual ingredients that make up this meal (as an array of strings)
-
-IMPORTANT: 
-- Treat this as ONE complete meal with total nutritional values
-- Detect individual ingredients that compose the meal
-
-Format your response as a valid JSON object with this structure:
-{{
-  "items": [
-    {{
-      "name": "Complete descriptive meal name",
-      "amount": number,
-      "serving_unit": "grams", 
-      "calories": number,
-      "protein": number,
-      "carbs": number,
-      "fat": number
-    }}
-  ],
-  "detected_ingredients": ["ingredient1", "ingredient2", "ingredient3"]
-}}
-"""
-
-        # Prepare the request payload
-        request_payload = {
-            "model": model_name,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{encoded_image}"
-                            },
-                        },
-                    ],
-                }
-            ],
-            "response_format": {"type": "json_object"},
-            "max_tokens": 1000,
-        }
-
-        logger.info("Prepared OpenAI API request payload")
-
-        # Call OpenAI API with the image (primary), fallback to Gemini if it fails
-        try:
-            logger.info("Sending request to OpenAI API...")
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {openai_api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=request_payload,
-                    timeout=60.0,  # Extended timeout for image processing
-                )
-
-                logger.info(
-                    f"Received response from OpenAI API: status_code={response.status_code}"
-                )
-
-                if response.status_code != 200:
-                    logger.error(f"OpenAI API error: {response.status_code}")
-                    logger.error(f"Response content: {response.text}")
-                    raise Exception(f"OpenAI API returned status {response.status_code}")
-
-                data = response.json()
-                logger.info("Successfully parsed JSON response from OpenAI API")
-
-        except Exception as openai_error:
-            logger.warning(f"OpenAI Vision failed: {str(openai_error)}")
-            logger.info("Trying Gemini Vision as fallback...")
-            
-            try:
-                # Try Gemini as fallback
-                response_data = await call_gemini_vision(encoded_image, prompt)
-                # Skip to processing since we have the response data directly
-                data = {"choices": [{"message": {"content": json.dumps(response_data)}}]}
-                logger.info("Successfully received response from Gemini fallback")
-                
-            except Exception as gemini_error:
-                logger.error(f"Both OpenAI and Gemini failed. OpenAI: {str(openai_error)}, Gemini: {str(gemini_error)}")
-                
-                # Return appropriate error based on the primary failure
-                if "timed out" in str(openai_error).lower() or "timeout" in str(openai_error).lower():
-                    raise HTTPException(
-                        status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                        detail="Vision analysis timed out. Please try again with a simpler image.",
-                    )
-                elif "connect" in str(openai_error).lower() or "network" in str(openai_error).lower():
-                    raise HTTPException(
-                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                        detail="Error connecting to vision service",
-                    )
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Vision analysis failed",
-                    )
 
         # Extract and parse the AI response
         try:
-            ai_response = data["choices"][0]["message"]["content"]
-            logger.info("Successfully extracted content from API response")
-            logger.debug(f"AI response content: {ai_response}")
-
-            # Parse the JSON response
-
-            response_data = json.loads(ai_response)
-            logger.info("Successfully parsed JSON from AI response")
-
             if "items" not in response_data or not isinstance(
                 response_data["items"], list
             ):
@@ -623,14 +517,14 @@ Format your response as a valid JSON object with this structure:
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON parse error: {str(e)}")
-            logger.error(f"Raw response that failed parsing: {ai_response}")
+            logger.error(f"Raw response that failed parsing: {response_data}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error parsing response from vision API",
             )
         except KeyError as e:
             logger.error(f"Missing key in API response: {str(e)}")
-            logger.error(f"API response structure: {data}")
+            logger.error(f"API response structure: {response_data}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Unexpected response structure from vision API: {str(e)}",
