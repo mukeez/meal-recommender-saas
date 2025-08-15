@@ -16,7 +16,6 @@ Macro Meals is a mobile application designed to help users calculate, track, and
 - Python 3.10+
 - Docker & Docker Compose
 - Supabase CLI
-- Git
 
 ### 1. Clone & Setup
 
@@ -30,7 +29,7 @@ source env/bin/activate  # On Windows: env\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 3. Database Setup
+### 2. Database Setup
 
 Find the installation guide here: https://supabase.com/docs/guides/local-development
 
@@ -45,7 +44,7 @@ supabase projects list
 supabase link --project-ref your-project-ref
 ```
 
-### 4. Run the Application
+### 3. Run the Application
 
 ```bash
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-config app/log_config.json
