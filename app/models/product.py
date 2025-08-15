@@ -370,7 +370,7 @@ class ProductFeedback(BaseModel):
     feedback: Annotated[FeedbackType, Field(..., description="Feedback type")]
     user_id: Annotated[str, Field(..., description="Unique identifier for the user")]
     metadata: Annotated[
-        dict, Field(..., description="Additional metadata about the feedback")
+        Optional[dict], Field(None, description="Additional metadata about the feedback")
     ]
     barcode: Annotated[str, Field(..., description="Barcode of the product")]
 
@@ -378,8 +378,8 @@ class ProductFeedback(BaseModel):
 class ProductFeedbackRequest(BaseModel):
     product_name: Annotated[str, Field(..., description="Name of the product")]
     feedback: Annotated[FeedbackType, Field(..., description="Feedback type")]
-    user_id: Annotated[str, Field(..., description="Unique identifier for the user")]
+    user_id: Annotated[Optional[str], Field(None, description="Unique identifier for the user")]
     metadata: Annotated[
-        dict, Field(..., description="Additional metadata about the feedback")
+        Optional[dict], Field(None, description="Additional metadata about the feedback")
     ]
     barcode: Annotated[str, Field(..., description="Barcode of the product")]

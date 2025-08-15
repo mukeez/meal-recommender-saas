@@ -622,7 +622,7 @@ class MealFeedback(BaseModel):
     feedback: Annotated[FeedbackType, Field(..., description="Feedback type")]
     user_id: Annotated[str, Field(..., description="Unique identifier for the user")]
     metadata: Annotated[
-        dict, Field(..., description="Additional metadata about the feedback")
+        Optional[dict], Field(None, description="Additional metadata about the feedback")
     ]
     meal_image: Annotated[str, Field(..., description="URL of the meal image")]
 
@@ -631,7 +631,7 @@ class MealFeedbackRequest(BaseModel):
     meal_name: Annotated[str, Field(..., description="Name of the meal")]
     feedback: Annotated[FeedbackType, Field(..., description="Feedback type")]
     meal_image: Annotated[str, Field(..., description="URL of the scanned image")]
-    user_id: Annotated[str, Field(..., description="Unique identifier for the user")]
+    user_id: Annotated[Optional[str], Field(None, description="Unique identifier for the user")]
     metadata: Annotated[
-        dict, Field(..., description="Additional metadata about the feedback")
+        Optional[dict], Field(None, description="Additional metadata about the feedback")
     ]
