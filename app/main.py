@@ -76,10 +76,6 @@ scheduler.add_job(
 )
 
 # scheduled for 8:00 PM daily
-scheduler.add_job(
-    macromeals_tasks.trigger_macro_goal_completion_notification,
-    CronTrigger(hour="20"),
-)
 
 
 @asynccontextmanager

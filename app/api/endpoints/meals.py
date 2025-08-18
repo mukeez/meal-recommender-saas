@@ -201,7 +201,10 @@ async def log_meal(
                 # Continue without photo if upload fails
             finally:
                 await photo.close()
+        
+        from app.utils.helper_functions import trigger_macro_goal_completion_notification
 
+        await trigger_macro_goal_completion_notification(user_id)
         return logged_meal
 
     except Exception as e:
