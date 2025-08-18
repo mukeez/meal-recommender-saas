@@ -14,6 +14,8 @@ from app.api.auth_guard import auth_guard
 from app.models.meal import (
     LogMealRequest,
     LoggedMeal,
+    LoggingMode,
+    ServingUnitEnum,
     MealFeedbackRequest,
     MealSuggestionRequest,
     MealSuggestionResponse,
@@ -40,6 +42,7 @@ from app.services.meal_llm_service import meal_llm_service
 from app.services.recipe_llm_service import recipe_llm_service
 from app.services.restaurant_service import restaurant_service
 from app.utils.file_upload import validate_image_file
+
 
 import traceback
 
@@ -151,9 +154,6 @@ async def log_meal(
         if photo:
             validate_image_file(photo.filename, photo.content_type)
 
-        # Create the meal request object
-        from app.models.meal import LogMealRequest, LoggingMode, ServingUnitEnum
-        from datetime import datetime
         
         # Force serving_unit to "grams" for scanned/barcode meals
         final_serving_unit = serving_unit
