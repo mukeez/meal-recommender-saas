@@ -96,286 +96,56 @@ async def create_checkout_session(
 @router.post(
     "/webhook",
     status_code=status.HTTP_200_OK,
-    summary="Process Stripe webhook events",
-    description="Process Stripe webhook events for subscription management",
+    summary="Process RevenueCat webhook events",
+    description="Process RevenueCat webhook events for subscription management",
 )
-async def stripe_webhook(
-    request: Request, stripe_signature: str = Header(..., alias="Stripe-Signature")
-) -> dict:
+async def process_billing_webhook(request: Request) -> dict:
+    import json
+    from datetime import timedelta
+    
+    event_id = None
+    user_id = None
+    event_type = None
+    
     try:
         payload = await request.body()
-
-        event = stripe_service.verify_webhook_signature(payload, stripe_signature)
         
-        # Get event ID for idempotency protection
+        raw_event = json.loads(payload)
+        event = raw_event.get("event")
+        
+        if not event:
+            logger.warning("Webhook payload missing 'event' field")
+            return {"status": "error", "message": "Invalid webhook payload"}
+
         event_id = event.get("id")
-        if not event_id:
-            logger.warning("Received webhook event without ID")
-            return {"status": "success", "message": "Event received but no ID found"}
+        event_type = event.get("type")
+        user_id = event.get("app_user_id")
         
-        # Check if we've already processed this event
-        is_processed = await stripe_service.is_webhook_event_processed(event_id)
-        if is_processed:
-            logger.info(f"Event {event_id} already processed, skipping")
-            return {"status": "success", "message": f"Event {event_id} already processed"}
-        
-        # Mark event as being processed
-        await stripe_service.mark_webhook_event_processed(event_id)
-        logger.info(f"Processing webhook event: {event['type']} (ID: {event_id})")
-
-        if event["type"] == "setup_intent.succeeded":
-            session = event["data"]["object"]
-            payment_method = session["payment_method"]
-            customer_id = session["customer"]
-            plan = session["metadata"].get("plan")
-            user_id = session["metadata"].get("user_id")
-            
-            # Check if user already has an active subscription before creating a new one
-            if user_id:
+        if event_type == "INITIAL_PURCHASE":
+            purchased_at_ms = event.get("purchased_at_ms")
+            if purchased_at_ms and user_id:
                 try:
-                    has_active_sub = await stripe_service.has_active_subscription(user_id)
-                    if has_active_sub:
-                        logger.warning(f"User {user_id} already has an active subscription, skipping subscription creation")
-                        return {
-                            "status": "success", 
-                            "message": "User already has an active subscription, setup intent processed but no new subscription created"
-                        }
+                    purchased_at = datetime.fromtimestamp(purchased_at_ms / 1000)
+                    trial_end_date = purchased_at + timedelta(days=6)
+                    await user_service.update_trial_end_date(user_id, str(trial_end_date))
+                    logger.info(f"Updated trial end date for user {user_id}")
                 except Exception as e:
-                    logger.warning(f"Failed to check subscription status for user {user_id}: {str(e)}")
-                    # Continue with subscription creation if check fails (fail open)
-            
-            # create subscription for user
-            await stripe_service.create_subscription(
-                customer_id=customer_id,
-                payment_method_id=payment_method,
-                user_id=user_id,
-                plan=plan
-            )
-            
-            logger.info(f"Subscription creation process initiated for user: {customer_id}")
-            return {
-                "status": "success",
-                "message": "Setup intent and subscription creation completed successfully",
-            }
+                    logger.error(f"Failed to update trial end date for user {user_id}: {str(e)}")
+            else:
+                logger.warning(f"Missing required fields in INITIAL_PURCHASE event: purchased_at_ms={purchased_at_ms}, user_id={user_id}")
 
-        elif event["type"] == "checkout.session.completed":
-            session = event["data"]["object"]
-            
-            # Mark trial as used for checkout flow (if user has trial)
-            metadata = session.get("metadata", {})
-            has_trial = metadata.get("has_trial", "true").lower() == "true"
-            user_id = metadata.get("user_id", None)
-            if user_id and has_trial:
-                try:
-                    await user_service.mark_trial_as_used(user_id)
-                    logger.info(f"Trial marked as used for user: {user_id}")
-                except Exception as e:
-                    logger.warning(f"Failed to mark trial as used for user {user_id}: {str(e)}")
-                    
-            
-            # Get customer email from session and send welcome email
-            try:
-                customer_email = session.get("customer_details", {}).get("email")
-                if customer_email:
-                    trial_days = 7 if has_trial else 0
-                    await mail_service.send_email(
-                        recipient=customer_email,
-                        subject="Welcome to Macro Meals Pro!",
-                        template_name="subscription_created.html",
-                        context={
-                            "subscription_type": "Macro Meals Pro",
-                            "trial_days": trial_days,
-                        }
-                    )
-            except Exception as e:
-                logger.warning(f"Failed to send welcome email for user {user_id}: {str(e)}")
-                
-            logger.info(f"Checkout completed for user: {user_id}")
-            return {"status": "success", "message": "Checkout completed successfully"}
-        
-        elif event["type"] == "customer.subscription.created":
-            
-            session = event["data"]["object"]
-            customer_id = session["customer"]
-            session_trial_end_date = session.get("trial_end")
-            current_period_start = datetime.fromtimestamp(session["items"]["data"][0]["current_period_start"]).isoformat()
-            current_period_end = datetime.fromtimestamp(session["items"]["data"][0]["current_period_end"]).isoformat()
+            return {"status": "success", "message": f"Event received: {event_type}"}
 
-            trial_end_date = datetime.fromtimestamp(session_trial_end_date).date() if session_trial_end_date else None
-            metadata = session.get("metadata", {})
+        logger.info(f"Unhandled event type: {event_type}")
+        return {"status": "success", "message": f"Event received: {event_type}"}
 
-            # Update the user's subscription record in the database
-            await stripe_service.update_stripe_user_subscription(
-                customer=customer_id,
-                subscription_data={"stripe_subscription_id": session.get("id"), "is_pro": True, "plan": metadata.get("plan"), "subscription_start": current_period_start, "subscription_end": current_period_end, "trial_end_date": trial_end_date.isoformat() if trial_end_date else None}
-                
-            )
-            logger.info(f"Subscription details updated for user: {customer_id}")
-
-            # only send a welcome email if this is the customer's only active subscription.
-            try:
-                active_subscriptions = await stripe_service.get_active_stripe_subscriptions(customer_id)
-                if len(active_subscriptions) > 1:
-                    logger.warning(
-                        f"Customer {customer_id} has {len(active_subscriptions)} active subscriptions. Skipping welcome email for new subscription {session.get('id')} to avoid duplicates."
-                    )
-                else:
-                    # Send the definitive welcome email from this event.
-                    customer_email = await stripe_service.get_customer_email(customer_id)
-                    if customer_email:
-                        has_trial = metadata.get("has_trial", "true").lower() == "true"
-                        trial_days = 7 if has_trial else 0
-                        
-                        await mail_service.send_email(
-                            recipient=customer_email,
-                            subject="Welcome to Macro Meals Pro!",
-                            template_name="subscription_created.html",
-                            context={
-                                "subscription_type": "Macro Meals Pro",
-                                "trial_days": trial_days,
-                            }
-                        )
-                        logger.info(f"Welcome email sent for new subscription to customer {customer_id}")
-            except Exception as e:
-                logger.warning(f"Failed to send welcome email for customer {customer_id} on subscription creation: {str(e)}")
-
-            return {
-                "status": "success",
-                "message": "Subscription created successfully",
-            }
-
-        elif event["type"] == "customer.subscription.deleted":
-            session = event["data"]["object"]
-            customer_id = session["customer"]
-            await stripe_service.update_stripe_user_subscription(
-                customer=customer_id,
-                subscription_data={"is_pro": False, "stripe_subscription_id": None, "subscription_start": None, "subscription_end": None},
-                
-            )
-            
-            # send cancellation email
-            try:
-                customer_email = await stripe_service.get_customer_email(customer_id)
-                if customer_email:
-                    await mail_service.send_email(
-                        recipient=customer_email,
-                        subject="Your Macro Meals Pro Subscription",
-                        template_name="subscription_cancelled.html",
-                        context={
-                            "subscription_type": "Macro Meals Pro",
-                            "cancellation_date": datetime.now().strftime("%B %d, %Y")
-                        }
-                    )
-            except Exception as e:
-                logger.warning(f"Failed to send cancellation email for customer {customer_id}: {str(e)}")
-            
-            return {
-                "status": "success",
-                "message": "Subscription cancelled successfully",
-            }
-
-        # update subscription start and end dates
-        elif event["type"] == "invoice.paid":
-            session = event["data"]["object"]
-            customer = session["customer"]
-            subscription_id = session["parent"]["subscription_details"]["subscription"]
-            subscription_start = datetime.fromtimestamp(
-                session["lines"]["data"][0]["period"]["start"]
-            ).isoformat()
-            subscription_end = datetime.fromtimestamp(
-                session["lines"]["data"][0]["period"]["end"]
-            ).isoformat()
-            subscription_data = {
-                "stripe_subscription_id": subscription_id,
-                "subscription_start": subscription_start,
-                "subscription_end": subscription_end,
-                "is_pro": True,
-    
-            }
-            await stripe_service.update_stripe_user_subscription(
-                customer=customer, subscription_data=subscription_data
-            )
-
-            try:
-                customer_email = await stripe_service.get_customer_email(customer_id)
-                if customer_email:
-                    await mail_service.send_email(
-                        recipient=customer_email,
-                        subject="Subscription Renewed",
-                        template_name="subscription_renewed.html",
-                        context={},
-                    )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to send renewal email for customer {customer}: {str(e)}"
-                )
-
-            return {"status": "success", "message": "Subscription renewed"}
-
-        elif event["type"] == "invoice.payment_failed":
-            invoice = event["data"]["object"]
-            customer_id = invoice["customer"]
-            subscription_id = invoice["parent"]["subscription_details"]["subscription"]
-            
-            logger.warning(f"Payment failed for customer {customer_id}, subscription {subscription_id}")
-            
-            try:
-                customer_email = await stripe_service.get_customer_email(customer_id)
-                if customer_email:
-                    await mail_service.send_email(
-                        recipient=customer_email,
-                        subject="Payment Failed - MacroMeals Subscription",
-                        template_name="payment_failed.html",
-                        context={
-                            "customer_email": customer_email,
-                            "invoice_url": invoice.get("hosted_invoice_url"),
-                            "amount_due": f"£{invoice['amount_due'] / 100:.2f}",
-                            "next_payment_attempt": invoice.get("next_payment_attempt")
-                        }
-                    )
-                    logger.info(f"Payment failure notification sent to {customer_email}")
-            except Exception as e:
-                logger.warning(f"Failed to send payment failure email for customer {customer_id}: {str(e)}")
-            
-            return {"status": "success", "message": "Payment failure processed"}
-
-        elif event["type"] == "customer.subscription.updated":
-            subscription = event["data"]["object"]
-            customer_id = subscription["customer"]
-            subscription_status = subscription["status"]
-            
-            logger.info(f"Subscription status updated for customer {customer_id}: {subscription_status}")
-            
-            if subscription_status == "past_due":
-                logger.warning(f"Subscription past due for customer {customer_id}")
-                
-                try:
-                    customer_email = await stripe_service.get_customer_email(customer_id)
-                    if customer_email:
-                        await mail_service.send_email(
-                            recipient=customer_email,
-                            subject="Subscription Past Due - MacroMeals",
-                            template_name="subscription_past_due.html",
-                            context={
-                                "customer_email": customer_email,
-                                "subscription_id": subscription["id"]
-                            }
-                        )
-                        logger.info(f"Past due notification sent to {customer_email}")
-                except Exception as e:
-                    logger.warning(f"Failed to send past due email for customer {customer_id}: {str(e)}")
-                
-            return {"status": "success", "message": f"Subscription status updated: {subscription_status}"}
-
-        logger.info(f"Unhandled event type: {event['type']}")
-        return {"status": "success", "message": f"Event received: {event['type']}"}
-
-    except StripeServiceError as e:
-        logger.error(f"Stripe webhook error for event {event_id if 'event_id' in locals() else 'unknown'}: {str(e)}")
-        # Still return 200 to prevent Stripe retries for permanent failures
-        return {"status": "error", "message": f"Webhook processing error: {str(e)}"}
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in webhook payload: {str(e)}")
+        return {"status": "error", "message": "Invalid JSON payload"}
     except Exception as e:
-        logger.error(f"Unexpected error processing webhook event {event_id if 'event_id' in locals() else 'unknown'}: {str(e)}")
+        logger.error(
+            f"Unexpected error processing webhook - event_id: {event_id}, event_type: {event_type}, user_id: {user_id}, error: {str(e)}"
+        )
         # Return 200 to prevent unnecessary retries for unexpected errors
         return {"status": "error", "message": "An unexpected error occurred"}
 

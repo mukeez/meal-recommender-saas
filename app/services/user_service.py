@@ -1563,4 +1563,61 @@ class UserProfileService:
             )
 
 
+    async def update_trial_end_date(self, user_id: str, trial_end_date: str) -> None:
+        """Update trial end date for the user.
+
+        Args:
+            user_id: Supabase user ID
+            trial_end_date: Trial end date to be updated
+
+        Raises:
+            HTTPException: If there is an error updating the trial end date
+        """
+        logger.info(f"Updating trial end date for user: {user_id}")
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.patch(
+                    f"{self.base_url}/rest/v1/user_profiles",
+                    headers={
+                        "apikey": self.api_key,
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                        "Prefer": "return=representation",
+                    },
+                    params={"id": f"eq.{user_id}"},
+                    json={"trial_end_date": trial_end_date},
+                )
+
+                if response.status_code not in (200, 201, 204):
+                    error_detail = "Failed to update trial end date"
+                    try:
+                        error_data = response.json()
+                        if "message" in error_data:
+                            error_detail = error_data["message"]
+                    except Exception:
+                        pass
+
+                    logger.error(f"Updating trial end date failed: {error_detail}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to update trial end date",
+                    )
+
+                logger.info(f"Trial end date updated successfully for user: {user_id}")
+
+        except httpx.RequestError as e:
+            logger.error(f"Request error updating trial end date: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Error communicating with database",
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error updating trial end date {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to update trial end date",
+            )
+
+
 user_service = UserProfileService()
