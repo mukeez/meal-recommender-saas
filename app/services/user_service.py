@@ -1458,7 +1458,6 @@ class UserProfileService:
                 f"Data deletion completed for user {user_id}. Results: {deletion_results}"
             )
 
-            # Check if auth deletion succeeded - this is the critical step for v2
             auth_result = deletion_results.get("auth_user")
             if auth_result in ["failed", "error"]:
                 logger.error(
@@ -1474,7 +1473,6 @@ class UserProfileService:
                     f"• Full Results: {deletion_results}",
                     title="🚨 Critical Auth Deletion Failure",
                 )
-                # Raise an exception to indicate failure
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Failed to delete user authentication. Please contact support.",
