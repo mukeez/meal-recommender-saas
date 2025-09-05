@@ -1397,12 +1397,7 @@ class UserProfileService:
     async def delete_user_account(self, user_id: str) -> None:
         """Permanently delete all user data from all tables.
 
-        This method deletes user data from all related tables:
-        - user_profiles
-        - user_preferences
-        - meal_logs
-        - notifications
-        - And any other user-related data
+        This method deletes user data from all related tables
 
         Args:
             user_id: The user ID to delete all data for
@@ -1419,66 +1414,9 @@ class UserProfileService:
                     detail="Service configuration error",
                 )
 
-            # List of tables to delete user data from
-            tables_to_delete = [
-                "meal_logs",
-                "notifications",
-                "user_preferences",
-                "user_profiles",
-            ]
-
             deletion_results = {}
 
             async with httpx.AsyncClient() as client:
-                for table in tables_to_delete:
-                    try:
-                        logger.info(f"Deleting user data from table: {table}")
-
-                        if table == "user_profiles":
-                            params = {"id": f"eq.{user_id}"}
-                        else:
-                            params = {"user_id": f"eq.{user_id}"}
-
-                        response = await client.delete(
-                            f"{self.base_url}/rest/v1/{table}",
-                            headers={
-                                "apikey": self.api_key,
-                                "Authorization": f"Bearer {self.api_key}",
-                                "Content-Type": "application/json",
-                                "Prefer": "return=representation",
-                            },
-                            params=params,
-                        )
-
-                        if response.status_code in (200, 204):
-                            deleted_records = (
-                                response.json() if response.content else []
-                            )
-                            record_count = (
-                                len(deleted_records)
-                                if isinstance(deleted_records, list)
-                                else 0
-                            )
-                            deletion_results[table] = record_count
-                            logger.info(
-                                f"Successfully deleted {record_count} records from {table}"
-                            )
-                        elif response.status_code == 404:
-                            # Table might not exist or no records found
-                            deletion_results[table] = 0
-                            logger.info(
-                                f"No records found in {table} for user {user_id}"
-                            )
-                        else:
-                            logger.error(
-                                f"Failed to delete from {table}: {response.status_code} - {response.text}"
-                            )
-                            deletion_results[table] = "failed"
-
-                    except Exception as e:
-                        logger.error(f"Error deleting from table {table}: {str(e)}")
-                        deletion_results[table] = "error"
-
                 # Delete user from Supabase Auth (this removes login capability)
                 try:
                     logger.info(
@@ -1520,27 +1458,26 @@ class UserProfileService:
                 f"Data deletion completed for user {user_id}. Results: {deletion_results}"
             )
 
-            # Check if critical deletions succeeded
-            if deletion_results.get("user_profiles") == "failed":
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to delete user profile data",
-                )
-
+            # Check if auth deletion succeeded - this is the critical step for v2
             auth_result = deletion_results.get("auth_user")
             if auth_result in ["failed", "error"]:
                 logger.error(
-                    f"CRITICAL WARNING: Auth user deletion failed for {user_id}. User may still be able to log in!"
+                    f"CRITICAL: Auth user deletion failed for {user_id}. User may still be able to log in!"
                 )
                 send_slack_alert(
-                    message=f"🚨 CRITICAL: Failed to delete user profile data during account deletion!\n"
+                    message=f"🚨 CRITICAL: Failed to delete auth user during account deletion!\n"
                     f"• User ID: {user_id}\n"
-                    f"• Failed Table: user_profiles\n"
-                    f"• Impact: User data remains in database despite deletion request\n"
-                    f"• Action Required: Manual profile data cleanup needed\n"
+                    f"• Auth Result: {auth_result}\n"
+                    f"• Impact: User may still be able to log in\n"
+                    f"• Action Required: Manual auth user cleanup needed\n"
                     f"• Time: {datetime.now().isoformat()}\n"
                     f"• Full Results: {deletion_results}",
-                    title="🚨 Critical Profile Deletion Failure",
+                    title="🚨 Critical Auth Deletion Failure",
+                )
+                # Raise an exception to indicate failure
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to delete user authentication. Please contact support.",
                 )
             elif auth_result in ["deleted", "not_found"]:
                 logger.info(
