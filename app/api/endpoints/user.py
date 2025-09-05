@@ -28,7 +28,6 @@ from app.models.user import (
     HeightUnitPreference,
     WeightUnitPreference,
     UserDeletionResponse,
-    UserDeletionDetails,
 )
 from app.services.user_service import user_service
 from app.services.stripe_service import stripe_service, StripeServiceError
@@ -363,31 +362,10 @@ async def update_user_preferences(
     response_model=UserDeletionResponse,
 )
 async def delete_user_account(user=Depends(auth_guard)) -> UserDeletionResponse:
-    """Delete the current user's account and all associated data.
-
-    This endpoint will:
-    1. Cancel all active Stripe subscriptions
-    2. Delete all user data from the database (profile, preferences, meals, etc.)
-    3. Send a confirmation email
-    4. Log the deletion for audit purposes
-
-    WARNING: This action is irreversible and will permanently delete all user data.
-
-    Args:
-        user: The authenticated user (injected by the auth_guard dependency)
-
-    Returns:
-        A confirmation message
-
-    Raises:
-        HTTPException: If the deletion process fails
-    """
     try:
         user_id = user.get("id")
-        
         logger.info(f"Account deletion requested for user: {user_id}")
-        
-        
+
         try:
             user_profile = await user_service.get_user_profile(user_id)
             user_email = user_profile.email
@@ -397,95 +375,43 @@ async def delete_user_account(user=Depends(auth_guard)) -> UserDeletionResponse:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to retrieve user profile. Please contact support."
             )
-            
-        # Cancel all active Stripe subscriptions and delete customer
-        subscription_cancelled = False
-        customer_deleted = False
-        try:
-            # Get customer ID first
-            customer_id = await stripe_service.get_stripe_customer(user_id)
-            print(f"Stripe customer ID for user {user_id}: {customer_id}")
-            if customer_id:
-                logger.info(f"Found Stripe customer {customer_id} for user: {user_id}")
-                
-                # Get all active subscriptions for this customer
-                active_subscriptions = await stripe_service.get_active_stripe_subscriptions(customer_id)
-                if active_subscriptions:
-                    logger.info(f"Found {len(active_subscriptions)} active subscription(s) for user: {user_id}")
-                    
-                    # Cancel each subscription individually
-                    for subscription in active_subscriptions:
-                        try:
-                            await stripe_service.cancel_user_subscription(
-                                subscription_id=subscription.id,
-                                cancel_at_period_end=False  # Cancel immediately for account deletion
-                            )
-                            logger.info(f"Successfully cancelled subscription {subscription.id} for user: {user_id}")
-                            subscription_cancelled = True
-                        except StripeServiceError as e:
-                            logger.error(f"Failed to cancel subscription {subscription.id} for user {user_id}: {str(e)}")
-                else:
-                    logger.info(f"No active subscriptions found for user: {user_id}")
-                
-                # Anonymize the Stripe customer instead of deleting
-                logger.info(f"Anonymizing Stripe customer for user: {user_id}")
-                await stripe_service.anonymize_stripe_customer(customer_id, user_id, user_email)
-                customer_deleted = True  # Still report as "handled" in response
-                logger.info(f"Successfully anonymized Stripe customer for user: {user_id}")
-            else:
-                logger.info(f"No Stripe customer found for user: {user_id}")
-                
-        except StripeServiceError as e:
-            logger.error(f"Failed to cancel subscriptions or delete customer for user {user_id}: {str(e)}")
-            
-        except Exception as e:
-            logger.error(f"Unexpected error cancelling subscriptions or deleting customer for user {user_id}: {str(e)}")
-            
+
         # Delete all user data from database
         try:
             await user_service.delete_user_account(user_id)
             logger.info(f"Successfully deleted all data for user: {user_id}")
+
+            try:
+                await mail_service.send_email(
+                    recipient=user_email,
+                    subject="Account Deletion Confirmation - Macro Meals",
+                    template_name="account_deleted.html",
+                    context={
+                        "user_email": user_email,
+                        "deletion_date": datetime.now().strftime("%B %d, %Y"),
+                        "subscription_cancelled": True
+                    }
+                )
+                logger.info(f"Sent account deletion confirmation email to: {user_email}")
+            except Exception as e:
+                logger.warning(f"Failed to send deletion confirmation email to {user_email}: {str(e)}")
+
+            return UserDeletionResponse(
+                message="Your account and all associated data have been permanently deleted from all systems.",
+                deletion_date=datetime.now().isoformat()
+            )
+
         except Exception as e:
             logger.error(f"Failed to delete user data for user {user_id}: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to delete user data. Please contact support."
             )
-            
-        # Send confirmation email
-        try:
-            await mail_service.send_email(
-                recipient=user_email,
-                subject="Account Deletion Confirmation - Macro Meals",
-                template_name="account_deleted.html",
-                context={
-                    "user_email": user_email,
-                    "deletion_date": datetime.now().strftime("%B %d, %Y"),
-                    "subscription_cancelled": subscription_cancelled
-                }
-            )
-            logger.info(f"Sent account deletion confirmation email to: {user_email}")
-        except Exception as e:
-            logger.warning(f"Failed to send deletion confirmation email to {user_email}: {str(e)}")
-                
-        logger.info(f"Account deletion completed successfully for user: {user_id}, email: {user_email}")
-        
-        return {
-            "message": "Your account and all associated data have been permanently deleted from all systems.",
-            "details": {
-                "profile_data_deleted": True,
-                "auth_access_removed": True,
-                "subscription_cancelled": subscription_cancelled,
-                "customer_deleted": customer_deleted,
-                "login_disabled": True
-            },
-            "deletion_date": datetime.now().isoformat()
-        }
-        
+    
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error during account deletion for user {user_id if 'user_id' in locals() else 'unknown'}: {str(e)}")
+        logger.error(f"Unexpected error during account deletion for user {user.get('id') if user else 'unknown'}: {str(e)}")
         traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
