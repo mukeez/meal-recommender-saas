@@ -82,6 +82,10 @@ class Settings:
         # Helicone Settings
         self.HELICONE_API_KEY = os.getenv("HELICONE_API_KEY")
 
+        # Web Search API Settings
+        self.SEARCH_API_KEY = os.getenv("SEARCH_API_KEY")
+        # Note: This is optional - if not set, web search fallback will be skipped
+
 
 
 

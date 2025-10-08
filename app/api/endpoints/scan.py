@@ -21,6 +21,8 @@ from app.core.config import settings
 from app.services.product_service import product_service
 from app.services.openfoodfacts_service import openfoodfacts_service
 from app.services.scan_llm_service import scan_llm_service
+from app.services.web_search_service import web_search_service
+from app.services.web_search_llm_service import web_search_llm_service
 from app.services.base_llm_service import LLMServiceError
 from app.utils.constants import parse_gram_quantity, normalize_nutrition_to_per_gram, calculate_nutrition_for_amount
 import traceback
@@ -182,12 +184,17 @@ class ScanToMealResponse(BaseModel):
     response_model=ScanResponse,
     status_code=status.HTTP_200_OK,
     summary="Scan barcode for nutritional information",
-    description="Scan a UPC barcode and retrieve nutritional information using Nutritionix API.",
+    description="Scan a UPC barcode and retrieve nutritional information from database, OpenFoodFacts, or web search as fallback.",
 )
 async def scan_barcode(
     barcode: str = Body(..., embed=True), user=Depends(auth_guard)
 ) -> ScanResponse:
     """Scan a UPC barcode to get nutritional information.
+
+    This endpoint searches for product information in the following order:
+    1. Local database
+    2. OpenFoodFacts API  
+    3. Web search + LLM extraction (fallback)
 
     Args:
         barcode: UPC barcode number
@@ -206,38 +213,80 @@ async def scan_barcode(
                 detail="Invalid barcode format. Barcode must contain only digits.",
             )
 
+        user_id = user.get("id")
+        user_email = user.get("email")
+
+        # search database
+        logger.info(f"Searching local database for barcode: {barcode}")
         product = await product_service.scan_barcode(barcode=barcode)
-        if not product:
-            # get product info from openfoodfacts
-            product = await openfoodfacts_service.scan_barcode(barcode=barcode)
-            # insert product into database
-            await product_service.log_product(product)
         
-            merged_nutrition = product.nutrition_facts or product.gpt_nutrition_facts
-            if not merged_nutrition:
-                raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No nutrition information available for this product"
-            )
+        if product:
+            logger.info(f"Found product in local database for barcode: {barcode}")
+            merged_nutrition = product[0].nutrition_facts or product[0].gpt_nutrition_facts
+            if merged_nutrition:
+                food_item = normalize_food_item_data(merged_nutrition.model_dump())
+                logger.info(f"Successfully scanned barcode: {barcode} - Found product: {food_item.name}")
+                return ScanResponse(items=[food_item])
 
-            food_item = normalize_food_item_data(merged_nutrition.model_dump())
-            return ScanResponse(items=[food_item])
+        # OpenFoodFacts API
+        logger.info(f"Searching OpenFoodFacts for barcode: {barcode}")
+        try:
+            product = await openfoodfacts_service.scan_barcode(barcode=barcode)
             
+            # Store the product in database for future lookups
+            await product_service.log_product(product)
+            logger.info(f"Found and stored product from OpenFoodFacts for barcode: {barcode}")
+            
+            merged_nutrition = product.nutrition_facts or product.gpt_nutrition_facts
+            if merged_nutrition:
+                food_item = normalize_food_item_data(merged_nutrition.model_dump())
+                return ScanResponse(items=[food_item])
+                
+        except Exception as e:
+            logger.warning(f"OpenFoodFacts lookup failed for barcode {barcode}: {str(e)}")
 
-        # return verified nutrition facts with normalization
-        merged_nutrition = product[0].nutrition_facts or product[0].gpt_nutrition_facts
-        if not merged_nutrition:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No nutrition information available for this product"
-            )
-        food_item = normalize_food_item_data(merged_nutrition.model_dump())
-        logger.info(f"Successfully scanned barcode: {barcode} - Found product: {food_item.name}")
-        return ScanResponse(items=[food_item])
+        # Web search fallback
+        logger.info(f"Trying web search fallback for barcode: {barcode}")
+        try:
+            # Search the web for product information
+            search_results = await web_search_service.search_product_by_barcode(barcode)
+            
+            if search_results:
+                logger.info(f"Found {len(search_results)} web search results for barcode: {barcode}")
+                
+                # Use LLM to extract product information from search results
+                product = await web_search_llm_service.extract_product_from_search_results(
+                    barcode=barcode,
+                    search_results=search_results,
+                    user_id=user_email
+                )
+                
+                # Store the extracted product in database
+                await product_service.log_product(product)
+                logger.info(f"Successfully extracted and stored product from web search for barcode: {barcode}")
+                
+                # Return the nutrition information
+                merged_nutrition = product.nutrition_facts or product.gpt_nutrition_facts
+                if merged_nutrition:
+                    food_item = normalize_food_item_data(merged_nutrition.model_dump())
+                    return ScanResponse(items=[food_item])
+            else:
+                logger.info(f"No web search results found for barcode: {barcode}")
+                
+        except LLMServiceError as e:
+            logger.error(f"LLM extraction failed for barcode {barcode}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Web search fallback failed for barcode {barcode}: {str(e)}")
+
+        # If all methods fail, return 404
+        logger.warning(f"No product information found for barcode: {barcode} after trying all methods")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Product with barcode {barcode} not found in database, OpenFoodFacts, or web search. Please try manually logging the product information."
+        )
 
     except HTTPException:
         # Re-raise HTTP exceptions without modification
-        traceback.print_exc()
         raise
     except Exception as e:
         logger.error(f"Unexpected error scanning barcode: {str(e)}")
