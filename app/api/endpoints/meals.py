@@ -41,15 +41,23 @@ from app.services.meal_service import meal_service
 from app.services.meal_llm_service import meal_llm_service
 from app.services.recipe_llm_service import recipe_llm_service
 from app.services.restaurant_service import restaurant_service
+from app.services.google_places_service import google_places_service, GooglePlacesAPIError
+from app.services.cache_service import cache_service
+from app.services.restaurant_meal_matching_service import restaurant_meal_matching_service
+from app.services.user_service import user_service
 from app.utils.file_upload import validate_image_file
 
 
 import traceback
+import asyncio
 
 
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
+
+# Minimum match score threshold
+MIN_MATCH_SCORE = 50
 
 
 @router.post(
@@ -810,4 +818,292 @@ async def log_meal_feedback(feedback: MealFeedbackRequest, user=Depends(auth_gua
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error logging meal feedback",
+        )
+
+
+@router.get(
+    "/map-pins",
+    response_model=dict,
+    status_code=status.HTTP_200_OK,
+    summary="Get restaurant map pins with meal recommendations",
+    description="Returns nearby restaurants as map pins with top meal recommendations. Uses Google Places API with caching. User preferences (macros, dietary restrictions) are automatically fetched from user profile.",
+)
+async def get_map_pins(
+    latitude: float,
+    longitude: float,
+    radius_km: float = 5.0,
+    query: Optional[str] = None,
+    limit: int = 10,
+    user=Depends(auth_guard)
+):
+    """Get nearby restaurants as map pins with meal recommendations.
+    
+    This endpoint:
+    1. Fetches user's macro goals and dietary preferences from profile
+    2. Checks Redis cache first (24h TTL)
+    3. Queries Google Places Nearby Search
+    4. Gets place details for each restaurant
+    5. Generates meal recommendations using LLM based on user's preferences
+    6. Filters out restaurants with match score < 50%
+    7. Caches the response
+    
+    Args:
+        latitude: Latitude coordinate (-90 to 90)
+        longitude: Longitude coordinate (-180 to 180)
+        radius_km: Search radius in kilometers (0.1 to 50, default: 5.0)
+        query: Search query (cuisine type, restaurant name)
+        limit: Maximum number of results (1-200, default: 50)
+        user: Authenticated user
+        
+    Returns:
+        MapPinsResponse with restaurant pins based on user's preferences
+        
+    Raises:
+        HTTPException: On validation or processing errors
+    """
+    try:
+        user_id = user.get("id")
+        user_email = user.get("email")
+        
+        # Validate parameters
+        if not (-90 <= latitude <= 90):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Latitude must be between -90 and 90"
+            )
+        
+        if not (-180 <= longitude <= 180):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Longitude must be between -180 and 180"
+            )
+        
+        if not (0.1 <= radius_km <= 50):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Radius must be between 0.1 and 50 km"
+            )
+        
+        if not (1 <= limit <= 200):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Limit must be between 1 and 200"
+            )
+        
+        # Fetch user preferences (macro goals and dietary restrictions)
+        logger.info(f"Fetching preferences for user {user_id}")
+        user_prefs = await user_service.get_user_preferences(user_id)
+        
+        # Extract dietary restrictions and preferences
+        dietary_restrictions_list = user_prefs.get("dietary_restrictions", [])
+        dietary_preference = user_prefs.get("dietary_preference")
+        
+        # Extract macro targets from user's macro goals
+        macro_targets = {}
+        macro_goals = user_prefs.get("macro_goals", {})
+        if macro_goals:
+            if macro_goals.get("calories"):
+                macro_targets["calories"] = macro_goals.get("calories")
+            if macro_goals.get("protein"):
+                macro_targets["protein"] = macro_goals.get("protein")
+            if macro_goals.get("carbs"):
+                macro_targets["carbs"] = macro_goals.get("carbs")
+            if macro_goals.get("fat"):
+                macro_targets["fat"] = macro_goals.get("fat")
+        
+        logger.info(f"User preferences - Macro targets: {macro_targets}, Dietary restrictions: {dietary_restrictions_list}")
+        
+        # Prepare filter dict for caching (include user preferences)
+        filters = {
+            "query": query,
+            "calories": macro_targets.get("calories"),
+            "protein": macro_targets.get("protein"),
+            "carbs": macro_targets.get("carbs"),
+            "fat": macro_targets.get("fat"),
+            "dietary_restrictions": dietary_restrictions_list,
+            "dietary_preference": dietary_preference,
+            "limit": limit,
+            "user_id": user_id  # Include user_id for per-user caching
+        }
+        
+        # Check cache
+        cache_key = cache_service.generate_cache_key(latitude, longitude, radius_km, filters)
+        cached_response = await cache_service.get_cached_map_pins(cache_key)
+        
+        if cached_response:
+            logger.info(f"Returning cached map pins for user {user_id}")
+            cached_response["cached"] = True
+            return cached_response
+        
+        logger.info(f"Searching Google Places: lat={latitude}, lng={longitude}, radius={radius_km}km")
+        
+        # Query Google Places
+        try:
+            places = await google_places_service.nearby_search(
+                latitude=latitude,
+                longitude=longitude,
+                radius=int(radius_km * 1000),  # Convert km to meters
+                keyword=query,
+                place_type="restaurant"
+            )
+        except GooglePlacesAPIError as e:
+            logger.error(f"Google Places API error: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Location service temporarily unavailable"
+            )
+        
+        if not places:
+            # Return empty response
+            empty_response = {
+                "pins": [],
+                "total_count": 0,
+                "search_center": {"lat": latitude, "lng": longitude},
+                "search_radius_km": radius_km,
+                "filters_applied": filters,
+                "cached": False
+            }
+            return empty_response
+        
+        # Limit results
+        places = places[:limit]
+        
+        logger.info(f"Processing {len(places)} restaurants")
+        
+        # Process restaurants in parallel
+        async def process_restaurant(place):
+            try:
+                place_id = place.get("place_id")
+                
+                # Get place details
+                details = await google_places_service.get_place_details(place_id)
+                
+                # Extract menu URL
+                menu_url = google_places_service.extract_menu_url(details)
+                
+                # Prepare restaurant data
+                geometry = details.get("geometry", {}).get("location", {})
+                restaurant_data = {
+                    "google_place_id": place_id,
+                    "name": details.get("name", "Unknown"),
+                    "latitude": geometry.get("lat"),
+                    "longitude": geometry.get("lng"),
+                    "address": details.get("formatted_address", ""),
+                    "rating": details.get("rating"),
+                    "price_level": details.get("price_level"),
+                    "place_types": details.get("types", []),
+                    "website": details.get("website"),
+                    "phone": details.get("formatted_phone_number"),
+                    "menu_url": menu_url,
+                    "photo_references": [photo.get("photo_reference") for photo in details.get("photos", [])[:3]]
+                }
+                
+                # Generate meal recommendation using LLM with user's preferences
+                user_prefs_with_id = {
+                    "user_id": user_email,
+                    "dietary_restrictions": dietary_restrictions_list,
+                    "dietary_preference": dietary_preference
+                }
+                
+                meal = await restaurant_meal_matching_service.get_top_meal_for_restaurant(
+                    restaurant=restaurant_data,
+                    user_preferences=user_prefs_with_id,
+                    macro_targets=macro_targets if macro_targets else None
+                )
+                
+                # Check match score threshold
+                match_score = meal.get("match_score", 0)
+                
+                if match_score < MIN_MATCH_SCORE:
+                    logger.info(f"Filtering out {restaurant_data['name']} (match score: {match_score})")
+                    return None
+                
+                # Build restaurant pin
+                # Calculate distance (simple haversine)
+                from math import radians, cos, sin, asin, sqrt
+                
+                lat1, lon1 = radians(latitude), radians(longitude)
+                lat2, lon2 = radians(restaurant_data["latitude"]), radians(restaurant_data["longitude"])
+                
+                dlat = lat2 - lat1
+                dlon = lon2 - lon1
+                a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+                c = 2 * asin(sqrt(a))
+                distance_km = 6371 * c  # Earth radius in km
+                
+                # Extract cuisine types (LLM infers from place_types)
+                cuisine_types_extracted = []
+                for place_type in restaurant_data["place_types"]:
+                    if "_restaurant" in place_type:
+                        cuisine = place_type.replace("_restaurant", "").replace("_", " ").title()
+                        cuisine_types_extracted.append(cuisine)
+                
+                pin = {
+                    "id": place_id,  # Use Google Place ID as temporary ID
+                    "google_place_id": place_id,
+                    "name": restaurant_data["name"],
+                    "latitude": restaurant_data["latitude"],
+                    "longitude": restaurant_data["longitude"],
+                    "address": restaurant_data["address"],
+                    "top_meal": {
+                        "name": meal.get("name"),
+                        "match_score": match_score,
+                        "macros": meal.get("macros"),
+                        "description": meal.get("description"),
+                        "estimated": meal.get("estimated", True)
+                    },
+                    "rating": restaurant_data["rating"],
+                    "price_level": restaurant_data["price_level"],
+                    "distance_km": round(distance_km, 2),
+                    "cuisine_types": cuisine_types_extracted,
+                    "photo_url": None,  # For future use
+                    "menu_url": menu_url
+                }
+                
+                logger.info(f"Processed: {restaurant_data['name']} (match: {match_score}%)")
+                
+                return pin
+                
+            except Exception as e:
+                logger.error(f"Error processing restaurant: {e}")
+                return None
+        
+        # Process all restaurants in parallel
+        tasks = [process_restaurant(place) for place in places]
+        pins = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Filter out None and exceptions
+        valid_pins = [pin for pin in pins if pin is not None and not isinstance(pin, Exception)]
+        
+        logger.info(f"Generated {len(valid_pins)} pins with match score >= {MIN_MATCH_SCORE}%")
+        
+        # Build response
+        response = {
+            "pins": valid_pins,
+            "total_count": len(valid_pins),
+            "search_center": {"lat": latitude, "lng": longitude},
+            "search_radius_km": radius_km,
+            "filters_applied": {
+                "query": query,
+                "macro_targets": macro_targets,
+                "dietary_restrictions": dietary_restrictions_list,
+                "dietary_preference": dietary_preference,
+                "limit": limit
+            },
+            "cached": False
+        }
+        
+        # Cache response
+        await cache_service.set_cached_map_pins(cache_key, response)
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in map pins endpoint: {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error loading restaurant map data"
         )

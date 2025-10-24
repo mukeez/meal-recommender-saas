@@ -3,9 +3,12 @@
 This module manages environment variables and application settings.
 """
 import os
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 class Settings:
@@ -81,6 +84,19 @@ class Settings:
 
         # Helicone Settings
         self.HELICONE_API_KEY = os.getenv("HELICONE_API_KEY")
+
+        # Web Search API Settings
+        self.SEARCH_API_KEY = os.getenv("SEARCH_API_KEY")
+        # Note: This is optional - if not set, web search fallback will be skipped
+
+        # Google Places API Settings
+        self.GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
+        if not self.GOOGLE_PLACES_API_KEY:
+            logger.warning("GOOGLE_PLACES_API_KEY not set - map features will be unavailable")
+        
+        # Google Places Cache Settings
+        self.GOOGLE_PLACES_CACHE_TTL_HOURS = int(os.getenv("GOOGLE_PLACES_CACHE_TTL_HOURS", "24"))
+        self.GOOGLE_PLACES_CACHE_ENABLED = os.getenv("GOOGLE_PLACES_CACHE_ENABLED", "true").lower() == "true"
 
         # Web Search API Settings
         self.SEARCH_API_KEY = os.getenv("SEARCH_API_KEY")

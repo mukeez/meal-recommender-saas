@@ -6,6 +6,54 @@ endpoints for food image analysis and barcode scanning.
 
 from typing import List, Optional
 from pydantic import BaseModel, Field
+from enum import Enum
+
+
+class CuisineType(str, Enum):
+    """Standardized cuisine types for filtering."""
+    ITALIAN = "italian"
+    CHINESE = "chinese"
+    MEXICAN = "mexican"
+    JAPANESE = "japanese"
+    INDIAN = "indian"
+    AFRICAN = "african"
+    GHANAIAN = "ghanaian"
+    NIGERIAN = "nigerian"
+    ETHIOPIAN = "ethiopian"
+    AMERICAN = "american"
+    FRENCH = "french"
+    THAI = "thai"
+    MEDITERRANEAN = "mediterranean"
+    MIDDLE_EASTERN = "middle_eastern"
+    KOREAN = "korean"
+    VIETNAMESE = "vietnamese"
+    GREEK = "greek"
+    SPANISH = "spanish"
+    CARIBBEAN = "caribbean"
+    BRAZILIAN = "brazilian"
+    TURKISH = "turkish"
+    LEBANESE = "lebanese"
+    PERSIAN = "persian"
+    MOROCCAN = "moroccan"
+    PAKISTANI = "pakistani"
+
+
+class DietaryRestriction(str, Enum):
+    """Standardized dietary restrictions."""
+    VEGAN = "vegan"
+    VEGETARIAN = "vegetarian"
+    GLUTEN_FREE = "gluten_free"
+    DAIRY_FREE = "dairy_free"
+    NUT_FREE = "nut_free"
+    HALAL = "halal"
+    KOSHER = "kosher"
+    PESCATARIAN = "pescatarian"
+    KETO = "keto"
+    PALEO = "paleo"
+    LOW_CARB = "low_carb"
+    SOY_FREE = "soy_free"
+    EGG_FREE = "egg_free"
+    SHELLFISH_FREE = "shellfish_free"
 
 
 class FoodItem(BaseModel):
@@ -154,3 +202,69 @@ class ScanToMealResponse(BaseModel):
     notes: Optional[str] = None
     favorite: bool = False
     logging_mode: str = "scanned"
+
+
+class TopMealPreview(BaseModel):
+    """Preview of top recommended meal at a restaurant."""
+    name: str = Field(..., description="Meal name")
+    match_score: int = Field(..., ge=0, le=100, description="Match percentage (0-100)")
+    macros: dict = Field(..., description="Estimated macros (calories, protein, carbs, fat)")
+    description: Optional[str] = Field(None, max_length=150, description="Brief meal description")
+    estimated: bool = Field(True, description="Whether macros are LLM-estimated")
+
+
+class RestaurantPin(BaseModel):
+    """Restaurant data optimized for map pin display."""
+    id: str = Field(..., description="Database UUID")
+    google_place_id: str = Field(..., description="Google Places ID")
+    name: str = Field(..., description="Restaurant name")
+    latitude: float = Field(..., description="Latitude coordinate")
+    longitude: float = Field(..., description="Longitude coordinate")
+    address: str = Field(..., description="Full address")
+    
+    # Top meal preview (None if match score < 50%)
+    top_meal: Optional[TopMealPreview] = Field(None, description="Top recommended meal")
+    
+    # Visual indicators
+    rating: Optional[float] = Field(None, ge=0, le=5, description="Google rating")
+    price_level: Optional[int] = Field(None, ge=1, le=4, description="Price level (1=cheap, 4=expensive)")
+    distance_km: Optional[float] = Field(None, description="Distance from search center")
+    
+    # Categorization
+    cuisine_types: List[str] = Field(default_factory=list, description="Cuisine categories")
+    photo_url: Optional[str] = Field(None, description="Primary photo URL (for future use)")
+    menu_url: Optional[str] = Field(None, description="Menu URL if available")
+
+
+class MapPinsRequest(BaseModel):
+    """Request parameters for map pins endpoint."""
+    latitude: float = Field(..., ge=-90, le=90, description="Latitude coordinate")
+    longitude: float = Field(..., ge=-180, le=180, description="Longitude coordinate")
+    
+    # Search parameters
+    radius_km: float = Field(default=5.0, ge=0.1, le=50, description="Search radius in kilometers")
+    query: Optional[str] = Field(None, max_length=100, description="Search query (cuisine type, restaurant name)")
+    
+    # Macro targets for match scoring
+    calories: Optional[float] = Field(None, ge=0, description="Target calories")
+    protein: Optional[float] = Field(None, ge=0, description="Target protein (grams)")
+    carbs: Optional[float] = Field(None, ge=0, description="Target carbs (grams)")
+    fat: Optional[float] = Field(None, ge=0, description="Target fat (grams)")
+    
+    # Filters
+    dietary_restrictions: Optional[List[str]] = Field(None, description="Dietary restrictions")
+    dietary_preference: Optional[str] = Field(None, description="Dietary preference (e.g., vegetarian)")
+    cuisine_types: Optional[List[str]] = Field(None, description="Filter by cuisine types")
+    
+    # Pagination
+    limit: int = Field(default=50, ge=1, le=200, description="Maximum number of results")
+
+
+class MapPinsResponse(BaseModel):
+    """Response containing restaurant pins for map display."""
+    pins: List[RestaurantPin] = Field(default_factory=list, description="Restaurant pins")
+    total_count: int = Field(..., description="Total restaurants found")
+    search_center: dict = Field(..., description="Search center coordinates {lat, lng}")
+    search_radius_km: float = Field(..., description="Search radius used")
+    filters_applied: dict = Field(default_factory=dict, description="Summary of filters applied")
+    cached: bool = Field(False, description="Whether response was from cache")

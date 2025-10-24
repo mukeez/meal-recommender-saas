@@ -18,6 +18,8 @@ spec:
       labels:
         run: macromeals-api-dev
     spec:  
+      imagePullSecrets:
+        - name: ecr-regcred
       containers:
         - name: macromeals-api
           image: 390844748928.dkr.ecr.eu-west-2.amazonaws.com/dev/macromeals-api:latest
@@ -33,11 +35,10 @@ spec:
           ports:
             - containerPort: 8000
           
-        
-        # - name: redis
-        #   image: redis:8.0-M04-alpine3.21
-        #   ports:
-        #     - containerPort: 6379
+        - name: redis
+          image: redis:8.0-M04-alpine3.21
+          ports:
+            - containerPort: 6379
 
         # - name: worker
         #   image: 390844748928.dkr.ecr.eu-west-2.amazonaws.com/dev/macromeals-api:latest
