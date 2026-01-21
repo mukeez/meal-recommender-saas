@@ -41,6 +41,11 @@ security_scheme = HTTPBearer()
 
 scheduler = BackgroundScheduler()
 
+# scheduled for 12:00 AM daily
+scheduler.add_job(
+    macromeals_tasks.expire_referral_premium_access, CronTrigger(hour="0", minute="0")
+)
+
 # scheduled for 8:00 AM each day
 scheduler.add_job(
     macromeals_tasks.schedule_start_of_day_meal_reminders, CronTrigger(hour="8")
@@ -74,8 +79,6 @@ scheduler.add_job(
     macromeals_tasks.schedule_custom_meal_reminders_dinner,
     CronTrigger(hour="19"),
 )
-
-# scheduled for 8:00 PM daily
 
 
 @asynccontextmanager

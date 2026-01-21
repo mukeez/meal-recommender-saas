@@ -13,6 +13,7 @@ import random, hashlib
 from app.core.config import settings
 from app.models.user import UpdateUserProfileRequest
 from app.services.user_service import user_service, UserProfileData
+from app.services.referral_code_service import referral_code_service
 from app.services.mail_service import mail_service
 from app.models.auth import LoginRequest, LoginResponse, SignupRequest, SignUpResponse, VerifyOtpRequest, VerifyOtpResponse, ResetPasswordRequest, VerifyEmailRequest, VerifyEmailResponse, ResendVerificationRequest, ResendVerificationResponse, RefreshTokenRequest, RefreshTokenResponse, UserMetadata, LogoutResponse
 from app.api.auth_guard import auth_guard
@@ -183,6 +184,9 @@ async def signup(payload: SignupRequest) -> SignUpResponse:
         )
 
     try:
+        if payload.referral_code:
+            referral_code_service.validate_referral_code(payload.referral_code)
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{settings.SUPABASE_URL}/auth/v1/signup",
@@ -271,6 +275,15 @@ async def signup(payload: SignupRequest) -> SignUpResponse:
 
         await user_service.create_default_preferences(user_id)
         logger.info(f"Created default preferences for user: {user_id}")
+
+        if payload.referral_code:
+            referral_code_service.redeem_referral_code(
+                user_id=user_id,
+                referral_code=payload.referral_code,
+            )
+            logger.info(
+                f"Referral code redeemed for user: {user_id} (code: {payload.referral_code})"
+            )
 
         # Generate and send email verification
         try:

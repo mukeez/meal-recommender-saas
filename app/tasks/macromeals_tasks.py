@@ -6,6 +6,8 @@ from app.models.notification import NotificationSubtype
 from app.services.meal_service import meal_service
 from app.core.config import settings
 from app.services.notification_service import notification_service
+from app.services.referral_code_service import referral_code_service
+from app.worker import celery_app
 
 
 logger = logging.getLogger(__name__)
@@ -527,6 +529,21 @@ class MacroMealsTasks:
                         )
         except Exception as e:
             logger.error(f"Failed to send trial expiry notifications: {e}")
+
+    @celery_app.task(bind=True, name="expire_referral_premium_access")
+    def expire_referral_premium_access(self):
+        try:
+            expired_count, downgraded_count = (
+                referral_code_service.expire_premium_free_access()
+            )
+            return {
+                "status": "success",
+                "expired": expired_count,
+                "downgraded": downgraded_count,
+            }
+        except Exception as e:
+            logger.error(f"Failed to expire referral-based access: {str(e)}")
+            return {"status": "error", "message": str(e)}
 
 
 macromeals_tasks = MacroMealsTasks()
